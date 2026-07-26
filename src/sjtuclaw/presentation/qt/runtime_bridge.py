@@ -11,6 +11,9 @@ from sjtuclaw.application.provider_profile_service import (
     ActiveTurnHandling,
     ProviderActivationOptions,
 )
+from sjtuclaw.application.provider_settings_service import (
+    ProviderSettingsSnapshot,
+)
 from sjtuclaw.application.runtime_session_controller import (
     RuntimeEvent,
     RuntimeEventType,
@@ -47,6 +50,7 @@ class QtRuntimeBridge(QObject):
     turn_failed = Signal(str, str, str)
     command_completed = Signal(str)
     command_failed = Signal(str, str, str)
+    provider_settings_changed = Signal(str, object)
     shutdown_finished = Signal(bool, str)
 
     def __init__(
@@ -72,6 +76,10 @@ class QtRuntimeBridge(QObject):
         )
         self._thread.snapshot_emitted.connect(
             self._relay_snapshot,
+            connection,
+        )
+        self._thread.provider_settings_emitted.connect(
+            self._relay_provider_settings,
             connection,
         )
         self._thread.command_result_emitted.connect(
@@ -171,6 +179,136 @@ class QtRuntimeBridge(QObject):
             RuntimeThreadCommand(
                 command_id=self._new_command_id(),
                 type=RuntimeThreadCommandType.REQUEST_SNAPSHOT,
+            )
+        )
+
+    def request_provider_settings(self) -> str:
+        return self._submit(
+            RuntimeThreadCommand(
+                command_id=self._new_command_id(),
+                type=RuntimeThreadCommandType.REQUEST_PROVIDER_SETTINGS,
+            )
+        )
+
+    def create_provider_profile(
+        self,
+        *,
+        provider_id: str,
+        display_name: str,
+        model: str,
+        credential_id: str | None,
+    ) -> str:
+        command_id = self._new_command_id()
+        if (
+            not provider_id.strip()
+            or not display_name.strip()
+            or not model.strip()
+        ):
+            self._fail_command(
+                command_id,
+                "invalid_command",
+                "Provider, display name, and model are required.",
+            )
+            return command_id
+        return self._submit(
+            RuntimeThreadCommand(
+                command_id=command_id,
+                type=RuntimeThreadCommandType.CREATE_PROVIDER_PROFILE,
+                provider_id=provider_id.strip(),
+                display_name=display_name.strip(),
+                model=model.strip(),
+                credential_id=(
+                    "" if credential_id is None else credential_id.strip()
+                ),
+            )
+        )
+
+    def update_provider_profile(
+        self,
+        *,
+        profile_id: str,
+        display_name: str,
+        model: str,
+        credential_id: str | None,
+    ) -> str:
+        command_id = self._new_command_id()
+        if (
+            not profile_id.strip()
+            or not display_name.strip()
+            or not model.strip()
+        ):
+            self._fail_command(
+                command_id,
+                "invalid_command",
+                "Profile, display name, and model are required.",
+            )
+            return command_id
+        return self._submit(
+            RuntimeThreadCommand(
+                command_id=command_id,
+                type=RuntimeThreadCommandType.UPDATE_PROVIDER_PROFILE,
+                profile_id=profile_id.strip(),
+                display_name=display_name.strip(),
+                model=model.strip(),
+                credential_id=(
+                    "" if credential_id is None else credential_id.strip()
+                ),
+            )
+        )
+
+    def delete_provider_profile(self, profile_id: str) -> str:
+        command_id = self._new_command_id()
+        if not profile_id.strip():
+            self._fail_command(
+                command_id,
+                "invalid_command",
+                "The Provider profile identifier is required.",
+            )
+            return command_id
+        return self._submit(
+            RuntimeThreadCommand(
+                command_id=command_id,
+                type=RuntimeThreadCommandType.DELETE_PROVIDER_PROFILE,
+                profile_id=profile_id.strip(),
+            )
+        )
+
+    def save_provider_credential(
+        self,
+        credential_id: str,
+        secret: str,
+    ) -> str:
+        command_id = self._new_command_id()
+        if not credential_id.strip() or not secret.strip():
+            self._fail_command(
+                command_id,
+                "invalid_command",
+                "Credential identifier and value are required.",
+            )
+            return command_id
+        return self._submit(
+            RuntimeThreadCommand(
+                command_id=command_id,
+                type=RuntimeThreadCommandType.SAVE_PROVIDER_CREDENTIAL,
+                credential_id=credential_id.strip(),
+                secret=secret,
+            )
+        )
+
+    def delete_provider_credential(self, credential_id: str) -> str:
+        command_id = self._new_command_id()
+        if not credential_id.strip():
+            self._fail_command(
+                command_id,
+                "invalid_command",
+                "The credential identifier is required.",
+            )
+            return command_id
+        return self._submit(
+            RuntimeThreadCommand(
+                command_id=command_id,
+                type=RuntimeThreadCommandType.DELETE_PROVIDER_CREDENTIAL,
+                credential_id=credential_id.strip(),
             )
         )
 
@@ -307,6 +445,19 @@ class QtRuntimeBridge(QObject):
             return
         self.runtime_state_changed.emit(value)
         self.provider_lifecycle_changed.emit(value)
+
+    @Slot(str, object)
+    def _relay_provider_settings(
+        self,
+        command_id: str,
+        value: object,
+    ) -> None:
+        if (
+            command_id not in self._pending_command_ids
+            or not isinstance(value, ProviderSettingsSnapshot)
+        ):
+            return
+        self.provider_settings_changed.emit(command_id, value)
 
     @Slot(str, bool, str, str)
     def _on_command_result(

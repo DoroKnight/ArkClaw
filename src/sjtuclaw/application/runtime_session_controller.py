@@ -20,6 +20,9 @@ from sjtuclaw.application.provider_profile_service import (
     ProviderProfileService,
     ProviderProfileServiceError,
 )
+from sjtuclaw.application.provider_settings_service import (
+    ProviderSettingsService,
+)
 from sjtuclaw.domain.events import AgentEvent, AgentEventType
 from sjtuclaw.domain.models import (
     AgentState,
@@ -45,6 +48,7 @@ class RuntimeEventType(Enum):
     TURN_COMPLETED = "turn_completed"
     TURN_CANCELLED = "turn_cancelled"
     TURN_FAILED = "turn_failed"
+    TURN_SETTLED = "turn_settled"
 
 
 @dataclass(frozen=True, slots=True)
@@ -132,6 +136,14 @@ class RuntimeSessionController:
     @property
     def state(self) -> RuntimeState:
         return self._state
+
+    @property
+    def provider_settings_service(self) -> ProviderSettingsService | None:
+        """Expose the optional settings boundary only to RuntimeThread."""
+
+        if isinstance(self._provider_service, ProviderSettingsService):
+            return self._provider_service
+        return None
 
     @property
     def active_turn_task(self) -> asyncio.Task[None] | None:
@@ -500,10 +512,18 @@ class RuntimeSessionController:
             self._continuations[key] = event.continuation
 
     def _on_turn_done(self, task: asyncio.Task[None]) -> None:
+        turn_id = self._turn_coordinator.current_turn_id
         self._turn_coordinator.release_finished_turn(task)
         if self._active_turn_task is task:
             self._active_turn_task = None
         self._turn_idle.set()
+        if turn_id is not None:
+            self._emit(
+                RuntimeEvent(
+                    type=RuntimeEventType.TURN_SETTLED,
+                    turn_id=turn_id,
+                )
+            )
 
     def _emit(self, event: RuntimeEvent) -> None:
         try:

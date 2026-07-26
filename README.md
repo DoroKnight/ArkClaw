@@ -105,8 +105,22 @@ Credential Manager 数据。需要检查是否已经保存凭据时，可以只�
 ```
 
 该命令不会打印密钥。不要把明文密钥作为 PowerShell 参数；后续应通过 `getpass`
-或未来 Qt 设置界面录入。显式运行 `--provider openai` 会读取该固定 Target，并在
+或 Qt Provider 设置界面录入。显式运行 `--provider openai` 会读取该固定 Target，并在
 凭据存在时创建真实 OpenAI 请求；自动测试只注入 Fake SDK，绝不执行该路径。
+
+## Qt 桌面壳
+
+安装可选 GUI 依赖后，可启动普通的最小桌面窗口：
+
+```powershell
+uv sync --extra dev --extra gui
+.\.venv\Scripts\sjtuclaw-gui.exe
+```
+
+启动只初始化非敏感 Profile 元数据，不会自动读取凭据、激活云端 Provider 或发送
+网络请求。Provider 设置页只显示“已配置/未配置”，不会回填已保存的 API Key。
+当前窗口不包含透明、置顶、托盘或动画桌宠效果。对象所有权、异步关闭和设置命令
+边界见 [Qt Provider 设置壳文档](docs/qt_provider_settings_shell.md)。
 
 ## 架构约束
 
@@ -118,7 +132,7 @@ Credential Manager 数据。需要检查是否已经保存凭据时，可以只�
 - OpenAI、DeepSeek、Ollama、Fake Provider 等适配器放在 `infrastructure/llm/`。
 - SQLite 等持久化实现放在 `infrastructure/persistence/`。
 - 工具和权限实现放在 `infrastructure/tools/`。
-- PySide6 窗口、控件和 Worker 放在 `ui/`。
+- PySide6 窗口、控件和 Runtime Bridge 放在 `presentation/qt/`。
 
 这一约束使 Agent 核心可以在没有桌面界面的情况下独立测试，也便于后续替换
 Provider、数据库或 GUI 实现。

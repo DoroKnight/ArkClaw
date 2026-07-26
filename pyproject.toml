@@ -28,6 +28,7 @@ gui = [
 
 [project.scripts]
 sjtuclaw-agent-demo = "sjtuclaw.__main__:main"
+sjtuclaw-gui = "sjtuclaw.presentation.qt.application:run"
 
 [tool.setuptools]
 package-dir = { "" = "src" }

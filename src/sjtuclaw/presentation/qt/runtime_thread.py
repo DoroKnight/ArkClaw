@@ -6,7 +6,7 @@ import asyncio
 import threading
 from collections.abc import Callable
 from contextlib import suppress
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 
 from PySide6.QtCore import QThread, Signal
@@ -15,6 +15,10 @@ from sjtuclaw.application.provider_profile_service import (
     ActiveTurnHandling,
     ProviderActivationOptions,
 )
+from sjtuclaw.application.provider_settings_service import (
+    ProviderSettingsService,
+    ProviderSettingsServiceError,
+)
 from sjtuclaw.application.runtime_session_controller import (
     RuntimeCommandResult,
     RuntimeEvent,
@@ -22,7 +26,7 @@ from sjtuclaw.application.runtime_session_controller import (
     RuntimeSessionController,
     RuntimeState,
 )
-from sjtuclaw.domain.models import ProfileId
+from sjtuclaw.domain.models import CredentialId, ProfileId, ProviderId
 
 
 class RuntimeThreadCommandType(Enum):
@@ -30,6 +34,12 @@ class RuntimeThreadCommandType(Enum):
     SEND_MESSAGE = "send_message"
     CANCEL_ACTIVE_TURN = "cancel_active_turn"
     REQUEST_SNAPSHOT = "request_snapshot"
+    REQUEST_PROVIDER_SETTINGS = "request_provider_settings"
+    CREATE_PROVIDER_PROFILE = "create_provider_profile"
+    UPDATE_PROVIDER_PROFILE = "update_provider_profile"
+    DELETE_PROVIDER_PROFILE = "delete_provider_profile"
+    SAVE_PROVIDER_CREDENTIAL = "save_provider_credential"
+    DELETE_PROVIDER_CREDENTIAL = "delete_provider_credential"
     SHUTDOWN = "shutdown"
 
 
@@ -43,6 +53,16 @@ class RuntimeThreadCommand:
     content: str = ""
     session_id: str = ""
     cancel_active: bool = True
+    provider_id: str = ""
+    display_name: str = ""
+    model: str = ""
+    credential_id: str = ""
+    secret: str = field(default="", repr=False, compare=False)
+
+    def clear_sensitive(self) -> None:
+        """Release the command's secret reference after runtime processing."""
+
+        object.__setattr__(self, "secret", "")
 
 
 RuntimeControllerFactory = Callable[
@@ -65,6 +85,7 @@ class RuntimeThread(QThread):
     worker_ready = Signal(object)
     runtime_event_emitted = Signal(object)
     snapshot_emitted = Signal(object)
+    provider_settings_emitted = Signal(str, object)
     command_result_emitted = Signal(str, bool, str, str)
     shutdown_outcome_emitted = Signal(str, bool, str, str)
 
@@ -301,10 +322,13 @@ class RuntimeThread(QThread):
         while True:
             command = await queue.get()
             self._active_command = command
-            result = await self._execute_command_safely(
-                command,
-                controller,
-            )
+            try:
+                result = await self._execute_command_safely(
+                    command,
+                    controller,
+                )
+            finally:
+                command.clear_sensitive()
             self.snapshot_emitted.emit(controller.snapshot())
             if command.type is RuntimeThreadCommandType.SHUTDOWN:
                 if result.success:
@@ -342,6 +366,11 @@ class RuntimeThread(QThread):
             return await self._execute_command(command, controller)
         except asyncio.CancelledError:
             raise
+        except ProviderSettingsServiceError as error:
+            return RuntimeCommandResult.failure(
+                error.safe_code,
+                error.safe_message,
+            )
         except Exception:
             return RuntimeCommandResult.failure(
                 "runtime_command_failed",
@@ -380,6 +409,52 @@ class RuntimeThread(QThread):
             return await controller.cancel_active_turn()
         if command.type is RuntimeThreadCommandType.REQUEST_SNAPSHOT:
             return RuntimeCommandResult.ok()
+        if command.type is RuntimeThreadCommandType.REQUEST_PROVIDER_SETTINGS:
+            return self._publish_provider_settings(command, controller)
+        if command.type is RuntimeThreadCommandType.CREATE_PROVIDER_PROFILE:
+            settings = self._require_provider_settings(controller)
+            provider_id = ProviderId(command.provider_id)
+            credential_id = (
+                None
+                if not command.credential_id
+                else CredentialId(command.credential_id)
+            )
+            settings.create_settings_profile(
+                provider_id=provider_id,
+                display_name=command.display_name,
+                model=command.model,
+                credential_id=credential_id,
+            )
+            return self._publish_provider_settings(command, controller)
+        if command.type is RuntimeThreadCommandType.UPDATE_PROVIDER_PROFILE:
+            settings = self._require_provider_settings(controller)
+            credential_id = (
+                None
+                if not command.credential_id
+                else CredentialId(command.credential_id)
+            )
+            settings.update_settings_profile(
+                ProfileId(command.profile_id),
+                display_name=command.display_name,
+                model=command.model,
+                credential_id=credential_id,
+            )
+            return self._publish_provider_settings(command, controller)
+        if command.type is RuntimeThreadCommandType.DELETE_PROVIDER_PROFILE:
+            settings = self._require_provider_settings(controller)
+            settings.delete_settings_profile(ProfileId(command.profile_id))
+            return self._publish_provider_settings(command, controller)
+        if command.type is RuntimeThreadCommandType.SAVE_PROVIDER_CREDENTIAL:
+            settings = self._require_provider_settings(controller)
+            settings.save_credential(
+                CredentialId(command.credential_id),
+                command.secret,
+            )
+            return self._publish_provider_settings(command, controller)
+        if command.type is RuntimeThreadCommandType.DELETE_PROVIDER_CREDENTIAL:
+            settings = self._require_provider_settings(controller)
+            settings.delete_credential(CredentialId(command.credential_id))
+            return self._publish_provider_settings(command, controller)
         if command.type is RuntimeThreadCommandType.SHUTDOWN:
             return await controller.shutdown(
                 cancel_active=command.cancel_active
@@ -388,6 +463,32 @@ class RuntimeThread(QThread):
             "invalid_command",
             "The runtime command is not supported.",
         )
+
+    @staticmethod
+    def _require_provider_settings(
+        controller: RuntimeSessionController,
+    ) -> ProviderSettingsService:
+        settings = controller.provider_settings_service
+        if settings is None:
+            raise ProviderSettingsServiceError(
+                "provider_settings_unavailable",
+                "Provider settings are unavailable in this runtime.",
+            )
+        return settings
+
+    def _publish_provider_settings(
+        self,
+        command: RuntimeThreadCommand,
+        controller: RuntimeSessionController,
+    ) -> RuntimeCommandResult:
+        settings = self._require_provider_settings(controller)
+        runtime = controller.snapshot()
+        snapshot = settings.settings_snapshot(
+            runtime_state=runtime.runtime_state,
+            active_turn=runtime.active_turn_id is not None,
+        )
+        self.provider_settings_emitted.emit(command.command_id, snapshot)
+        return RuntimeCommandResult.ok()
 
     @staticmethod
     async def _cancel_remaining_tasks() -> int:
