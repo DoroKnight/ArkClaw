@@ -7,6 +7,7 @@ from collections.abc import Callable
 from typing import cast
 
 import pytest
+from scripts.manual_credential_targets import ManualCredentialTargetResolver
 
 from sjtuclaw.config.errors import (
     SecretStoreAccessDeniedError,
@@ -19,14 +20,15 @@ from sjtuclaw.config.secrets import SecretValue
 from sjtuclaw.domain.models import (
     DEEPSEEK_MANUAL_TEST_CREDENTIAL_ID,
     OPENAI_MANUAL_TEST_CREDENTIAL_ID,
+    CredentialId,
 )
 from sjtuclaw.infrastructure.security import windows_credential_store
 from sjtuclaw.infrastructure.security.windows_credential_store import (
-    DEEPSEEK_MANUAL_TEST_TARGET,
     OPENAI_API_KEY_TARGET,
     CredentialBackendAccessDeniedError,
     CredentialBackendCorruptedError,
     CredentialBackendUnavailableError,
+    CredentialTargetResolutionError,
     CredentialTargetResolver,
     Win32CredentialBackend,
     WindowsCredentialSecretStore,
@@ -71,6 +73,7 @@ def _store(
         WindowsCredentialSecretStore(
             backend=selected_backend,
             openai_credential_id=OPENAI_MANUAL_TEST_CREDENTIAL_ID,
+            target_resolver=ManualCredentialTargetResolver(),
         ),
         selected_backend,
     )
@@ -110,14 +113,84 @@ def test_default_credential_target_is_stable() -> None:
     assert OPENAI_API_KEY_TARGET == "SJTUClaw/OpenAI/APIKey"
 
 
-def test_deepseek_manual_target_is_fixed_and_non_production() -> None:
-    assert (
-        DEEPSEEK_MANUAL_TEST_TARGET
-        == "SJTUClaw/Test/DeepSeek/APIKey"
+@pytest.mark.parametrize(
+    "credential_id",
+    [
+        OPENAI_MANUAL_TEST_CREDENTIAL_ID,
+        DEEPSEEK_MANUAL_TEST_CREDENTIAL_ID,
+    ],
+)
+def test_production_resolver_rejects_manual_test_ids(
+    credential_id: CredentialId,
+) -> None:
+    with pytest.raises(
+        CredentialTargetResolutionError,
+        match="credential identifier is not permitted",
+    ) as raised:
+        CredentialTargetResolver.resolve(credential_id)
+
+    assert credential_id.value not in str(raised.value)
+    assert "SJTUClaw/" not in str(raised.value)
+
+
+@pytest.mark.parametrize(
+    "operation",
+    ["has", "get", "set", "delete"],
+)
+@pytest.mark.parametrize(
+    "credential_id",
+    [
+        OPENAI_MANUAL_TEST_CREDENTIAL_ID,
+        DEEPSEEK_MANUAL_TEST_CREDENTIAL_ID,
+    ],
+)
+def test_production_store_rejects_manual_id_before_backend(
+    operation: str,
+    credential_id: CredentialId,
+) -> None:
+    backend = _FakeCredentialBackend()
+    store = WindowsCredentialSecretStore(backend=backend)
+
+    with pytest.raises(CredentialTargetResolutionError):
+        if operation == "has":
+            store.has_secret(credential_id)
+        elif operation == "get":
+            store.get_secret(credential_id)
+        elif operation == "set":
+            store.set_secret(
+                credential_id,
+                SecretValue(_FAKE_API_KEY),
+            )
+        else:
+            store.delete_secret(credential_id)
+
+    assert backend.read_targets == []
+    assert backend.write_targets == []
+    assert backend.delete_targets == []
+
+
+def test_manual_openai_id_is_rejected_before_native_backend_construction(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    backend_calls = 0
+
+    def fail_backend() -> Win32CredentialBackend:
+        nonlocal backend_calls
+        backend_calls += 1
+        raise AssertionError("backend construction must not be reached")
+
+    monkeypatch.setattr(
+        windows_credential_store,
+        "Win32CredentialBackend",
+        fail_backend,
     )
-    assert CredentialTargetResolver.resolve(
-        DEEPSEEK_MANUAL_TEST_CREDENTIAL_ID
-    ) == DEEPSEEK_MANUAL_TEST_TARGET
+
+    with pytest.raises(CredentialTargetResolutionError):
+        WindowsCredentialSecretStore(
+            openai_credential_id=OPENAI_MANUAL_TEST_CREDENTIAL_ID,
+        )
+
+    assert backend_calls == 0
 
 
 def test_missing_credential_returns_none() -> None:

@@ -24,8 +24,6 @@ OPENAI_API_KEY_TARGET = "SJTUClaw/OpenAI/APIKey"
 DEEPSEEK_API_KEY_TARGET = (
     f"SJTUClaw/Credentials/{DEEPSEEK_DEFAULT_CREDENTIAL_ID.value}"
 )
-OPENAI_MANUAL_TEST_TARGET = "SJTUClaw/Test/OpenAI/APIKey"
-DEEPSEEK_MANUAL_TEST_TARGET = "SJTUClaw/Test/DeepSeek/APIKey"
 
 _CRED_TYPE_GENERIC = 1
 _CRED_PERSIST_LOCAL_MACHINE = 2
@@ -37,22 +35,37 @@ _ERROR_NO_SUCH_LOGON_SESSION = 1312
 _MAX_CREDENTIAL_BLOB_SIZE = 2560
 
 
-class CredentialTargetResolver:
-    """Resolve only reserved or validated opaque credential identifiers."""
+class CredentialTargetResolutionError(SecretStoreError):
+    """A credential identifier is outside the selected resolver boundary."""
 
-    _RESERVED_TARGETS: ClassVar[dict[CredentialId, str]] = {
-        OPENAI_DEFAULT_CREDENTIAL_ID: OPENAI_API_KEY_TARGET,
-        OPENAI_MANUAL_TEST_CREDENTIAL_ID: OPENAI_MANUAL_TEST_TARGET,
-        DEEPSEEK_MANUAL_TEST_CREDENTIAL_ID: DEEPSEEK_MANUAL_TEST_TARGET,
-    }
+    def __init__(self) -> None:
+        super().__init__("The credential identifier is not permitted.")
+
+
+class CredentialTargetResolverProtocol(Protocol):
+    """Trusted mapping boundary used by a credential store instance."""
+
+    def resolve(self, credential_id: CredentialId) -> str: ...
+
+
+class CredentialTargetResolver:
+    """Resolve production credential identifiers and reject test identifiers."""
+
+    _MANUAL_TEST_IDS: ClassVar[frozenset[CredentialId]] = frozenset(
+        {
+            OPENAI_MANUAL_TEST_CREDENTIAL_ID,
+            DEEPSEEK_MANUAL_TEST_CREDENTIAL_ID,
+        }
+    )
 
     @classmethod
     def resolve(cls, credential_id: CredentialId) -> str:
         if not isinstance(credential_id, CredentialId):
             raise TypeError("credential_id must be a CredentialId")
-        reserved = cls._RESERVED_TARGETS.get(credential_id)
-        if reserved is not None:
-            return reserved
+        if credential_id in cls._MANUAL_TEST_IDS:
+            raise CredentialTargetResolutionError() from None
+        if credential_id == OPENAI_DEFAULT_CREDENTIAL_ID:
+            return OPENAI_API_KEY_TARGET
         return f"SJTUClaw/Credentials/{credential_id.value}"
 
 
@@ -245,8 +258,14 @@ class WindowsCredentialSecretStore:
         backend: CredentialBackend | None = None,
         *,
         openai_credential_id: CredentialId = OPENAI_DEFAULT_CREDENTIAL_ID,
+        target_resolver: CredentialTargetResolverProtocol | None = None,
     ) -> None:
-        CredentialTargetResolver.resolve(openai_credential_id)
+        self._target_resolver = (
+            CredentialTargetResolver()
+            if target_resolver is None
+            else target_resolver
+        )
+        self._target_resolver.resolve(openai_credential_id)
         self._openai_credential_id = openai_credential_id
         if backend is not None:
             self._backend = backend
@@ -280,7 +299,7 @@ class WindowsCredentialSecretStore:
         self,
         credential_id: CredentialId,
     ) -> SecretValue | None:
-        target_name = CredentialTargetResolver.resolve(credential_id)
+        target_name = self._target_resolver.resolve(credential_id)
         store_error: SecretStoreError | None = None
         blob: bytes | None = None
         try:
@@ -319,7 +338,7 @@ class WindowsCredentialSecretStore:
         credential_id: CredentialId,
         value: SecretValue,
     ) -> None:
-        target_name = CredentialTargetResolver.resolve(credential_id)
+        target_name = self._target_resolver.resolve(credential_id)
         revealed = value.reveal()
         if not revealed.strip():
             raise ValueError("credential must not be blank")
@@ -349,7 +368,7 @@ class WindowsCredentialSecretStore:
             raise store_error from None
 
     def delete_secret(self, credential_id: CredentialId) -> None:
-        target_name = CredentialTargetResolver.resolve(credential_id)
+        target_name = self._target_resolver.resolve(credential_id)
         store_error: SecretStoreError | None = None
         try:
             self._backend.delete(target_name)

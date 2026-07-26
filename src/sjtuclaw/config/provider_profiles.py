@@ -5,7 +5,6 @@ from __future__ import annotations
 from sjtuclaw.domain.models import (
     DEEPSEEK_DEFAULT_CREDENTIAL_ID,
     DEEPSEEK_DEFAULT_PROFILE_ID,
-    DEEPSEEK_MANUAL_TEST_CREDENTIAL_ID,
     DEEPSEEK_PROVIDER_ID,
     FAKE_DEFAULT_PROFILE_ID,
     FAKE_PROVIDER_ID,
@@ -13,7 +12,6 @@ from sjtuclaw.domain.models import (
     OLLAMA_PROVIDER_ID,
     OPENAI_DEFAULT_CREDENTIAL_ID,
     OPENAI_DEFAULT_PROFILE_ID,
-    OPENAI_MANUAL_TEST_CREDENTIAL_ID,
     OPENAI_PROVIDER_ID,
     ApiProtocol,
     ContinuationMode,
@@ -41,22 +39,10 @@ def builtin_credential_bindings() -> tuple[CredentialBinding, ...]:
             display_name="OpenAI default credential",
         ),
         CredentialBinding(
-            credential_id=OPENAI_MANUAL_TEST_CREDENTIAL_ID,
-            provider_id=OPENAI_PROVIDER_ID,
-            allowed_origin=OPENAI_OFFICIAL_ORIGIN,
-            display_name="OpenAI manual verification credential",
-        ),
-        CredentialBinding(
             credential_id=DEEPSEEK_DEFAULT_CREDENTIAL_ID,
             provider_id=DEEPSEEK_PROVIDER_ID,
             allowed_origin=DEEPSEEK_OFFICIAL_ORIGIN,
             display_name="DeepSeek default credential",
-        ),
-        CredentialBinding(
-            credential_id=DEEPSEEK_MANUAL_TEST_CREDENTIAL_ID,
-            provider_id=DEEPSEEK_PROVIDER_ID,
-            allowed_origin=DEEPSEEK_OFFICIAL_ORIGIN,
-            display_name="DeepSeek manual verification credential",
         ),
     )
 

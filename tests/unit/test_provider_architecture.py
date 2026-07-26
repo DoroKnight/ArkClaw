@@ -20,6 +20,7 @@ from tests.fakes.openai_sdk import (
 from sjtuclaw.config.provider_profiles import (
     DEEPSEEK_OFFICIAL_ORIGIN,
     OPENAI_OFFICIAL_ORIGIN,
+    builtin_credential_bindings,
     deepseek_profile,
     openai_profile,
 )
@@ -27,7 +28,9 @@ from sjtuclaw.config.secrets import InMemorySecretStore, SecretValue
 from sjtuclaw.domain.events import LLMEventType
 from sjtuclaw.domain.models import (
     DEEPSEEK_DEFAULT_CREDENTIAL_ID,
+    DEEPSEEK_MANUAL_TEST_CREDENTIAL_ID,
     OPENAI_DEFAULT_CREDENTIAL_ID,
+    OPENAI_MANUAL_TEST_CREDENTIAL_ID,
     ApiProtocol,
     ChatMessage,
     ContinuationMode,
@@ -172,6 +175,67 @@ def test_windows_target_resolution_preserves_legacy_and_isolates_uuid_ids() -> N
     assert CredentialTargetResolver.resolve(first_id) != (
         CredentialTargetResolver.resolve(second_id)
     )
+
+
+def test_builtin_bindings_include_only_production_credentials() -> None:
+    bindings = builtin_credential_bindings()
+
+    assert tuple(binding.credential_id for binding in bindings) == (
+        OPENAI_DEFAULT_CREDENTIAL_ID,
+        DEEPSEEK_DEFAULT_CREDENTIAL_ID,
+    )
+
+
+@pytest.mark.parametrize(
+    "profile",
+    [
+        openai_profile(
+            "gpt-5-mini",
+            credential_id=OPENAI_MANUAL_TEST_CREDENTIAL_ID,
+        ),
+        deepseek_profile(
+            "deepseek-v4-flash",
+            credential_id=DEEPSEEK_MANUAL_TEST_CREDENTIAL_ID,
+        ),
+    ],
+)
+def test_default_factory_rejects_manual_binding_before_store_or_client(
+    profile: ProviderProfile,
+) -> None:
+    class _CountingStore(InMemorySecretStore):
+        read_count = 0
+
+        def get_secret(
+            self,
+            credential_id: CredentialId,
+        ) -> SecretValue | None:
+            self.read_count += 1
+            return super().get_secret(credential_id)
+
+    store = _CountingStore()
+    openai_sdk = FakeOpenAIClientFactory()
+    deepseek_sdk = FakeDeepSeekClientFactory()
+
+    with pytest.raises(
+        ProviderRegistryError,
+        match="credential binding does not match",
+    ):
+        ProviderFactory(
+            secret_store=store,
+            openai_client_factory=openai_sdk,
+            deepseek_client_factory=deepseek_sdk,
+        ).create_profile(
+            profile,
+            timeout_seconds=30.0,
+            max_retries=0,
+            stream=True,
+        )
+
+    assert store.read_count == 0
+    assert openai_sdk.create_count == 0
+    assert deepseek_sdk.create_count == 0
+    assert openai_sdk.network_request_count == 0
+    assert deepseek_sdk.network_request_count == 0
 
 
 def test_windows_store_keeps_two_credentials_in_separate_targets() -> None:

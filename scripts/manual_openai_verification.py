@@ -16,10 +16,20 @@ import logging
 import sys
 from collections.abc import AsyncGenerator, AsyncIterator, Callable, Sequence
 from dataclasses import dataclass, fields
-from typing import NoReturn, Protocol, cast
+from typing import TYPE_CHECKING, NoReturn, Protocol, cast
 
 import openai
 
+if TYPE_CHECKING or __package__:
+    from scripts.manual_credential_targets import (
+        OPENAI_MANUAL_TEST_TARGET,
+        ManualCredentialTargetResolver,
+    )
+else:
+    from manual_credential_targets import (
+        OPENAI_MANUAL_TEST_TARGET,
+        ManualCredentialTargetResolver,
+    )
 from sjtuclaw.config.errors import SecretStoreError
 from sjtuclaw.config.secrets import SecretStore, SecretValue
 from sjtuclaw.domain.events import LLMEvent, LLMEventType
@@ -49,7 +59,7 @@ from sjtuclaw.infrastructure.security.windows_credential_store import (
 _CONFIRM_FLAG = "--confirm-real-api"
 _EXPECTED_SDK_VERSION = "2.48.0"
 _MODEL = "gpt-5-mini"
-_TEST_TARGET = "SJTUClaw/Test/OpenAI/APIKey"
+_TEST_TARGET = OPENAI_MANUAL_TEST_TARGET
 _FAKE_INVALID_KEY = "sk-test-never-use-this-value"
 _MAX_REQUEST_ATTEMPTS = 7
 _MANUAL_MAX_OUTPUT_TOKENS = 25_000
@@ -958,7 +968,8 @@ def _audit_stream_count(audit: _AuditFactory) -> int:
 
 def _windows_store_factory() -> SecretStore:
     return WindowsCredentialSecretStore(
-        openai_credential_id=OPENAI_MANUAL_TEST_CREDENTIAL_ID
+        openai_credential_id=OPENAI_MANUAL_TEST_CREDENTIAL_ID,
+        target_resolver=ManualCredentialTargetResolver(),
     )
 
 

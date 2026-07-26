@@ -21,10 +21,20 @@ from collections.abc import (
 )
 from contextlib import suppress
 from dataclasses import dataclass, field, fields
-from typing import NoReturn, Protocol, cast
+from typing import TYPE_CHECKING, NoReturn, Protocol, cast
 
 import openai
 
+if TYPE_CHECKING or __package__:
+    from scripts.manual_credential_targets import (
+        DEEPSEEK_MANUAL_TEST_TARGET,
+        ManualCredentialTargetResolver,
+    )
+else:
+    from manual_credential_targets import (
+        DEEPSEEK_MANUAL_TEST_TARGET,
+        ManualCredentialTargetResolver,
+    )
 from sjtuclaw.config.errors import SecretStoreError
 from sjtuclaw.config.provider_profiles import (
     DEEPSEEK_OFFICIAL_BASE_URL,
@@ -37,6 +47,7 @@ from sjtuclaw.domain.models import (
     DEEPSEEK_MANUAL_TEST_CREDENTIAL_ID,
     ApiProtocol,
     ChatMessage,
+    CredentialBinding,
     CredentialId,
     LLMRequest,
     MessageRole,
@@ -54,8 +65,10 @@ from sjtuclaw.infrastructure.llm.deepseek_sdk import (
     ThinkingMode,
 )
 from sjtuclaw.infrastructure.llm.provider_factory import ProviderFactory
+from sjtuclaw.infrastructure.llm.provider_registry import (
+    CredentialBindingRegistry,
+)
 from sjtuclaw.infrastructure.security.windows_credential_store import (
-    DEEPSEEK_MANUAL_TEST_TARGET,
     WindowsCredentialSecretStore,
 )
 
@@ -63,7 +76,7 @@ _CONFIRM_FLAG = "--confirm-real-api"
 _EXPECTED_CONFIRMATION = "RUN"
 _EXPECTED_SDK_VERSION = "2.48.0"
 _MODEL = "deepseek-v4-flash"
-_TEST_TARGET = "SJTUClaw/Test/DeepSeek/APIKey"
+_TEST_TARGET = DEEPSEEK_MANUAL_TEST_TARGET
 _FAKE_INVALID_KEY = "sk-deepseek-invalid-never-use"
 _MAX_REQUEST_ATTEMPTS = 6
 _MAX_OUTPUT_TOKENS = 256
@@ -569,6 +582,16 @@ async def _run_verification(
         built = ProviderFactory(
             secret_store=owned_store,
             deepseek_client_factory=audit,
+            credential_bindings=CredentialBindingRegistry(
+                (
+                    CredentialBinding(
+                        credential_id=DEEPSEEK_MANUAL_TEST_CREDENTIAL_ID,
+                        provider_id=profile.provider_id,
+                        allowed_origin=DEEPSEEK_OFFICIAL_ORIGIN,
+                        display_name="DeepSeek manual verification credential",
+                    ),
+                )
+            ),
         ).create_profile(
             profile,
             timeout_seconds=_REQUEST_TIMEOUT_SECONDS,
@@ -896,7 +919,9 @@ async def _run_with_cooperative_timeout(
 
 
 def _windows_store_factory() -> SecretStore:
-    return WindowsCredentialSecretStore()
+    return WindowsCredentialSecretStore(
+        target_resolver=ManualCredentialTargetResolver(),
+    )
 
 
 def _default_dependencies() -> ManualDeepSeekDependencies:

@@ -99,7 +99,8 @@ CredentialId → ProviderId + fixed HTTPS Origin
 - 内置 Profile/Binding 使用稳定 ID，初始化是幂等操作，不重复生成记录；
 - `OPENAI_MANUAL_TEST_CREDENTIAL_ID` 和
   `DEEPSEEK_MANUAL_TEST_CREDENTIAL_ID` 只属于人工验证脚本；生产 Policy、
-  Repository 和 Service 均拒绝它们。Target Resolver 仍保留脚本所需映射；
+  Repository 和 Service 均拒绝它们。生产 Target Resolver 同样固定拒绝；脚本所需
+  映射由 `scripts/manual_credential_targets.py` 中的封闭 Resolver 显式注入；
 - 人工验证测试 Target 不会由管理服务自动初始化为普通生产 Binding。
 
 ## 活动 Provider 切换

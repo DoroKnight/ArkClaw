@@ -107,14 +107,17 @@ API Key 不得写入 SQLite、设置文件、`.env`、日志、异常信息或�
 ```text
 SJTUClaw/OpenAI/APIKey
 SJTUClaw/Credentials/00000000-0000-4000-8000-000000000001
-SJTUClaw/Test/OpenAI/APIKey
-SJTUClaw/Test/DeepSeek/APIKey
 ```
 
 应用创建的 CredentialId 必须是 canonical UUIDv4，并只映射到
 `SJTUClaw/Credentials/<uuid>`。显示名称、Provider 名、模型名、服务 URL 和其他
 用户输入均不能参与 Target 拼接。空值、路径片段、超长值或非 UUID 值会在进入
 Backend 前被拒绝。
+
+生产 Resolver 不包含人工验证 Target，并对两个人工验证 CredentialId 固定拒绝，
+拒绝发生在 Backend 的 read/write/delete 之前。固定人工 Target 只存在于
+`scripts/manual_credential_targets.py`，由人工验证脚本和显式跳过的集成测试注入；
+普通 Profile、默认 ProviderFactory 和 Qt 设置服务不能选择该 Resolver。
 
 “厂商无关”表示同一个安全存储接口可以保存多个 Provider 的凭据，并不表示一个
 厂商签发的 API Key 能在另一个厂商使用。Provider Profile 会绑定一个明确的
@@ -153,7 +156,8 @@ Remove-Item Env:SJTUCLAW_RUN_WINDOWS_CREDENTIAL_INTEGRATION
 ```
 
 测试在进程内生成假密钥，不从命令行读取密钥，不访问网络，并在 `finally` 中删除
-测试 Target。它绝不使用生产 Target `SJTUClaw/OpenAI/APIKey`。
+测试 Target。它显式注入脚本专用 Resolver，绝不使用生产 Target
+`SJTUClaw/OpenAI/APIKey`。该测试仍默认跳过。
 
 ## Provider 当前状态
 

@@ -4,6 +4,7 @@ import os
 import secrets
 
 import pytest
+from scripts.manual_credential_targets import ManualCredentialTargetResolver
 
 from sjtuclaw.config.secrets import SecretValue
 from sjtuclaw.domain.models import OPENAI_MANUAL_TEST_CREDENTIAL_ID
@@ -26,7 +27,8 @@ def test_windows_credential_manager_lifecycle() -> None:
     """Exercise only the fixed non-production Target with generated fake values."""
 
     store = WindowsCredentialSecretStore(
-        openai_credential_id=OPENAI_MANUAL_TEST_CREDENTIAL_ID
+        openai_credential_id=OPENAI_MANUAL_TEST_CREDENTIAL_ID,
+        target_resolver=ManualCredentialTargetResolver(),
     )
     first = SecretValue(f"sk-test-{secrets.token_hex(16)}")
     replacement = SecretValue(f"sk-test-{secrets.token_hex(16)}")

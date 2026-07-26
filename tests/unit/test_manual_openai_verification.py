@@ -9,6 +9,7 @@ from typing import cast
 
 import pytest
 import scripts.manual_openai_verification as manual
+from scripts.manual_credential_targets import ManualCredentialTargetResolver
 from tests.fakes.openai_sdk import (
     FakeOpenAIClientFactory,
     FakeOpenAIResponsesClient,
@@ -19,6 +20,7 @@ from tests.fakes.openai_sdk import (
 from sjtuclaw.config.secrets import SecretValue
 from sjtuclaw.domain.models import (
     OPENAI_DEFAULT_CREDENTIAL_ID,
+    OPENAI_MANUAL_TEST_CREDENTIAL_ID,
     CredentialId,
 )
 from sjtuclaw.infrastructure.llm.openai_provider import OpenAIProvider
@@ -606,6 +608,38 @@ def test_default_mode_is_fully_inert() -> None:
     assert secret_prompt.calls == 0
     assert fake_sdk.create_count == 0
     assert fake_sdk.network_request_count == 0
+
+
+def test_real_store_factory_explicitly_injects_manual_target_resolver(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+    expected_store = _RecordingStore()
+
+    def fake_windows_store(
+        *,
+        openai_credential_id: CredentialId,
+        target_resolver: object,
+    ) -> _RecordingStore:
+        captured["credential_id"] = openai_credential_id
+        captured["target_resolver"] = target_resolver
+        return expected_store
+
+    monkeypatch.setattr(
+        manual,
+        "WindowsCredentialSecretStore",
+        fake_windows_store,
+    )
+
+    assert manual._windows_store_factory() is expected_store
+    assert (
+        captured["credential_id"]
+        == OPENAI_MANUAL_TEST_CREDENTIAL_ID
+    )
+    assert isinstance(
+        captured["target_resolver"],
+        ManualCredentialTargetResolver,
+    )
 
 
 def test_manual_request_uses_fixed_documented_output_budget() -> None:

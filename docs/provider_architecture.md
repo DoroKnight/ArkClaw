@@ -28,13 +28,17 @@ Windows Target 解析规则是封闭的：
 |---|---|
 | 保留 OpenAI ID | `SJTUClaw/OpenAI/APIKey` |
 | 内置 DeepSeek UUIDv4 | `SJTUClaw/Credentials/00000000-0000-4000-8000-000000000001` |
-| 人工 OpenAI 测试 ID | `SJTUClaw/Test/OpenAI/APIKey` |
-| 人工 DeepSeek 测试 ID | `SJTUClaw/Test/DeepSeek/APIKey` |
 | canonical UUIDv4 | `SJTUClaw/Credentials/<uuid>` |
 
 除了保留 ID 外，只接受由应用生成或严格校验的 canonical UUIDv4。显示名称、模型、
 ProviderId、URL 和其他动态文本永远不参与 Target 生成。这避免路径注入、Target
 别名和凭据串用。
+
+生产 `CredentialTargetResolver` 对两个人工验证 CredentialId 固定 fail-closed，
+并在任何 Credential Backend 调用前拒绝；它们不会退化为通用 UUID Target。
+两个人工验证脚本使用 `scripts/manual_credential_targets.py` 中显式注入的封闭
+Resolver。该 Resolver 只接受两个固定的人工 CredentialId，不能接收任意 Target
+字符串，也不从 argv、环境变量、URL 或用户输入构造 Target。
 
 API Key 不进入 `RuntimeConfig`、CLI 参数、普通配置序列化、SQLite 或自动环境变量
 读取逻辑。`EnvironmentSecretStore` 的既有 `OPENAI_API_KEY` 行为仅作为显式注入的
@@ -64,6 +68,10 @@ profile.credential_id
 同一个 Provider 可以注册多个 CredentialBinding，但每个 CredentialId 只有一条
 权威绑定。即使两个服务实际使用相同的字符串，也必须分别创建两个 CredentialId
 并分别保存，不能让一个绑定跨 Provider 共享。
+
+`builtin_credential_bindings()` 只注册生产 OpenAI 与 DeepSeek Binding。人工验证
+Binding 不进入默认 `ProviderFactory`；DeepSeek 人工脚本必须显式构造其脚本专用
+Registry。生产 Profile Policy 对人工 CredentialId 的拒绝仍作为纵深防御保留。
 
 ## Profile 与注册表
 

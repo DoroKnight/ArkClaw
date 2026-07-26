@@ -6,6 +6,7 @@ from collections.abc import Callable
 
 import pytest
 import scripts.manual_deepseek_verification as manual
+from scripts.manual_credential_targets import ManualCredentialTargetResolver
 from tests.fakes.deepseek_sdk import (
     FakeDeepSeekClientFactory,
     FakeDeepSeekScenario,
@@ -231,6 +232,32 @@ def test_default_entry_is_completely_inert(
     assert exit_code == 0
     assert capsys.readouterr().out == (
         "safe_code=manual_verification_disabled\n"
+    )
+
+
+def test_real_store_factory_explicitly_injects_manual_target_resolver(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+    expected_store = _RecordingStore()
+
+    def fake_windows_store(
+        *,
+        target_resolver: object,
+    ) -> _RecordingStore:
+        captured["target_resolver"] = target_resolver
+        return expected_store
+
+    monkeypatch.setattr(
+        manual,
+        "WindowsCredentialSecretStore",
+        fake_windows_store,
+    )
+
+    assert manual._windows_store_factory() is expected_store
+    assert isinstance(
+        captured["target_resolver"],
+        ManualCredentialTargetResolver,
     )
 
 
