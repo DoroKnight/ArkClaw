@@ -1,0 +1,1 @@
+"""SJTUClaw automated tests."""
