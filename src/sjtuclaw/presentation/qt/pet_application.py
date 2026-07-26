@@ -18,6 +18,10 @@ from sjtuclaw.presentation.qt.application import (
 from sjtuclaw.presentation.qt.main_window import MainWindow
 from sjtuclaw.presentation.qt.pet_window import PetWindow
 from sjtuclaw.presentation.qt.runtime_bridge import QtRuntimeBridge
+from sjtuclaw.presentation.qt.single_instance import (
+    SingleInstanceRole,
+    create_production_single_instance,
+)
 from sjtuclaw.presentation.qt.system_tray import SystemTrayController
 
 
@@ -156,6 +160,10 @@ def main(argv: list[str] | None = None) -> int:
     app.setApplicationName("SJTUClaw")
     app.setOrganizationName("SJTU")
     app.setQuitOnLastWindowClosed(False)
+    single_instance = create_production_single_instance(app)
+    instance_result = single_instance.start()
+    if instance_result.role is not SingleInstanceRole.OWNER:
+        return instance_result.exit_code
     bridge = QtRuntimeBridge(
         ProductionQtRuntimeCompositionRoot(
             default_provider_metadata_path()
@@ -174,6 +182,9 @@ def main(argv: list[str] | None = None) -> int:
         parent=coordinator,
     )
     coordinator.attach_system_tray(system_tray)
+    single_instance.set_closing_probe(lambda: coordinator.pet_closing)
+    single_instance.activation_requested.connect(coordinator.show_pet)
+    coordinator.quit_requested.connect(single_instance.close)
     coordinator.quit_requested.connect(app.quit)
     return app.exec()
 

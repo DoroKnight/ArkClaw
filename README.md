@@ -134,7 +134,8 @@ uv sync --extra dev --extra gui
 它使用透明无边框窗口、可替换 QPainter Renderer、分层动画/行为状态机与现有
 安全关机流程，并提供程序化图标的最小系统托盘；不包含正式角色素材或 Spine
 Runtime。详见[占位桌宠窗口文档](docs/pet_window_placeholder.md)和
-[系统托盘文档](docs/system_tray.md)。
+[系统托盘文档](docs/system_tray.md)。生产桌宠入口还会在 Runtime 和窗口构造
+前执行本地单实例判定，详见[桌宠单实例文档](docs/single_instance.md)。
 
 ## 架构约束
 
