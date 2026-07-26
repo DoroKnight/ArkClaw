@@ -132,8 +132,9 @@ uv sync --extra dev --extra gui
 `sjtuclaw-agent-demo.exe` 继续保留标准输入输出。
 
 它使用透明无边框窗口、可替换 QPainter Renderer、分层动画/行为状态机与现有
-安全关机流程，不包含正式角色素材或 Spine Runtime。详见
-[占位桌宠窗口文档](docs/pet_window_placeholder.md)。
+安全关机流程，并提供程序化图标的最小系统托盘；不包含正式角色素材或 Spine
+Runtime。详见[占位桌宠窗口文档](docs/pet_window_placeholder.md)和
+[系统托盘文档](docs/system_tray.md)。
 
 ## 架构约束
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+import traceback
 from collections.abc import Callable, Iterator
 from dataclasses import replace
 from pathlib import Path
@@ -18,6 +19,7 @@ from PySide6.QtCore import (
     QObject,
     QPoint,
     QPointF,
+    QSize,
     Qt,
     QTimer,
     QtMsgType,
@@ -47,6 +49,13 @@ from sjtuclaw.presentation.qt.pet_renderer import (
 )
 from sjtuclaw.presentation.qt.pet_window import PetWindow
 from sjtuclaw.presentation.qt.runtime_bridge import QtRuntimeBridge
+from sjtuclaw.presentation.qt.system_tray import (
+    PetTrayState,
+    SystemTrayController,
+    TrayCallbacks,
+    _create_programmatic_tray_icon,
+    _QtSystemTrayView,
+)
 
 
 class _ManualShutdownBridge(QObject):
@@ -83,10 +92,11 @@ class _FakeClock:
 
 
 class _FakeRenderer:
-    def __init__(self) -> None:
+    def __init__(self, events: list[str] | None = None) -> None:
         self.frames: list[PetRenderFrame] = []
         self.sizes: list[Size] = []
         self.closed = False
+        self._events = events
 
     def render(self, painter: QPainter, frame: PetRenderFrame) -> None:
         del painter
@@ -96,7 +106,97 @@ class _FakeRenderer:
         self.sizes.append(size)
 
     def close(self) -> None:
+        if self.closed:
+            return
         self.closed = True
+        if self._events is not None:
+            self._events.append("renderer")
+
+
+class _FakeTrayView:
+    def __init__(
+        self,
+        callbacks: TrayCallbacks,
+        events: list[str] | None = None,
+        *,
+        failure: Exception | None = None,
+        fail_show: bool = False,
+        fail_update_after: int | None = None,
+        fail_close_count: int = 0,
+    ) -> None:
+        self.callbacks = callbacks
+        self.show_count = 0
+        self.close_count = 0
+        self.states: list[PetTrayState] = []
+        self._events = events
+        self._failure = failure or RuntimeError("controlled tray failure")
+        self._fail_show = fail_show
+        self._fail_update_after = fail_update_after
+        self._fail_close_count = fail_close_count
+
+    def show(self) -> None:
+        self.show_count += 1
+        if self._fail_show:
+            raise self._failure
+
+    def update_state(self, state: PetTrayState) -> None:
+        if (
+            self._fail_update_after is not None
+            and len(self.states) >= self._fail_update_after
+        ):
+            raise self._failure
+        self.states.append(state)
+
+    def close(self) -> None:
+        self.close_count += 1
+        if self.close_count <= self._fail_close_count:
+            raise self._failure
+        if self._events is not None:
+            self._events.append("tray")
+
+
+class _FakeTrayFactory:
+    def __init__(
+        self,
+        *,
+        available: bool = True,
+        events: list[str] | None = None,
+        failure: Exception | None = None,
+        fail_factory: bool = False,
+        fail_show: bool = False,
+        fail_update_after: int | None = None,
+        fail_close_count: int = 0,
+    ) -> None:
+        self.available = available
+        self.call_count = 0
+        self.view: _FakeTrayView | None = None
+        self._events = events
+        self._failure = failure or RuntimeError("controlled tray failure")
+        self._fail_factory = fail_factory
+        self._fail_show = fail_show
+        self._fail_update_after = fail_update_after
+        self._fail_close_count = fail_close_count
+
+    def __call__(
+        self,
+        callbacks: TrayCallbacks,
+        parent: QObject,
+    ) -> _FakeTrayView | None:
+        del parent
+        self.call_count += 1
+        if self._fail_factory:
+            raise self._failure
+        if not self.available:
+            return None
+        self.view = _FakeTrayView(
+            callbacks,
+            self._events,
+            failure=self._failure,
+            fail_show=self._fail_show,
+            fail_update_after=self._fail_update_after,
+            fail_close_count=self._fail_close_count,
+        )
+        return self.view
 
 
 @pytest.fixture(scope="module")
@@ -524,6 +624,568 @@ def test_closing_stops_single_timer_and_finalizes_renderer(
 
     window.complete_safe_close()
     assert renderer.closed
+
+
+def test_unavailable_system_tray_degrades_without_hiding_pet(
+    qt_application: QApplication,
+) -> None:
+    del qt_application
+    bridge = _ManualShutdownBridge()
+    main_window = _RecordingMainWindow()
+    pet = PetWindow()
+    pet.show()
+    coordinator = PetApplicationCoordinator(
+        cast(QtRuntimeBridge, bridge),
+        cast(MainWindow, main_window),
+        pet,
+    )
+    factory = _FakeTrayFactory(available=False)
+
+    tray = SystemTrayController(
+        coordinator,
+        view_factory=factory,
+        parent=coordinator,
+    )
+    coordinator.attach_system_tray(tray)
+    tray.refresh()
+    tray.refresh()
+
+    assert factory.call_count == 1
+    assert not tray.available
+    assert tray.safe_code == "system_tray_unavailable"
+    assert pet.isVisible()
+    assert pet.physics_timer.isActive()
+    pet.complete_safe_close()
+
+
+def test_tray_factory_failure_degrades_without_reconstruction(
+    qt_application: QApplication,
+) -> None:
+    del qt_application
+    bridge = _ManualShutdownBridge()
+    main_window = _RecordingMainWindow()
+    pet = PetWindow()
+    pet.show()
+    coordinator = PetApplicationCoordinator(
+        cast(QtRuntimeBridge, bridge),
+        cast(MainWindow, main_window),
+        pet,
+    )
+    factory = _FakeTrayFactory(fail_factory=True)
+
+    tray = SystemTrayController(
+        coordinator,
+        view_factory=factory,
+        parent=coordinator,
+    )
+    coordinator.attach_system_tray(tray)
+    tray.refresh()
+
+    assert factory.call_count == 1
+    assert not tray.available
+    assert not tray.cleanup_pending
+    assert tray.safe_code == "system_tray_initialization_failed"
+    assert pet.isVisible()
+    assert pet.physics_timer.isActive()
+    tray.complete_shutdown()
+    assert tray.closed
+    pet.complete_safe_close()
+
+
+@pytest.mark.parametrize(
+    ("fail_show", "fail_update_after", "expected_show_count"),
+    [
+        (True, None, 1),
+        (False, 0, 0),
+    ],
+)
+def test_tray_initial_view_failure_retains_cleanup_reference(
+    qt_application: QApplication,
+    fail_show: bool,
+    fail_update_after: int | None,
+    expected_show_count: int,
+) -> None:
+    del qt_application
+    bridge = _ManualShutdownBridge()
+    main_window = _RecordingMainWindow()
+    pet = PetWindow()
+    pet.show()
+    coordinator = PetApplicationCoordinator(
+        cast(QtRuntimeBridge, bridge),
+        cast(MainWindow, main_window),
+        pet,
+    )
+    factory = _FakeTrayFactory(
+        fail_show=fail_show,
+        fail_update_after=fail_update_after,
+    )
+
+    tray = SystemTrayController(
+        coordinator,
+        view_factory=factory,
+        parent=coordinator,
+    )
+    coordinator.attach_system_tray(tray)
+    view = factory.view
+    assert view is not None
+
+    assert factory.call_count == 1
+    assert view.show_count == expected_show_count
+    assert not tray.available
+    assert tray.cleanup_pending
+    assert tray.safe_code == "system_tray_initialization_failed"
+    assert pet.isVisible()
+    assert pet.physics_timer.isActive()
+
+    tray.complete_shutdown()
+    assert tray.closed
+    assert view.close_count == 1
+    pet.complete_safe_close()
+
+
+def test_tray_refresh_failure_is_contained_and_commands_are_not_repeated(
+    qt_application: QApplication,
+) -> None:
+    del qt_application
+    bridge = _ManualShutdownBridge()
+    main_window = _RecordingMainWindow()
+    pet = PetWindow()
+    pet.show()
+    coordinator = PetApplicationCoordinator(
+        cast(QtRuntimeBridge, bridge),
+        cast(MainWindow, main_window),
+        pet,
+    )
+    factory = _FakeTrayFactory(fail_update_after=1)
+    tray = SystemTrayController(
+        coordinator,
+        view_factory=factory,
+        parent=coordinator,
+    )
+    view = factory.view
+    assert view is not None
+
+    coordinator.attach_system_tray(tray)
+    assert tray.safe_code == "system_tray_refresh_failed"
+    assert len(view.states) == 1
+
+    view.callbacks.toggle_pet_visibility()
+    tray.refresh()
+    tray.refresh()
+
+    assert not pet.isVisible()
+    assert len(view.states) == 1
+    assert factory.call_count == 1
+    tray.complete_shutdown()
+    pet.complete_safe_close()
+
+
+def test_tray_exception_boundary_does_not_expose_sensitive_details(
+    qt_application: QApplication,
+    caplog: pytest.LogCaptureFixture,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    del qt_application
+    sensitive = (
+        "sk-test-never-use-this-value "
+        r"C:\Users\private\CredentialBlob"
+    )
+    bridge = _ManualShutdownBridge()
+    main_window = _RecordingMainWindow()
+    pet = PetWindow()
+    coordinator = PetApplicationCoordinator(
+        cast(QtRuntimeBridge, bridge),
+        cast(MainWindow, main_window),
+        pet,
+    )
+    factory = _FakeTrayFactory(
+        failure=RuntimeError(sensitive),
+        fail_factory=True,
+    )
+
+    tray = SystemTrayController(
+        coordinator,
+        view_factory=factory,
+        parent=coordinator,
+    )
+    tray.refresh()
+    captured = capsys.readouterr()
+    visible_outputs = "\n".join(
+        (
+            tray.safe_code,
+            repr(tray),
+            captured.out,
+            captured.err,
+            caplog.text,
+            "".join(traceback.format_stack()),
+        )
+    )
+
+    assert sensitive not in visible_outputs
+    assert "sk-test-never-use-this-value" not in visible_outputs
+    assert "CredentialBlob" not in visible_outputs
+    assert "Traceback" not in captured.err
+    assert tray.safe_code == "system_tray_initialization_failed"
+    tray.complete_shutdown()
+    pet.complete_safe_close()
+
+
+def test_programmatic_tray_icon_has_multiple_pixel_sizes(
+    qt_application: QApplication,
+) -> None:
+    del qt_application
+
+    icon = _create_programmatic_tray_icon()
+
+    assert not icon.isNull()
+    available = {(size.width(), size.height()) for size in icon.availableSizes()}
+    assert {
+        (16, 16),
+        (24, 24),
+        (32, 32),
+        (48, 48),
+        (64, 64),
+    }.issubset(available)
+    assert not icon.pixmap(QSize(32, 32)).isNull()
+
+
+def test_qt_tray_view_builds_reviewed_menu_and_synchronizes_labels(
+    qt_application: QApplication,
+) -> None:
+    del qt_application
+    callbacks = TrayCallbacks(
+        refresh=lambda: None,
+        toggle_pet_visibility=lambda: None,
+        open_agent_window=lambda: None,
+        toggle_paused=lambda: None,
+        set_always_on_top=lambda enabled: None,
+        request_safe_exit=lambda: None,
+    )
+    parent = QObject()
+    view = _QtSystemTrayView(callbacks, parent)
+
+    assert [
+        action.text()
+        for action in view._menu.actions()
+        if not action.isSeparator()
+    ] == [
+        "Hide Pet",
+        "Open Agent Window",
+        "Pause",
+        "Always on Top",
+        "Exit",
+    ]
+
+    view.update_state(
+        PetTrayState(
+            pet_visible=False,
+            paused=True,
+            always_on_top=True,
+            closing=False,
+        )
+    )
+
+    assert view._visibility_action.text() == "Show Pet"
+    assert view._pause_action.text() == "Continue"
+    assert view._always_on_top_action.isChecked()
+
+    view.update_state(
+        PetTrayState(
+            pet_visible=True,
+            paused=False,
+            always_on_top=False,
+            closing=True,
+        )
+    )
+    assert all(
+        not action.isEnabled()
+        for action in view._menu.actions()
+        if not action.isSeparator()
+    )
+    view.close()
+    view.close()
+
+
+def test_fake_tray_commands_share_pet_state_and_reclaim_workspace(
+    qt_application: QApplication,
+) -> None:
+    del qt_application
+    bridge = _ManualShutdownBridge()
+    main_window = _RecordingMainWindow()
+    pet = PetWindow()
+    pet.show()
+    coordinator = PetApplicationCoordinator(
+        cast(QtRuntimeBridge, bridge),
+        cast(MainWindow, main_window),
+        pet,
+    )
+    factory = _FakeTrayFactory()
+    tray = SystemTrayController(
+        coordinator,
+        view_factory=factory,
+        parent=coordinator,
+    )
+    coordinator.attach_system_tray(tray)
+    view = factory.view
+    assert view is not None
+
+    view.callbacks.toggle_pet_visibility()
+    assert not pet.isVisible()
+    assert pet.physics_timer.isActive()
+    assert view.states[-1].pet_visible is False
+
+    pet.move(50_000, 50_000)
+    view.callbacks.toggle_pet_visibility()
+    assert pet.isVisible()
+    assert pet.pos().x() < 50_000
+    assert pet.pos().y() < 50_000
+    assert view.states[-1].pet_visible is True
+
+    view.callbacks.open_agent_window()
+    assert main_window.show_requests == 1
+
+    view.callbacks.toggle_paused()
+    assert pet.lifecycle_state is PetLifecycleState.PAUSED
+    assert view.states[-1].paused
+    pause_menu_event = QContextMenuEvent(
+        QContextMenuEvent.Reason.Mouse,
+        pet.rect().center(),
+        pet.mapToGlobal(pet.rect().center()),
+    )
+    QApplication.sendEvent(pet, pause_menu_event)
+    pause_menu = pet.findChild(QMenu)
+    assert pause_menu is not None
+    pause_action = next(
+        action
+        for action in pause_menu.actions()
+        if action.text() == "Continue"
+    )
+    pause_action.trigger()
+    assert pet.lifecycle_state is PetLifecycleState.ACTIVE
+    assert not view.states[-1].paused
+
+    view.callbacks.set_always_on_top(False)
+    assert not pet.always_on_top
+    assert not view.states[-1].always_on_top
+    top_menu_event = QContextMenuEvent(
+        QContextMenuEvent.Reason.Mouse,
+        pet.rect().center(),
+        pet.mapToGlobal(pet.rect().center()),
+    )
+    QApplication.sendEvent(pet, top_menu_event)
+    top_action = next(
+        action
+        for menu in pet.findChildren(QMenu)
+        for action in menu.actions()
+        if action.text() == "Always on top"
+        and not action.isChecked()
+    )
+    top_action.setChecked(True)
+    assert pet.always_on_top
+    assert view.states[-1].always_on_top
+
+    assert factory.call_count == 1
+    assert view.show_count == 1
+    pet.complete_safe_close()
+
+
+def test_tray_exit_is_idempotent_and_closes_view_after_shutdown(
+    qt_application: QApplication,
+) -> None:
+    del qt_application
+    bridge = _ManualShutdownBridge()
+    main_window = _RecordingMainWindow()
+    close_events: list[str] = []
+    renderer = _FakeRenderer(close_events)
+    pet = PetWindow(renderer=renderer)
+    coordinator = PetApplicationCoordinator(
+        cast(QtRuntimeBridge, bridge),
+        cast(MainWindow, main_window),
+        pet,
+    )
+    factory = _FakeTrayFactory(events=close_events)
+    tray = SystemTrayController(
+        coordinator,
+        view_factory=factory,
+        parent=coordinator,
+    )
+    coordinator.attach_system_tray(tray)
+    view = factory.view
+    assert view is not None
+    quit_spy = QSignalSpy(coordinator.quit_requested)
+
+    view.callbacks.request_safe_exit()
+    view.callbacks.request_safe_exit()
+
+    assert main_window.close_requests == 1
+    assert pet.lifecycle_state is PetLifecycleState.CLOSING
+    assert view.close_count == 0
+    bridge.shutdown_finished.emit(True, "none")
+
+    assert _run_until(lambda: quit_spy.count() == 1)
+    assert tray.closed
+    assert view.close_count == 1
+    assert renderer.closed
+    assert close_events == ["tray", "renderer"]
+    assert not pet.physics_timer.isActive()
+
+
+def test_failed_tray_exit_preserves_view_and_allows_retry(
+    qt_application: QApplication,
+) -> None:
+    del qt_application
+    bridge = _ManualShutdownBridge()
+    main_window = _RecordingMainWindow()
+    pet = PetWindow()
+    coordinator = PetApplicationCoordinator(
+        cast(QtRuntimeBridge, bridge),
+        cast(MainWindow, main_window),
+        pet,
+    )
+    factory = _FakeTrayFactory()
+    tray = SystemTrayController(
+        coordinator,
+        view_factory=factory,
+        parent=coordinator,
+    )
+    coordinator.attach_system_tray(tray)
+    view = factory.view
+    assert view is not None
+
+    view.callbacks.request_safe_exit()
+    bridge.shutdown_finished.emit(False, "runtime_shutdown_failed")
+
+    assert not tray.closed
+    assert view.close_count == 0
+    assert pet.lifecycle_state is PetLifecycleState.PAUSED
+    assert pet.physics_timer.isActive()
+
+    view.callbacks.request_safe_exit()
+    assert main_window.close_requests == 2
+    bridge.shutdown_finished.emit(True, "none")
+    assert view.close_count == 1
+
+
+def test_tray_close_failure_does_not_block_application_cleanup(
+    qt_application: QApplication,
+) -> None:
+    del qt_application
+    bridge = _ManualShutdownBridge()
+    main_window = _RecordingMainWindow()
+    close_events: list[str] = []
+    renderer = _FakeRenderer(close_events)
+    pet = PetWindow(renderer=renderer)
+    coordinator = PetApplicationCoordinator(
+        cast(QtRuntimeBridge, bridge),
+        cast(MainWindow, main_window),
+        pet,
+    )
+    factory = _FakeTrayFactory(
+        events=close_events,
+        fail_close_count=1,
+    )
+    tray = SystemTrayController(
+        coordinator,
+        view_factory=factory,
+        parent=coordinator,
+    )
+    coordinator.attach_system_tray(tray)
+    view = factory.view
+    assert view is not None
+    quit_spy = QSignalSpy(coordinator.quit_requested)
+
+    view.callbacks.request_safe_exit()
+    bridge.shutdown_finished.emit(True, "none")
+
+    assert _run_until(lambda: quit_spy.count() == 1)
+    assert tray.cleanup_pending
+    assert not tray.closed
+    assert tray.safe_code == "system_tray_cleanup_failed"
+    assert view.close_count == 1
+    assert renderer.closed
+    assert close_events == ["renderer"]
+    assert not pet.physics_timer.isActive()
+
+    assert tray.retry_pending_cleanup()
+    assert tray.closed
+    assert not tray.cleanup_pending
+    assert tray.safe_code == "none"
+    assert view.close_count == 2
+    assert close_events == ["renderer", "tray"]
+    assert quit_spy.count() == 1
+
+
+def test_runtime_shutdown_failure_contains_tray_refresh_failure(
+    qt_application: QApplication,
+) -> None:
+    del qt_application
+    bridge = _ManualShutdownBridge()
+    main_window = _RecordingMainWindow()
+    pet = PetWindow()
+    coordinator = PetApplicationCoordinator(
+        cast(QtRuntimeBridge, bridge),
+        cast(MainWindow, main_window),
+        pet,
+    )
+    factory = _FakeTrayFactory(fail_update_after=2)
+    tray = SystemTrayController(
+        coordinator,
+        view_factory=factory,
+        parent=coordinator,
+    )
+    coordinator.attach_system_tray(tray)
+    view = factory.view
+    assert view is not None
+
+    view.callbacks.request_safe_exit()
+    bridge.shutdown_finished.emit(False, "runtime_shutdown_failed")
+
+    assert tray.safe_code == "system_tray_refresh_failed"
+    assert not tray.closed
+    assert not tray.cleanup_pending
+    assert pet.lifecycle_state is PetLifecycleState.PAUSED
+    assert pet.physics_timer.isActive()
+    assert main_window.close_requests == 1
+
+    view.callbacks.request_safe_exit()
+    assert main_window.close_requests == 2
+    tray.complete_shutdown()
+    pet.complete_safe_close()
+
+
+def test_tray_smoke_uses_fake_tray_and_cleans_all_resources() -> None:
+    probe = Path(__file__).parents[2] / "scripts" / "qt_tray_smoke.py"
+    environment = {
+        **os.environ,
+        "QT_QPA_PLATFORM": "invalid-parent-platform",
+        "QT_QPA_FONTDIR": r"C:\Windows\Fonts",
+    }
+
+    result = subprocess.run(
+        [sys.executable, str(probe)],
+        cwd=probe.parents[1],
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=20,
+        check=False,
+    )
+
+    assert result.returncode == 0
+    assert result.stderr == ""
+    assert "qt_tray_smoke=True" in result.stdout
+    assert "fake_tray=True" in result.stdout
+    assert "tray_factory_calls=1" in result.stdout
+    assert "tray_close_count=1" in result.stdout
+    assert "missing_qt_platform_warnings=0" in result.stdout
+    assert "duplicate_qt_platform_warnings=0" in result.stdout
+    assert "unexpected_qt_warnings=0" in result.stdout
+    assert "qt_critical_messages=0" in result.stdout
+    assert "qt_other_messages=0" in result.stdout
+    assert "thread_running=False" in result.stdout
+    assert "pending_asyncio_tasks=0" in result.stdout
+    assert "timer_active=False" in result.stdout
+    assert "FT_New_Face failed" not in result.stdout
 
 
 def test_right_click_exit_waits_for_shutdown_result(

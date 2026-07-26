@@ -46,6 +46,7 @@ class PetWindow(QWidget):
 
     open_agent_requested = Signal()
     safe_exit_requested = Signal()
+    presentation_state_changed = Signal()
 
     def __init__(
         self,
@@ -129,6 +130,7 @@ class PetWindow(QWidget):
         except PetStateTransitionError:
             return
         self.update()
+        self.presentation_state_changed.emit()
 
     def set_always_on_top(self, enabled: bool) -> None:
         if (
@@ -141,6 +143,16 @@ class PetWindow(QWidget):
         self._apply_window_flags()
         if visible:
             self.show()
+        self.presentation_state_changed.emit()
+
+    def reclaim_to_workspace(self) -> None:
+        if self.lifecycle_state is PetLifecycleState.CLOSING:
+            return
+        snapshot = self._animation.motion.constrain(self._workspaces())
+        self.move(
+            round(snapshot.position.x),
+            round(snapshot.position.y),
+        )
 
     def request_safe_exit(self) -> None:
         if self._exit_emitted:
@@ -153,6 +165,7 @@ class PetWindow(QWidget):
         self._drag_offset = None
         self._animation_timer.stop()
         self.update()
+        self.presentation_state_changed.emit()
         self.safe_exit_requested.emit()
 
     def recover_from_failed_close(self) -> None:
@@ -163,6 +176,7 @@ class PetWindow(QWidget):
         self._last_tick = self._clock.now()
         self._animation_timer.start()
         self.update()
+        self.presentation_state_changed.emit()
 
     def complete_safe_close(self) -> None:
         self._allow_final_close = True
