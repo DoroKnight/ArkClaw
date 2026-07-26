@@ -246,6 +246,12 @@ wheels = [
 ]
 
 [[package]]
+name = "nuitka"
+version = "4.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/e5/d6/477dc84457fc07885f5fd020da4920e8a2787b2c04563ad444ac98f7d3eb/nuitka-4.0.tar.gz", hash = "sha256:0f404f292c3c2cc808d186d05a6d06a4b0aeca93f299cdfd5e33ddbcd19ab560", size = 4410008, upload-time = "2026-02-05T20:52:39.747Z" }
+
+[[package]]
 name = "openai"
 version = "2.48.0"
 source = { registry = "https://pypi.org/simple" }
@@ -478,16 +484,20 @@ dev = [
 gui = [
     { name = "pyside6" },
 ]
+packaging = [
+    { name = "nuitka" },
+]
 
 [package.metadata]
 requires-dist = [
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.14" },
+    { name = "nuitka", marker = "extra == 'packaging'", specifier = "==4.0" },
     { name = "openai", specifier = "==2.48.0" },
     { name = "pyside6", marker = "extra == 'gui'", specifier = "==6.11.1" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.3" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.9" },
 ]
-provides-extras = ["dev", "gui"]
+provides-extras = ["dev", "gui", "packaging"]
 
 [[package]]
 name = "sniffio"

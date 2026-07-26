@@ -42,9 +42,70 @@ artifact is generated, reviewers must separately:
 4. run the packaged application with network and Credential Manager access
    guarded, then perform separately authorized integration checks.
 
-Until the packaging dependency and artifact build are explicitly authorized,
-the correct gate remains:
+Before the packaging dependency was authorized, the recorded gate was:
 
 ```text
 safe_code=packaging_dependency_authorization_required
+```
+
+That dependency-only gate was satisfied by the reviewed Nuitka 4.0 pin and
+installation described below. It did not authorize a standalone build.
+
+## Pinned deployment tooling
+
+The packaging extra pins `Nuitka==4.0`; Nuitka is not a runtime dependency.
+The lock source is the official `https://pypi.org/simple` registry and the
+locked source archive is served by `files.pythonhosted.org`. No PyInstaller or
+additional package index is configured.
+
+The installed Nuitka distribution identifies its compiler package as
+AGPL-3.0-or-later. Its installed `LICENSE-RUNTIME.txt` grants an additional
+permission for Target Code produced through Nuitka's Compilation Process and
+states that the exception does not weaken the copyleft terms for Nuitka itself
+or a modified compiler. This repository does not treat that summary as legal
+advice and does not yet claim that a public distribution satisfies every
+Nuitka, Python, PySide6, Qt, OpenSSL, OpenAI SDK, or transitive dependency
+license obligation.
+
+## Auditable PySide deployment configuration
+
+`packaging/pet_entry.py` is the production deployment entry. It imports and
+calls only `sjtuclaw.presentation.qt.pet_application.run`. The deployment spec
+fixes:
+
+- application title `SJTUClaw`;
+- standalone mode and Nuitka 4.0;
+- Windows console mode `disable`;
+- final executable directory `dist`;
+- effective Nuitka work/output directory `build/windows-standalone`;
+- explicit `--include-module` options for QtCore, QtGui, QtWidgets, and
+  QtNetwork;
+- Qt platforms, platformthemes, and styles plugins;
+- explicit no-follow boundaries for `tests` and `scripts`.
+
+PySide6 6.11.1's deployment helper prepends its own
+`packaging/deployment` output option before configured Nuitka extra arguments.
+Nuitka 4.0 uses the last value of this single-value option, so the reviewed
+extra argument fixes the effective output at `build/windows-standalone`.
+Both directories, plus the helper's transient `packaging/deployment` directory,
+are ignored by Git.
+
+The Windows platform plugin set retains `qwindows`. Native widget appearance
+uses the styles and platformthemes groups. The current QtNetwork use is local
+IPC/single-instance coordination and does not require the Qt TLS plugin; cloud
+Provider HTTPS uses the Python HTTP stack. A future standalone build must still
+audit the DLL and plugin report before concluding that TLS runtime dependencies
+are complete.
+
+The spec does not include tests, docs, smoke tools, manual verification scripts,
+environment files, logs, caches, local settings, or external character assets.
+Source configuration tests cannot prove the final binary exclusion: the real
+standalone module report and filesystem still require a separate authorized
+review.
+
+This stage permits only `pyside6-deploy --dry-run`. Until a real build is
+separately authorized, the gate is:
+
+```text
+safe_code=standalone_build_authorization_required
 ```

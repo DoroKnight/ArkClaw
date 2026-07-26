@@ -25,6 +25,9 @@ dev = [
 gui = [
   "PySide6==6.11.1",
 ]
+packaging = [
+  "Nuitka==4.0",
+]
 
 [project.scripts]
 sjtuclaw-agent-demo = "sjtuclaw.__main__:main"

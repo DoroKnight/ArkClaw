@@ -10,6 +10,7 @@ htmlcov/
 venv/
 dist/
 build/
+packaging/deployment/
 *.egg-info/
 .env
 .env.*
