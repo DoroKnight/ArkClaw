@@ -137,6 +137,10 @@ Runtime。详见[占位桌宠窗口文档](docs/pet_window_placeholder.md)和
 [系统托盘文档](docs/system_tray.md)。生产桌宠入口还会在 Runtime 和窗口构造
 前执行本地单实例判定，详见[桌宠单实例文档](docs/single_instance.md)。
 
+桌宠的位置与置顶偏好使用独立的非敏感设置文档，不与 Provider Profile 或凭据
+混合。严格 JSON schema、原子写入、损坏保护及双生命周期离线 smoke 见
+[桌宠设置文档](docs/pet_settings.md)。
+
 ## 架构约束
 
 `domain` 和 `application` 包不得导入 PySide6、OpenAI、Ollama 或 SQLite。

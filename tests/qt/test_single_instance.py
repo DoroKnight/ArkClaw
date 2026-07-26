@@ -63,6 +63,9 @@ class _RecordingMainWindow:
 
 
 class _FakeApplication:
+    def __init__(self) -> None:
+        self.quit_count = 0
+
     def setApplicationName(self, value: str) -> None:
         del value
 
@@ -71,6 +74,12 @@ class _FakeApplication:
 
     def setQuitOnLastWindowClosed(self, value: bool) -> None:
         del value
+
+    def exec(self) -> int:
+        return 0
+
+    def quit(self) -> None:
+        self.quit_count += 1
 
 
 class _SecondaryOnlyManager:
@@ -1292,6 +1301,11 @@ def test_secondary_main_path_constructs_no_runtime_gui_or_tray(
     monkeypatch.setattr(pet_application, "PetWindow", forbidden)
     monkeypatch.setattr(
         pet_application,
+        "create_production_pet_settings_controller",
+        forbidden,
+    )
+    monkeypatch.setattr(
+        pet_application,
         "SystemTrayController",
         forbidden,
     )
@@ -1300,6 +1314,134 @@ def test_secondary_main_path_constructs_no_runtime_gui_or_tray(
 
     assert exit_code == 0
     assert constructed == []
+
+
+def test_owner_main_starts_runtime_window_and_tray_when_settings_fail(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[str] = []
+
+    class CallbackSignal:
+        def connect(self, callback: object) -> None:
+            del callback
+
+    class OwnerManager:
+        def __init__(self) -> None:
+            self.activation_requested = CallbackSignal()
+
+        def start(self) -> SingleInstanceResult:
+            events.append("owner")
+            return SingleInstanceResult(SingleInstanceRole.OWNER, "none")
+
+        def set_closing_probe(self, probe: object) -> None:
+            del probe
+
+        def close(self) -> None:
+            events.append("lock_close")
+
+    class FakePet:
+        def show(self) -> None:
+            events.append("pet")
+
+    class FakeCoordinator:
+        def __init__(
+            self,
+            bridge: object,
+            main_window: object,
+            pet_window: object,
+            *,
+            settings_controller: object,
+        ) -> None:
+            del bridge, main_window, pet_window
+            events.append(
+                getattr(settings_controller, "safe_code", "missing")
+            )
+            self.quit_requested = CallbackSignal()
+            self.pet_closing = False
+
+        def restore_pet_settings(self) -> None:
+            events.append("restore")
+
+        def attach_system_tray(self, tray: object) -> None:
+            del tray
+            events.append("tray")
+
+        def show_pet(self) -> None:
+            pass
+
+    def fail_settings_factory() -> object:
+        raise OSError("sk-test-never-use-this-value CredentialBlob")
+
+    def create_runtime_root(path: object) -> object:
+        del path
+        events.append("runtime_root")
+        return object()
+
+    def create_bridge(root: object) -> object:
+        del root
+        events.append("bridge")
+        return object()
+
+    def create_main_window(
+        bridge: object,
+        hide_on_close: bool,
+    ) -> object:
+        del bridge, hide_on_close
+        events.append("main")
+        return object()
+
+    fake_application = _FakeApplication()
+    monkeypatch.setattr(
+        pet_application,
+        "QApplication",
+        lambda argv: fake_application,
+    )
+    monkeypatch.setattr(
+        pet_application,
+        "create_production_single_instance",
+        lambda parent: OwnerManager(),
+    )
+    monkeypatch.setattr(
+        pet_application,
+        "create_production_pet_settings_controller",
+        fail_settings_factory,
+    )
+    monkeypatch.setattr(
+        pet_application,
+        "ProductionQtRuntimeCompositionRoot",
+        create_runtime_root,
+    )
+    monkeypatch.setattr(
+        pet_application,
+        "QtRuntimeBridge",
+        create_bridge,
+    )
+    monkeypatch.setattr(
+        pet_application,
+        "MainWindow",
+        create_main_window,
+    )
+    monkeypatch.setattr(pet_application, "PetWindow", FakePet)
+    monkeypatch.setattr(
+        pet_application,
+        "PetApplicationCoordinator",
+        FakeCoordinator,
+    )
+    monkeypatch.setattr(
+        pet_application,
+        "SystemTrayController",
+        lambda coordinator, parent: object(),
+    )
+
+    exit_code = pet_application.main([])
+
+    assert exit_code == 0
+    assert events[:2] == ["owner", "runtime_root"]
+    assert "pet_settings_initialization_failed" in events
+    assert "bridge" in events
+    assert "main" in events
+    assert "pet" in events
+    assert "tray" in events
 
 
 def test_invalid_sensitive_payload_is_not_exposed(

@@ -162,6 +162,27 @@ class PetMotionModel:
         )
         return self.snapshot
 
+    def restore_position(
+        self,
+        position: Point,
+        workspaces: tuple[Rect, ...],
+    ) -> PetMotionSnapshot:
+        """Restore and constrain a persisted position without changing state."""
+
+        workspace = select_workspace(
+            position,
+            self._window_size,
+            workspaces,
+        )
+        self._position = clamp_window_position(
+            position,
+            self._window_size,
+            workspace,
+        )
+        self._vertical_velocity = 0.0
+        self._landing_elapsed = 0.0
+        return self.snapshot
+
     def update(
         self,
         elapsed_seconds: float,

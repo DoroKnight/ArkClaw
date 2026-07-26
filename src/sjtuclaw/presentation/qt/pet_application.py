@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import sys
+from contextlib import suppress
 from typing import NoReturn
 
 from PySide6.QtCore import QObject, QTimer, Signal, Slot
 from PySide6.QtWidgets import QApplication
 
+from sjtuclaw.application.pet_settings import PetSettings
 from sjtuclaw.application.pet_state import PetLifecycleState
 from sjtuclaw.bootstrap.qt_runtime import (
     ProductionQtRuntimeCompositionRoot,
@@ -16,6 +18,10 @@ from sjtuclaw.presentation.qt.application import (
     default_provider_metadata_path,
 )
 from sjtuclaw.presentation.qt.main_window import MainWindow
+from sjtuclaw.presentation.qt.pet_settings_controller import (
+    PetSettingsController,
+    create_production_pet_settings_controller,
+)
 from sjtuclaw.presentation.qt.pet_window import PetWindow
 from sjtuclaw.presentation.qt.runtime_bridge import QtRuntimeBridge
 from sjtuclaw.presentation.qt.single_instance import (
@@ -35,11 +41,14 @@ class PetApplicationCoordinator(QObject):
         bridge: QtRuntimeBridge,
         main_window: MainWindow,
         pet_window: PetWindow,
+        *,
+        settings_controller: PetSettingsController | None = None,
     ) -> None:
         super().__init__()
         self._bridge = bridge
         self._main_window = main_window
         self._pet_window = pet_window
+        self._settings_controller = settings_controller
         self._system_tray: SystemTrayController | None = None
         self._pet_window.open_agent_requested.connect(self.open_agent_window)
         self._pet_window.safe_exit_requested.connect(
@@ -77,6 +86,33 @@ class PetApplicationCoordinator(QObject):
         if self._system_tray is None:
             return "system_tray_not_configured"
         return self._system_tray.safe_code
+
+    @property
+    def settings_safe_code(self) -> str:
+        if self._settings_controller is None:
+            return "pet_settings_not_configured"
+        return self._settings_controller.safe_code
+
+    def restore_pet_settings(self) -> None:
+        """Restore presentation settings before the owner window is shown."""
+
+        if self._settings_controller is None:
+            return
+        try:
+            result = self._settings_controller.load_once()
+            if result.settings is None:
+                return
+            self._pet_window.set_always_on_top(
+                result.settings.always_on_top
+            )
+            self._pet_window.restore_persisted_position(
+                result.settings.window_x,
+                result.settings.window_y,
+            )
+        except Exception:
+            self._settings_controller.record_restore_failure()
+            with suppress(Exception):
+                self._pet_window.restore_builtin_presentation_defaults()
 
     def attach_system_tray(
         self,
@@ -146,11 +182,45 @@ class PetApplicationCoordinator(QObject):
             if self._system_tray is not None:
                 self._system_tray.recover_failed_shutdown()
             return
+        try:
+            self._save_pet_settings()
+        except Exception:
+            if self._settings_controller is not None:
+                self._settings_controller.record_snapshot_failure()
         if self._system_tray is not None:
             self._system_tray.complete_shutdown()
         self._pet_window.complete_safe_close()
         self._main_window.request_safe_close()
         QTimer.singleShot(0, self.quit_requested.emit)
+
+    def _save_pet_settings(self) -> None:
+        if (
+            self._settings_controller is None
+            or not self._settings_controller.write_allowed
+        ):
+            return
+        try:
+            window_x, window_y, always_on_top = (
+                self._pet_window.persisted_presentation_state()
+            )
+            settings = PetSettings(
+                window_x=window_x,
+                window_y=window_y,
+                always_on_top=always_on_top,
+            )
+        except Exception:
+            self._settings_controller.record_snapshot_failure()
+            return
+        self._settings_controller.save_once(settings)
+
+
+def _create_optional_pet_settings_controller() -> PetSettingsController:
+    try:
+        controller = create_production_pet_settings_controller()
+        controller.load_once()
+    except Exception:
+        return PetSettingsController.initialization_failed()
+    return controller
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -164,6 +234,7 @@ def main(argv: list[str] | None = None) -> int:
     instance_result = single_instance.start()
     if instance_result.role is not SingleInstanceRole.OWNER:
         return instance_result.exit_code
+    settings_controller = _create_optional_pet_settings_controller()
     bridge = QtRuntimeBridge(
         ProductionQtRuntimeCompositionRoot(
             default_provider_metadata_path()
@@ -175,7 +246,9 @@ def main(argv: list[str] | None = None) -> int:
         bridge,
         main_window,
         pet_window,
+        settings_controller=settings_controller,
     )
+    coordinator.restore_pet_settings()
     pet_window.show()
     system_tray = SystemTrayController(
         coordinator,

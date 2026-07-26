@@ -76,6 +76,8 @@ class PetWindow(QWidget):
             workspace.right - _PET_WIDTH - 32,
             workspace.bottom - _PET_HEIGHT,
         )
+        self._default_always_on_top = always_on_top
+        self._default_position = initial
         motion = PetMotionModel(
             initial,
             Size(_PET_WIDTH, _PET_HEIGHT),
@@ -149,6 +151,48 @@ class PetWindow(QWidget):
         if self.lifecycle_state is PetLifecycleState.CLOSING:
             return
         snapshot = self._animation.motion.constrain(self._workspaces())
+        self.move(
+            round(snapshot.position.x),
+            round(snapshot.position.y),
+        )
+
+    def restore_persisted_position(self, window_x: int, window_y: int) -> None:
+        """Apply non-sensitive coordinates to the authoritative motion model."""
+
+        if self.lifecycle_state is PetLifecycleState.CLOSING:
+            return
+        snapshot = self._animation.motion.restore_position(
+            Point(window_x, window_y),
+            self._workspaces(),
+        )
+        self.move(
+            round(snapshot.position.x),
+            round(snapshot.position.y),
+        )
+
+    def persisted_presentation_state(self) -> tuple[int, int, bool]:
+        """Return a final constrained snapshot suitable for persistence."""
+
+        snapshot = self._animation.motion.constrain(self._workspaces())
+        self.move(
+            round(snapshot.position.x),
+            round(snapshot.position.y),
+        )
+        return (
+            round(snapshot.position.x),
+            round(snapshot.position.y),
+            self._always_on_top,
+        )
+
+    def restore_builtin_presentation_defaults(self) -> None:
+        """Restore constructor defaults after optional settings fail."""
+
+        self._always_on_top = self._default_always_on_top
+        self._apply_window_flags()
+        snapshot = self._animation.motion.restore_position(
+            self._default_position,
+            self._workspaces(),
+        )
         self.move(
             round(snapshot.position.x),
             round(snapshot.position.y),
