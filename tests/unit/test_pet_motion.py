@@ -15,42 +15,59 @@ from sjtuclaw.application.pet_motion import (
     PetMotionModel,
 )
 from sjtuclaw.application.pet_state import (
-    PET_STATE_SPECS,
-    PetState,
-    PetStateMachine,
+    PetBehaviorState,
+    PetFacing,
+    PetLayeredState,
+    PetLayeredStateMachine,
+    PetLifecycleState,
+    PetMotionState,
     PetStateTransitionError,
+    layered_state_priority,
 )
 
 _WINDOW = Size(100, 120)
 _WORKSPACE = Rect(0, 0, 800, 600)
 
 
-def test_every_pet_state_has_an_explicit_lifecycle_contract() -> None:
-    assert set(PET_STATE_SPECS) == set(PetState)
-    assert PET_STATE_SPECS[PetState.CLOSING].priority == max(
-        spec.priority for spec in PET_STATE_SPECS.values()
+def test_layered_state_starts_active_idle_and_breathing() -> None:
+    state = PetLayeredStateMachine().snapshot
+
+    assert state == PetLayeredState(
+        lifecycle=PetLifecycleState.ACTIVE,
+        motion=PetMotionState.IDLE,
+        behaviors=frozenset({PetBehaviorState.BREATHING}),
+        facing=PetFacing.RIGHT,
     )
-    assert not PET_STATE_SPECS[PetState.CLOSING].interruptible
-    assert all(spec.entry_condition for spec in PET_STATE_SPECS.values())
-    assert all(spec.exit_condition for spec in PET_STATE_SPECS.values())
+
+
+def test_layered_state_priority_places_close_above_drag_and_idle() -> None:
+    machine = PetLayeredStateMachine()
+    idle_priority = layered_state_priority(machine.snapshot)
+    machine.start_dragging()
+    dragging_priority = layered_state_priority(machine.snapshot)
+    machine.begin_closing()
+    closing_priority = layered_state_priority(machine.snapshot)
+
+    assert closing_priority > dragging_priority > idle_priority
 
 
 def test_state_machine_accepts_the_reviewed_drag_fall_land_path() -> None:
-    machine = PetStateMachine()
+    machine = PetLayeredStateMachine()
 
-    machine.transition(PetState.DRAGGING)
-    machine.transition(PetState.FALLING)
-    machine.transition(PetState.LANDING)
-    machine.transition(PetState.IDLE)
+    machine.start_dragging()
+    machine.release_drag()
+    machine.land()
+    machine.finish_landing()
 
-    assert machine.state is PetState.IDLE
+    assert machine.motion is PetMotionState.IDLE
+    assert machine.behaviors == frozenset({PetBehaviorState.BREATHING})
 
 
 def test_state_machine_rejects_an_illegal_direct_landing() -> None:
-    machine = PetStateMachine()
+    machine = PetLayeredStateMachine()
 
     with pytest.raises(PetStateTransitionError):
-        machine.transition(PetState.LANDING)
+        machine.land()
 
 
 def test_dragging_does_not_advance_falling_physics() -> None:
@@ -60,7 +77,10 @@ def test_dragging_does_not_advance_falling_physics() -> None:
 
     after = model.update(1.0, (_WORKSPACE,))
 
-    assert after.state is PetState.DRAGGING
+    assert after.state.motion is PetMotionState.DRAGGING
+    assert after.state.behaviors == frozenset(
+        {PetBehaviorState.DRAG_STRUGGLE}
+    )
     assert after.position == before.position
     assert after.vertical_velocity == 0
 
@@ -71,7 +91,8 @@ def test_releasing_drag_starts_falling() -> None:
 
     model.release_drag()
 
-    assert model.state is PetState.FALLING
+    assert model.state.motion is PetMotionState.FALLING
+    assert PetBehaviorState.DRAG_STRUGGLE not in model.state.behaviors
 
 
 def test_fall_reaches_landing_then_returns_to_idle() -> None:
@@ -88,9 +109,9 @@ def test_fall_reaches_landing_then_returns_to_idle() -> None:
     landed = model.update(0.2, (_WORKSPACE,))
     settled = model.update(0.2, (_WORKSPACE,))
 
-    assert landed.state is PetState.LANDING
+    assert landed.state.motion is PetMotionState.LANDING
     assert landed.position == Point(20, 480)
-    assert settled.state is PetState.IDLE
+    assert settled.state.motion is PetMotionState.IDLE
 
 
 @pytest.mark.parametrize(
@@ -163,10 +184,27 @@ def test_paused_motion_does_not_update_until_resumed() -> None:
     model.resume()
     resumed = model.update(0.1, (_WORKSPACE,))
 
-    assert paused.state is PetState.PAUSED
+    assert paused.state.lifecycle is PetLifecycleState.PAUSED
     assert paused.position == Point(20, 10)
-    assert resumed.state is PetState.FALLING
+    assert resumed.state.motion is PetMotionState.FALLING
     assert resumed.position.y > 10
+
+
+def test_paused_pet_can_be_dragged_without_resuming_physics() -> None:
+    model = PetMotionModel(Point(20, 10), _WINDOW)
+    model.pause()
+
+    model.start_dragging()
+    dragged = model.drag_to(Point(250, 180), (_WORKSPACE,))
+    model.release_drag()
+    after_release = model.update(10.0, (_WORKSPACE,))
+
+    assert dragged.state.lifecycle is PetLifecycleState.PAUSED
+    assert dragged.state.motion is PetMotionState.DRAGGING
+    assert not dragged.state.behaviors
+    assert after_release.state.lifecycle is PetLifecycleState.PAUSED
+    assert after_release.state.motion is PetMotionState.IDLE
+    assert after_release.position == Point(250, 180)
 
 
 def test_idle_pet_is_recovered_when_a_monitor_workspace_disappears() -> None:
@@ -174,7 +212,7 @@ def test_idle_pet_is_recovered_when_a_monitor_workspace_disappears() -> None:
 
     recovered = model.update(0.1, (Rect(0, 0, 800, 600),))
 
-    assert recovered.state is PetState.IDLE
+    assert recovered.state.motion is PetMotionState.IDLE
     assert recovered.position == Point(700, 100)
 
 
@@ -185,7 +223,7 @@ def test_closing_rejects_interaction_and_stops_physics() -> None:
 
     closed = model.update(10.0, (_WORKSPACE,))
 
-    assert closed.state is PetState.CLOSING
+    assert closed.state.lifecycle is PetLifecycleState.CLOSING
     assert closed.position == Point(20, 10)
     assert not model.accepts_interaction
     with pytest.raises(PetStateTransitionError):
@@ -198,5 +236,6 @@ def test_failed_close_recovery_is_paused_until_user_resumes() -> None:
 
     model.recover_failed_close()
 
-    assert model.state is PetState.PAUSED
-    assert not model.accepts_interaction
+    assert model.state.lifecycle is PetLifecycleState.PAUSED
+    assert model.accepts_interaction
+    assert model.update(10.0, (_WORKSPACE,)).position == Point(20, 10)

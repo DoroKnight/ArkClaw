@@ -21,19 +21,56 @@ shutdown path. A failed shutdown restores hide-on-close behavior for retry.
 The production startup remains lazy: constructing the pet does not activate a
 cloud Provider, read a credential, create a cloud client, or send a request.
 
-## State machine
+## Layered state and animation
 
-| State | Entry | Exit | Interruptible | Priority |
-|---|---|---|---:|---:|
-| `idle` | Landing completed | Drag, fall, pause, close | yes | 0 |
-| `falling` | Drag released | Ground, drag, pause, close | yes | 40 |
-| `landing` | Ground contact | Timer, drag, pause, close | yes | 50 |
-| `paused` | Explicit user action | Resume or close | yes | 70 |
-| `dragging` | Primary-button press | Release, pause, close | yes | 80 |
-| `closing` | Safe shutdown requested | Close or reviewed failure recovery | no | 100 |
+The lifecycle layer contains `active`, `paused`, and `closing`. The exclusive
+motion layer contains `idle`, `walking_left`, `walking_right`, `dragging`,
+`falling`, and `landing`. The behavior layer can combine `breathing`,
+`blinking`, `thinking`, `reminding`, and `drag_struggle` where the combination
+is valid.
 
-Closing stops interaction and the physics timer. A failed runtime shutdown
-returns the pet to a paused state so the process is not forcibly terminated.
+Examples include `idle + breathing + blinking`, `walking_left + blinking`,
+`dragging + drag_struggle`, and `idle + reminding`. Invalid combinations such
+as `closing + blinking`, `paused + breathing`, or `drag_struggle` without
+dragging fail closed.
+
+Priority is:
+
+```text
+closing > paused > dragging/drag_struggle > falling/landing
+> reminding > walking > thinking > idle/breathing/blinking
+```
+
+One GUI timer reads an injected monotonic clock and supplies explicit delta
+time to `PetAnimationEngine`. Delta is capped before movement or animation,
+and paused/closing lifecycles do not advance animation or random scheduling.
+A paused pet can still be dragged for manual repositioning; releasing it keeps
+the lifecycle paused and does not start falling. Blink and idle-action
+randomness use an injectable `random.Random`.
+
+`request_reminder_animation()` accepts no text or payload and only starts a
+local visual action. It does not access notifications, persistence, Provider
+state, or Agent output.
+
+## Replaceable renderer
+
+`PetWindow` produces a non-sensitive `PetRenderFrame` and passes it to the
+`PetRenderer` Protocol. `PlaceholderPetRenderer` contains all current QPainter
+character details. A future legally sourced renderer can replace it without
+changing Agent Runtime, Provider, dragging, workspace physics, behavior state,
+or safe shutdown.
+
+Breathing uses a local coordinate deformation that tapers to zero above the
+lower legs. The torso, shoulders, head, ears, face, and upper arms move
+slightly while the window, shadow, lower legs, and foot pixels remain fixed.
+Blinking is an independent eye overlay. Walking uses a stride/cycle-derived
+speed. Thinking and reminding use programmatic vector marks rather than font
+or image assets. Dragging uses procedural limb/body oscillation without
+changing mouse-follow coordinates.
+
+Closing stops interaction and the single animation timer. Renderer resources
+are closed after Runtime shutdown succeeds. A failed Runtime shutdown returns
+the pet to a paused state so the process is not forcibly terminated.
 
 ## Coordinates and displays
 
@@ -49,6 +86,13 @@ common scale factors.
 .\.venv\Scripts\python.exe .\scripts\qt_pet_smoke.py
 ```
 
-The smoke uses `FakeQtRuntimeCompositionRoot`, an offscreen Qt platform, a
-temporary metadata file, and no external assets, network, or Credential
-Manager access.
+The pet and Agent GUI commands are installed as Windows GUI launchers. The
+Agent development demo remains a console launcher.
+
+The smoke uses `FakeQtRuntimeCompositionRoot`, an offscreen Qt platform, an
+injectable clock/RNG, a temporary metadata file, and no external assets,
+network, or Credential Manager access. It covers breathing, blinking, walking,
+drag struggle, reminder completion, Agent-window hide/reopen, renderer close,
+timer close, and RuntimeThread close. A smoke-only Qt message handler counts
+exactly reviewed offscreen warnings; every unknown warning or critical message
+fails the smoke. It does not alter production Qt logging.

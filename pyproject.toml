@@ -28,6 +28,8 @@ gui = [
 
 [project.scripts]
 sjtuclaw-agent-demo = "sjtuclaw.__main__:main"
+
+[project.gui-scripts]
 sjtuclaw-gui = "sjtuclaw.presentation.qt.application:run"
 sjtuclaw-pet-placeholder = "sjtuclaw.presentation.qt.pet_application:run"
 
