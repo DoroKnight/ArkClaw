@@ -122,6 +122,16 @@ uv sync --extra dev --extra gui
 当前窗口不包含透明、置顶、托盘或动画桌宠效果。对象所有权、异步关闭和设置命令
 边界见 [Qt Provider 设置壳文档](docs/qt_provider_settings_shell.md)。
 
+原创程序化占位桌宠可通过下列命令单独启动：
+
+```powershell
+.\.venv\Scripts\sjtuclaw-pet-placeholder.exe
+```
+
+它使用透明无边框窗口、QPainter 占位角色、拖动/下落状态机与现有安全关机流程，
+不包含正式角色素材或 Spine Runtime。详见
+[占位桌宠窗口文档](docs/pet_window_placeholder.md)。
+
 ## 架构约束
 
 `domain` 和 `application` 包不得导入 PySide6、OpenAI、Ollama 或 SQLite。

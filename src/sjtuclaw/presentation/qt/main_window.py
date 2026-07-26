@@ -28,9 +28,16 @@ from sjtuclaw.presentation.qt.runtime_bridge import QtRuntimeBridge
 class MainWindow(QMainWindow):
     """Small responsive shell; visual desktop-pet behavior is intentionally absent."""
 
-    def __init__(self, bridge: QtRuntimeBridge) -> None:
+    def __init__(
+        self,
+        bridge: QtRuntimeBridge,
+        *,
+        hide_on_close: bool = False,
+    ) -> None:
         super().__init__()
         self._bridge = bridge
+        self._hide_on_close = hide_on_close
+        self._safe_close_requested = False
         self._runtime_ready = False
         self._turn_active = False
         self._closing = False
@@ -104,9 +111,19 @@ class MainWindow(QMainWindow):
     def settings_dialog(self) -> ProviderSettingsDialog | None:
         return self._settings_dialog
 
+    def request_safe_close(self) -> None:
+        """Enter the existing asynchronous closeEvent state machine."""
+
+        self._safe_close_requested = True
+        self.close()
+
     def closeEvent(self, event: QCloseEvent) -> None:
         if self._allow_final_close:
             event.accept()
+            return
+        if self._hide_on_close and not self._safe_close_requested:
+            event.ignore()
+            self.hide()
             return
         if not self._bridge.runtime_thread.isRunning():
             event.accept()
@@ -253,6 +270,7 @@ class MainWindow(QMainWindow):
             return
         if not success:
             self._closing = False
+            self._safe_close_requested = False
             self.runtime_label.setText("Runtime: shutdown failed")
             self.error_label.setText(
                 f"{safe_code}: Runtime shutdown failed safely; retry closing."
