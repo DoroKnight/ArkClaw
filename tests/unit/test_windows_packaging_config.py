@@ -10,11 +10,13 @@ import sys
 from pathlib import Path
 from types import ModuleType
 
+import PySide6
 import pytest
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 _SPEC_PATH = _PROJECT_ROOT / "packaging" / "pysidedeploy.spec"
 _ENTRY_PATH = _PROJECT_ROOT / "packaging" / "pet_entry.py"
+_BUILD_SCRIPT_PATH = _PROJECT_ROOT / "packaging" / "build_standalone.ps1"
 _PYPROJECT_PATH = _PROJECT_ROOT / "pyproject.toml"
 _LOCK_PATH = _PROJECT_ROOT / "uv.lock"
 
@@ -47,7 +49,18 @@ def test_packaging_spec_has_fixed_standalone_gui_configuration() -> None:
     assert parser["python"]["packages"] == "Nuitka==4.0"
     assert parser["nuitka"]["mode"] == "standalone"
     assert "--windows-console-mode=disable" in extra_args
-    assert "--output-dir=build/windows-standalone" in extra_args
+    assert not any(argument.startswith("--output-dir") for argument in extra_args)
+    assert "--msvc=14.4" in extra_args
+    assert "--disable-cache=ccache" in extra_args
+    assert "--output-filename=SJTUClaw.exe" in extra_args
+    assert (
+        "--report=build/windows-standalone/compilation-report.xml"
+        in extra_args
+    )
+    assert "--report-diffable" in extra_args
+    assert "--assume-yes-for-downloads" not in extra_args
+    assert not any("mingw" in argument.casefold() for argument in extra_args)
+    assert "--onefile" not in extra_args
     assert "--include-qt-plugins=platforms,platformthemes,styles" in extra_args
     assert {
         "--include-module=PySide6.QtCore",
@@ -71,10 +84,117 @@ def test_packaging_output_directories_are_git_ignored() -> None:
     assert "dist/" in ignore_text
     assert "packaging/deployment/" in ignore_text
     assert parser["app"]["exec_directory"] == "dist"
-    assert (
-        "--output-dir=build/windows-standalone"
-        in parser["nuitka"]["extra_args"].split()
+    assert not any(
+        argument.startswith("--output-dir")
+        for argument in parser["nuitka"]["extra_args"].split()
     )
+
+
+def test_pyside_dry_run_has_exactly_one_output_directory_source() -> None:
+    helper_path = (
+        Path(PySide6.__file__).resolve().parent
+        / "scripts"
+        / "deploy_lib"
+        / "nuitka_helper.py"
+    )
+    helper_text = helper_path.read_text(encoding="utf-8")
+    extra_args = _load_spec()["nuitka"]["extra_args"].split()
+
+    assert helper_text.count('f"--output-dir={output_dir}"') == 1
+    assert not any(argument.startswith("--output-dir") for argument in extra_args)
+    assert 'output_dir = source_file.parent / "deployment"' in helper_text
+
+
+def test_build_script_uses_repository_local_nuitka_cache() -> None:
+    text = _BUILD_SCRIPT_PATH.read_text(encoding="utf-8")
+
+    assert "$PSScriptRoot" in text
+    assert '"build\\nuitka-cache"' in text
+    assert "$env:NUITKA_CACHE_DIR = $NuitkaCachePath" in text
+    assert "AppData" not in text
+    assert re.search(r"(?im)^[^#\r\n]*[\"'][a-z]:[\\/]", text) is None
+
+
+def test_build_script_defaults_to_dry_run_and_requires_confirmation() -> None:
+    text = _BUILD_SCRIPT_PATH.read_text(encoding="utf-8")
+
+    assert "[switch]$ConfirmBuild" in text
+    assert "if (-not $ConfirmBuild)" in text
+    assert '$DeployArguments += "--dry-run"' in text
+    assert '$Mode = "dry_run"' in text
+    assert "--assume-yes-for-downloads" not in text
+    assert "--mingw64" not in text
+    assert "--onefile" not in text
+
+
+def test_real_build_checks_dependency_walker_before_deploy() -> None:
+    text = _BUILD_SCRIPT_PATH.read_text(encoding="utf-8")
+    dependency_check = text.index(
+        'Stop-Safe -SafeCode "dependency_walker_not_cached"'
+    )
+    deploy_invocation = text.index(
+        "$DeployExitCode = Invoke-DeployWithClosedInput"
+    )
+
+    assert '"downloads\\depends\\x86_64\\depends.exe"' in text
+    assert dependency_check < deploy_invocation
+    assert "$Process.StandardInput.Close()" in text
+
+
+def test_build_script_enforces_exact_msvc_x64_toolchain() -> None:
+    text = _BUILD_SCRIPT_PATH.read_text(encoding="utf-8")
+
+    assert '$RequiredMsvcToolsVersion = "14.44.35207"' in text
+    assert '$RequiredCompilerVersionPrefix = "19.44."' in text
+    assert '$RequiredPythonCompiler = "MSC v.1944"' in text
+    assert (
+        '"VC\\Tools\\MSVC\\$RequiredMsvcToolsVersion\\bin\\Hostx64\\x64"'
+        in text
+    )
+    assert '@("cl.exe", "link.exe", "dumpbin.exe")' in text
+    assert '$env:VSCMD_ARG_HOST_ARCH -ne "x64"' in text
+    assert '$env:VSCMD_ARG_TGT_ARCH -ne "x64"' in text
+    assert '$HostArch = "amd64"' in text
+    assert '$Arch = "amd64"' in text
+    assert "msys_link_rejected" in text
+    assert "msvc_toolchain_mismatch" in text
+
+
+def test_build_script_checks_nuitka_version_and_never_compiles_on_parse() -> None:
+    text = _BUILD_SCRIPT_PATH.read_text(encoding="utf-8")
+
+    assert "& $PythonPath -m nuitka --version" in text
+    assert "$LASTEXITCODE -ne 0" in text
+    assert "if (-not $ConfirmBuild)" in text
+
+    if os.name != "nt":
+        pytest.skip("PowerShell parser probe is Windows-specific")
+    parse_command = (
+        "$tokens=$null; $errors=$null; "
+        "[System.Management.Automation.Language.Parser]::"
+        f"ParseFile('{_BUILD_SCRIPT_PATH}',[ref]$tokens,[ref]$errors)"
+        " | Out-Null; "
+        "if ($errors.Count -ne 0) { $errors | ForEach-Object { "
+        "[Console]::Error.WriteLine($_.Message) }; exit 1 }"
+    )
+    completed = subprocess.run(
+        [
+            "powershell.exe",
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            parse_command,
+        ],
+        cwd=_PROJECT_ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+    assert completed.returncode == 0
+    assert completed.stdout == ""
+    assert completed.stderr == ""
 
 
 @pytest.mark.parametrize(

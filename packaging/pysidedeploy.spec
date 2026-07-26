@@ -18,4 +18,4 @@ plugins = platforms,platformthemes,styles
 
 [nuitka]
 mode = standalone
-extra_args = --quiet --windows-console-mode=disable --output-dir=build/windows-standalone --include-module=PySide6.QtCore --include-module=PySide6.QtGui --include-module=PySide6.QtWidgets --include-module=PySide6.QtNetwork --include-qt-plugins=platforms,platformthemes,styles --nofollow-import-to=tests --nofollow-import-to=scripts --noinclude-qt-translations
+extra_args = --quiet --windows-console-mode=disable --msvc=14.4 --disable-cache=ccache --output-filename=SJTUClaw.exe --report=build/windows-standalone/compilation-report.xml --report-diffable --include-module=PySide6.QtCore --include-module=PySide6.QtGui --include-module=PySide6.QtWidgets --include-module=PySide6.QtNetwork --include-qt-plugins=platforms,platformthemes,styles --nofollow-import-to=tests --nofollow-import-to=scripts --noinclude-qt-translations

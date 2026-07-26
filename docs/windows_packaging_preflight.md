@@ -77,18 +77,23 @@ fixes:
 - standalone mode and Nuitka 4.0;
 - Windows console mode `disable`;
 - final executable directory `dist`;
-- effective Nuitka work/output directory `build/windows-standalone`;
+- MSVC selection `14.4` and disabled `ccache`;
+- executable name `SJTUClaw.exe`;
+- a diffable compilation report at
+  `build/windows-standalone/compilation-report.xml`;
 - explicit `--include-module` options for QtCore, QtGui, QtWidgets, and
   QtNetwork;
 - Qt platforms, platformthemes, and styles plugins;
 - explicit no-follow boundaries for `tests` and `scripts`.
 
-PySide6 6.11.1's deployment helper prepends its own
-`packaging/deployment` output option before configured Nuitka extra arguments.
-Nuitka 4.0 uses the last value of this single-value option, so the reviewed
-extra argument fixes the effective output at `build/windows-standalone`.
-Both directories, plus the helper's transient `packaging/deployment` directory,
-are ignored by Git.
+PySide6 6.11.1's deployment helper supplies exactly one Nuitka output option:
+`--output-dir=<entry directory>/deployment`. The repository spec deliberately
+contains no second `--output-dir`. For this entry point, Nuitka's temporary
+standalone result is therefore `packaging/deployment/pet_entry.dist`.
+PySide6's `finalize()` copies that directory to the configured title and
+execution directory, producing `dist/SJTUClaw.dist`. This avoids relying on
+duplicate-option ordering. `build/`, `dist/`, and the transient
+`packaging/deployment/` directory are ignored by Git.
 
 The Windows platform plugin set retains `qwindows`. Native widget appearance
 uses the styles and platformthemes groups. The current QtNetwork use is local
@@ -103,9 +108,99 @@ Source configuration tests cannot prove the final binary exclusion: the real
 standalone module report and filesystem still require a separate authorized
 review.
 
-This stage permits only `pyside6-deploy --dry-run`. Until a real build is
-separately authorized, the gate is:
+## Controlled build entry and MSVC gate
+
+`packaging/build_standalone.ps1` derives the repository root from
+`$PSScriptRoot` and sets `NUITKA_CACHE_DIR` to the repository-local
+`build/nuitka-cache`. It does not use the per-user AppData cache. With no
+arguments, it activates and validates the toolchain and invokes
+`pyside6-deploy` only with `--dry-run`. A real build additionally requires the
+explicit `-ConfirmBuild` switch.
+
+The script accepts an optional Visual Studio installation path or discovers
+one with the installed `vswhere.exe`; no workstation-specific Visual Studio
+path is committed. Before deployment it requires all of the following:
+
+- MSVC tools version `14.44.35207`;
+- `cl.exe`, `link.exe`, and `dumpbin.exe` from the same
+  `Hostx64/x64` directory;
+- no MSYS `link.exe`;
+- compiler version 19.44;
+- a 64-bit AMD64 Python built with `MSC v.1944`;
+- normalized host and target architecture `amd64`;
+- a successful `python -m nuitka --version` result equal to 4.0.
+
+The deployment subprocess receives closed standard input. This is a
+fail-closed backstop against interactive download prompts; it is not a
+substitute for the explicit cache precheck.
+
+## Dependency Walker boundary
+
+Inspection of the installed Nuitka 4.0 source confirms that Windows standalone
+and onefile dependency analysis calls its Dependency Walker integration. For
+x64 the hard-coded URL is:
 
 ```text
-safe_code=standalone_build_authorization_required
+https://dependencywalker.com/depends22_x64.zip
+```
+
+With the repository-local cache, Nuitka expects the extracted executable at:
+
+```text
+build/nuitka-cache/downloads/depends/x86_64/depends.exe
+```
+
+Nuitka's current downloader does not carry a fixed expected SHA-256 for this
+ZIP. It can prompt before downloading, and its generic downloader may retry an
+HTTPS download over HTTP after a transport failure. The project therefore does
+not delegate acquisition to Nuitka. `--assume-yes-for-downloads` is forbidden,
+`ccache` is disabled, and MSVC is selected explicitly so a missing compiler
+cannot silently select a downloadable MinGW toolchain. `dumpbin.exe` is used
+by parts of PySide deployment inspection, but it cannot replace Nuitka's
+explicit Dependency Walker path.
+
+When `-ConfirmBuild` is present, the build script checks the exact cached
+`depends.exe` path before starting `pyside6-deploy`. If it is absent, the
+script exits nonzero with:
+
+```text
+safe_code=dependency_walker_not_cached
+```
+
+This stage does not download or execute Dependency Walker and does not perform
+a real Nuitka compilation.
+
+### Separately authorized acquisition plan
+
+A later stage requires explicit authorization for `dependencywalker.com` and
+may download only `depends22_x64.zip`. That stage must:
+
+1. record the ZIP SHA-256, byte size, and final resolved URL;
+2. reject ZIP path traversal, absolute paths, links, duplicate names,
+   unexpected files, and abnormal sizes before extraction;
+3. extract only the required `depends.exe`;
+4. record the extracted executable's SHA-256;
+5. inspect and record its Authenticode signature status;
+6. locate, review, and preserve applicable license information;
+7. obtain user confirmation before executing the binary;
+8. disable network access again before the first standalone compilation;
+9. keep standard input closed so later missing tools fail rather than prompt
+   for another download.
+
+Because Nuitka 4.0 supplies no pinned expected hash, the recorded hash is an
+audit observation, not proof that the upstream binary is trustworthy.
+
+## Diagnostic icon limitation
+
+An empty `icon` field causes `pyside6-deploy` to use the default icon supplied
+with PySide6. It is permitted only for a local diagnostic package. It is not an
+SJTUClaw brand asset and must not be presented as the final product icon.
+Before distribution it must be replaced by an original, explicitly authorized
+ICO. This stage does not add or generate character artwork.
+
+Until the separately authorized Dependency Walker acquisition is completed,
+the gate is:
+
+```text
+safe_code=dependency_walker_authorization_required
 ```
