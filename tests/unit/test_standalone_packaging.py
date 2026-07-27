@@ -137,6 +137,7 @@ def _prepare_build_root(root: Path) -> None:
         ),
         encoding="utf-8",
     )
+    (root / _BUILD.THIRD_BUILD_TEMP_RELATIVE_PATH).mkdir(parents=True)
 
 
 def _prepare_dry_run_root(root: Path) -> None:
@@ -788,6 +789,21 @@ class _FakeBuildRunner:
         assert environment["UV_OFFLINE"] == "1"
         assert environment["VIRTUAL_ENV"].endswith(".venv-packaging")
         assert ".venv-packaging" in environment["PATH"]
+        expected_temp = (
+            working_directory
+            / _BUILD.THIRD_BUILD_TEMP_RELATIVE_PATH
+        ).resolve()
+        assert Path(environment["TEMP"]).resolve() == expected_temp
+        assert Path(environment["TMP"]).resolve() == expected_temp
+        assert Path(environment["TMPDIR"]).resolve() == expected_temp
+        assert expected_temp.is_dir()
+        assert expected_temp.parent == (
+            working_directory / "build"
+        ).resolve()
+        assert not any(
+            "ExternalTemp" in environment[name]
+            for name in ("TEMP", "TMP", "TMPDIR")
+        )
         assert "PYTHONPATH" not in environment
         assert "OPENAI_API_KEY" not in environment
         stdout_path.write_text(self.sensitive_log, encoding="utf-8")
@@ -827,6 +843,9 @@ def _run_build(
         environment={
             "PATH": "fixed",
             "SYSTEMROOT": r"C:\Windows",
+            "TEMP": r"C:\ExternalTemp",
+            "TMP": r"C:\ExternalTemp",
+            "TMPDIR": r"C:\ExternalTemp",
             "OPENAI_API_KEY": "sk-real-never-record",
             "SERVICE_TOKEN": "sensitive-token",
         },

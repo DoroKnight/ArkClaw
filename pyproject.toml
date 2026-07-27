@@ -58,5 +58,17 @@ select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
 [tool.mypy]
 python_version = "3.12"
 strict = true
-files = ["src", "tests"]
+files = [
+  "src",
+  "tests",
+  "scripts",
+  "packaging",
+]
 mypy_path = "src"
+exclude = '''(?x)(
+  ^build/
+  | ^dist/
+  | ^packaging/deployment/
+  | ^\.venv/
+  | ^\.venv-packaging/
+)'''

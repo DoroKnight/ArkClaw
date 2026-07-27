@@ -22,6 +22,9 @@ $PythonPath = Join-Path $PackagingEnvironment "Scripts\python.exe"
 $DeployPath = Join-Path $PackagingEnvironment "Scripts\pyside6-deploy.exe"
 $SpecPath = Join-Path $RepositoryRoot "packaging\pysidedeploy.spec"
 $NuitkaCachePath = Join-Path $RepositoryRoot "build\nuitka-cache"
+$ThirdBuildTempPath = Join-Path `
+    $RepositoryRoot `
+    "build\standalone-third-build-temp"
 $QtPluginRoot = Join-Path `
     $RepositoryRoot `
     ".venv-packaging\Lib\site-packages\PySide6\plugins"
@@ -428,6 +431,85 @@ function Set-PackagingProcessEnvironment {
     $env:PYTHONHOME = $null
 }
 
+function Confirm-ThirdBuildTempTarget {
+    try {
+        $BuildRoot = [System.IO.Path]::GetFullPath(
+            (Join-Path $RepositoryRoot "build")
+        )
+        $ExpectedPath = [System.IO.Path]::GetFullPath(
+            (Join-Path $BuildRoot "standalone-third-build-temp")
+        )
+        $ConfiguredPath = [System.IO.Path]::GetFullPath(
+            $ThirdBuildTempPath
+        )
+        $ConfiguredParent = [System.IO.Directory]::GetParent(
+            $ConfiguredPath
+        )
+    }
+    catch {
+        Stop-Safe -SafeCode "filesystem_scope_violation"
+    }
+    if (
+        $null -eq $ConfiguredParent -or
+        -not $ConfiguredPath.Equals(
+            $ExpectedPath,
+            [System.StringComparison]::OrdinalIgnoreCase
+        ) -or
+        -not $ConfiguredParent.FullName.Equals(
+            $BuildRoot,
+            [System.StringComparison]::OrdinalIgnoreCase
+        )
+    ) {
+        Stop-Safe -SafeCode "filesystem_scope_violation"
+    }
+}
+
+function Set-ThirdBuildTempEnvironment {
+    $env:TEMP = $ThirdBuildTempPath
+    $env:TMP = $ThirdBuildTempPath
+    $env:TMPDIR = $ThirdBuildTempPath
+}
+
+function Confirm-ThirdBuildTempEnvironment {
+    if (
+        -not (Test-Path `
+            -LiteralPath $ThirdBuildTempPath `
+            -PathType Container)
+    ) {
+        Stop-Safe -SafeCode "filesystem_scope_violation"
+    }
+    foreach ($VariableName in @("TEMP", "TMP", "TMPDIR")) {
+        $Value = [System.Environment]::GetEnvironmentVariable(
+            $VariableName,
+            [System.EnvironmentVariableTarget]::Process
+        )
+        try {
+            $ResolvedValue = [System.IO.Path]::GetFullPath($Value)
+        }
+        catch {
+            Stop-Safe -SafeCode "filesystem_scope_violation"
+        }
+        if (
+            -not $ResolvedValue.Equals(
+                $ThirdBuildTempPath,
+                [System.StringComparison]::OrdinalIgnoreCase
+            )
+        ) {
+            Stop-Safe -SafeCode "filesystem_scope_violation"
+        }
+    }
+}
+
+function Confirm-NuitkaVersion {
+    $NuitkaVersionOutput = & $PythonPath -m nuitka --version
+    if ($LASTEXITCODE -ne 0) {
+        Stop-Safe -SafeCode "nuitka_version_check_failed"
+    }
+    if (($NuitkaVersionOutput | Select-Object -First 1) -ne "4.0") {
+        Stop-Safe -SafeCode "nuitka_version_mismatch"
+    }
+}
+
 if (-not (Test-Path -LiteralPath $PythonPath -PathType Leaf)) {
     Stop-Safe -SafeCode "python_environment_not_found"
 }
@@ -493,15 +575,8 @@ $SensitiveEnvironmentPattern = (
     }
 Set-PackagingProcessEnvironment
 
-$NuitkaVersionOutput = & $PythonPath -m nuitka --version
-if ($LASTEXITCODE -ne 0) {
-    Stop-Safe -SafeCode "nuitka_version_check_failed"
-}
-if (($NuitkaVersionOutput | Select-Object -First 1) -ne "4.0") {
-    Stop-Safe -SafeCode "nuitka_version_mismatch"
-}
-
 if (-not $ConfirmBuild) {
+    Confirm-NuitkaVersion
     & $PythonPath `
         $StandaloneBuildController `
         --prepare-dry-run-workspace
@@ -544,16 +619,13 @@ if (-not $ConfirmBuild) {
     exit 0
 }
 
-$SelectedVisualStudio = Find-VisualStudioInstallation `
-    -RequestedPath $VisualStudioPath
-Import-MsvcEnvironment -InstallationPath $SelectedVisualStudio
-Set-PackagingProcessEnvironment
-Confirm-MsvcToolchain -InstallationPath $SelectedVisualStudio
-
 foreach ($ProtectedOutputPath in $ProtectedOutputPaths) {
     if (Test-Path -LiteralPath $ProtectedOutputPath) {
         Stop-Safe -SafeCode "standalone_output_occupied"
     }
+}
+if (Test-Path -LiteralPath $ThirdBuildTempPath) {
+    Stop-Safe -SafeCode "standalone_output_occupied"
 }
 try {
     $RepositoryDrive = [System.IO.DriveInfo]::new(
@@ -566,6 +638,26 @@ try {
 catch {
     Stop-Safe -SafeCode "standalone_disk_space_insufficient"
 }
+
+Confirm-ThirdBuildTempTarget
+try {
+    [System.IO.Directory]::CreateDirectory(
+        $ThirdBuildTempPath
+    ) | Out-Null
+}
+catch {
+    Stop-Safe -SafeCode "standalone_build_failed"
+}
+Set-ThirdBuildTempEnvironment
+
+$SelectedVisualStudio = Find-VisualStudioInstallation `
+    -RequestedPath $VisualStudioPath
+Import-MsvcEnvironment -InstallationPath $SelectedVisualStudio
+Set-PackagingProcessEnvironment
+Set-ThirdBuildTempEnvironment
+Confirm-ThirdBuildTempEnvironment
+Confirm-MsvcToolchain -InstallationPath $SelectedVisualStudio
+Confirm-NuitkaVersion
 
 & $PythonPath $DependencyWalkerCacheValidator --validate-cache
 if ($LASTEXITCODE -ne 0) {

@@ -835,3 +835,65 @@ starts:
 8. use fresh output directories rather than reusing the current dist;
 9. rerun the complete manifest, PE, DLL, Qt, secret, path, dependency-surface,
    and preliminary license audits after that separately authorized build.
+
+### Prebuild scope recovery checkpoint
+
+The first recovery gate invoked:
+
+```text
+mypy --strict --no-incremental .
+```
+
+The positional `.` overrode the controlled `pyproject.toml` discovery scope
+and caused mypy to scan duplicate pytest project copies retained below
+`build/test-temp-prebuild`. That directory is failure evidence, not production
+source. Its ignored read-only manifest records 1,397 files totaling 3,631,194
+bytes, including 14 copies of `pet_entry.py`, with manifest SHA-256
+`37884ae98e0d08c760aa30b18c90bf16288349ab3a5abe0aeb697c829b76188e`.
+The evidence directory was not deleted, moved, overwritten, or reused.
+
+The canonical type-check command is now:
+
+```text
+.\.venv\Scripts\mypy.exe --strict --no-incremental
+```
+
+It relies on this explicit repository-relative allowlist:
+
+```text
+src
+tests
+scripts
+packaging
+```
+
+Anchored exclusions cover only `build/`, `dist/`,
+`packaging/deployment/`, `.venv/`, and `.venv-packaging/`. The recovery
+gate checked 125 source files successfully while the preserved failure
+evidence remained present.
+
+The first regression fixture created empty `src` and `tests` directories, so
+mypy stopped before reaching the deliberate errors. Valid
+`src/fixture_package/__init__.py` and `tests/test_fixture.py` files correct
+discovery without changing production package semantics. The next fixture
+used `scripts/type_error.py` and `packaging/type_error.py`; because those
+directories are not packages, mypy derived the same top-level module name
+twice. The final fixture uses distinct
+`scripts/script_scope_type_error.py` and
+`packaging/packaging_scope_type_error.py` basenames. Both deliberate return
+type errors are reported with exit code 1, proving that neither production
+directory was excluded or weakened.
+
+The confirmed-build entry validates that
+`build/standalone-third-build-temp` is the exact direct controlled child of
+the repository `build` directory. It creates that directory and assigns
+`TEMP`, `TMP`, and `TMPDIR` before importing `vcvarsall.bat`; after importing
+the MSVC environment it reapplies the packaging environment, assigns all
+three variables again, normalizes them, and verifies exact equality before
+Python, Nuitka, cl, link, dumpbin, or Dependency Walker may run.
+
+This checkpoint ran no Nuitka compilation, compiler, Dependency Walker,
+packaged executable, artifact audit, network request, Credential Manager
+operation, or real Provider. The incident record still reports zero
+third-build attempts. A third standalone build remains separately
+authorization-gated.

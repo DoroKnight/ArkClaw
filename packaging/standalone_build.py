@@ -26,6 +26,9 @@ from typing import Protocol
 from dependency_walker_cache import validate_dependency_walker_cache
 
 BUILD_RELATIVE_PATH = Path("build/windows-standalone")
+THIRD_BUILD_TEMP_RELATIVE_PATH = Path(
+    "build/standalone-third-build-temp"
+)
 RAW_DIST_RELATIVE_PATH = Path("packaging/deployment/pet_entry.dist")
 FINAL_DIST_RELATIVE_PATH = Path("dist/SJTUClaw.dist")
 TRACKED_SPEC_RELATIVE_PATH = Path("packaging/pysidedeploy.spec")
@@ -332,6 +335,15 @@ def sanitized_build_environment(
             "UV_OFFLINE": "1",
             "NUITKA_CACHE_DIR": os.fspath(
                 repository_root / "build/nuitka-cache"
+            ),
+            "TEMP": os.fspath(
+                repository_root / THIRD_BUILD_TEMP_RELATIVE_PATH
+            ),
+            "TMP": os.fspath(
+                repository_root / THIRD_BUILD_TEMP_RELATIVE_PATH
+            ),
+            "TMPDIR": os.fspath(
+                repository_root / THIRD_BUILD_TEMP_RELATIVE_PATH
             ),
             "VIRTUAL_ENV": os.fspath(
                 repository_root / ".venv-packaging"
