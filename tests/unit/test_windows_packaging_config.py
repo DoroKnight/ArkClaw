@@ -27,6 +27,9 @@ _INVENTORY_PATH = (
 _PYPROJECT_PATH = _PROJECT_ROOT / "pyproject.toml"
 _LOCK_PATH = _PROJECT_ROOT / "uv.lock"
 _TYPECHECK_SCRIPT_PATH = _PROJECT_ROOT / "scripts" / "typecheck.ps1"
+_OPENAI_SDK_PATH = (
+    _PROJECT_ROOT / "src/sjtuclaw/infrastructure/llm/openai_sdk.py"
+)
 
 
 def _load_spec() -> configparser.ConfigParser:
@@ -227,6 +230,44 @@ def test_typecheck_command_uses_configured_scope_without_dot_override() -> None:
         in text
     )
     assert re.search(r"--no-incremental\s+\.", text) is None
+
+
+def test_recursive_json_alias_keeps_nuitka_runtime_compatibility() -> None:
+    source = _OPENAI_SDK_PATH.read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    recursive_pep_695_aliases = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.TypeAlias)
+        and isinstance(node.name, ast.Name)
+        and node.name.id == "JSONValue"
+        and any(
+            isinstance(child, ast.Name) and child.id == "JSONValue"
+            for child in ast.walk(node.value)
+        )
+    ]
+    compatible_aliases = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.AnnAssign)
+        and isinstance(node.target, ast.Name)
+        and node.target.id == "JSONValue"
+        and isinstance(node.annotation, ast.Name)
+        and node.annotation.id == "TypeAlias"
+    ]
+
+    assert recursive_pep_695_aliases == []
+    assert len(compatible_aliases) == 1
+    alias = compatible_aliases[0]
+    assert alias.value is not None
+    forward_references = [
+        node.value
+        for node in ast.walk(alias.value)
+        if isinstance(node, ast.Constant) and isinstance(node.value, str)
+    ]
+    assert forward_references.count("JSONValue") == 2
+    assert "Nuitka 4.0 eagerly resolves the recursive PEP 695 alias" in source
+    assert "JSONValue: TypeAlias = (  # noqa: UP040" in source
 
 
 def test_mypy_scope_detects_script_and_packaging_type_errors(

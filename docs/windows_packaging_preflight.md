@@ -959,3 +959,53 @@ The skipped pytest case remains the explicitly gated real Windows Credential
 Manager integration test. No real Provider, API key, Credential Manager
 integration, packaged executable, DLL, or PYD was run or loaded. Runtime
 execution of the packaged application remains separately authorization-gated.
+
+### Recursive JSON alias corrective source checkpoint
+
+The first authorized packaged-runtime owner launch created the audited
+standalone executable once and exited with code 1 before Qt, the runtime,
+SecretStore, or any Provider was initialized. The compiled
+`sjtuclaw.infrastructure.llm.openai_sdk` module raised a `NameError` while
+binding the self-recursive `JSONValue` PEP 695 alias. CPython imports the same
+source successfully, but Nuitka 4.0 eagerly resolved the recursive reference
+while initializing the compiled module.
+
+The source-level correction retains `JSONScalar`, `JSONValue`, and
+`JSONObject` and preserves their recursive static typing. Only the recursive
+edges now use string forward references through an explicitly documented
+`TypeAlias` compatibility exception. The alias was not weakened to `Any` or
+`object`, and the OpenAI request, response-event, normalization, Provider, and
+SDK adapter APIs remain unchanged. A repository-wide AST check found no other
+self-recursive PEP 695 alias; the packaging regression test prevents this
+specific alias from returning to the incompatible form.
+
+Invalid JSON normalization continues to raise `OpenAISDKError` with
+`code == "invalid_response"` for internal classification. Its user-visible
+message and exception arguments remain the fixed sanitized text
+`The OpenAI SDK operation failed safely.`. Regression tests verify that raw
+invalid input is absent from `str`, `repr`, formatted traceback, and
+`logger.exception` output.
+
+Corrective source-level regression results were:
+
+```text
+OpenAI SDK: 33 passed
+OpenAI Provider: 80 passed
+pytest: 935 passed, 1 skipped
+ruff: all checks passed
+mypy strict: 125 source files checked successfully
+PowerShell AST: 10 files passed
+git diff --check: passed
+Qt Fake smokes: 6 passed
+production imports: valid
+Fake Provider smoke: passed
+forbidden production imports: 0
+OpenAI manual entry: manual_verification_disabled
+DeepSeek manual entry: manual_verification_disabled
+```
+
+No Nuitka, MSVC, Dependency Walker, network, Credential Manager, or real
+Provider operation was performed during this corrective checkpoint. The old
+70-file standalone remains the known failing artifact and was not modified or
+executed again. A corrected standalone has not yet been generated; rebuilding
+and auditing it requires separate authorization.

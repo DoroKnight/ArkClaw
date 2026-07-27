@@ -7,7 +7,7 @@ import math
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Literal, Protocol, cast
+from typing import Literal, Protocol, TypeAlias, cast
 
 import openai
 from openai import AsyncOpenAI, AsyncStream
@@ -40,7 +40,11 @@ from openai.types.responses.response_stream_event import ResponseStreamEvent
 from openai.types.responses.response_text_delta_event import ResponseTextDeltaEvent
 
 type JSONScalar = bool | int | float | str | None
-type JSONValue = JSONScalar | list[JSONValue] | dict[str, JSONValue]
+# Nuitka 4.0 eagerly resolves the recursive PEP 695 alias in compiled
+# modules, so retain string-based forward references for the recursive edges.
+JSONValue: TypeAlias = (  # noqa: UP040
+    JSONScalar | list["JSONValue"] | dict[str, "JSONValue"]
+)
 type JSONObject = dict[str, JSONValue]
 type OpenAIResponseFailureCode = Literal["output_budget_exhausted"]
 

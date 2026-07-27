@@ -1,7 +1,8 @@
 import asyncio
+import importlib
 import logging
 import traceback
-from typing import NoReturn, cast
+from typing import Any, NoReturn, cast
 
 import httpx
 import openai
@@ -25,6 +26,108 @@ from sjtuclaw.infrastructure.llm.openai_sdk import (
 )
 
 _FAKE_API_KEY = "sk-test-never-use-this-value"
+_SAFE_SDK_ERROR_MESSAGE = "The OpenAI SDK operation failed safely."
+
+
+class _InvalidJSONValue:
+    def __repr__(self) -> str:
+        return "invalid-json-object-never-log"
+
+
+def _assert_invalid_response_contract(error: OpenAISDKError) -> None:
+    assert error.code == "invalid_response"
+    assert str(error) == _SAFE_SDK_ERROR_MESSAGE
+    assert error.args == (_SAFE_SDK_ERROR_MESSAGE,)
+    assert "invalid_response" not in str(error)
+
+
+def _assert_invalid_value_is_not_exposed(
+    value: object,
+    error: OpenAISDKError,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    raw_value = repr(value)
+    formatted_traceback = "".join(
+        traceback.format_exception(type(error), error, error.__traceback__)
+    )
+
+    caplog.clear()
+    logger = logging.getLogger("tests.openai_sdk.json_normalization")
+    with caplog.at_level(logging.ERROR, logger=logger.name):
+        try:
+            raise error
+        except OpenAISDKError:
+            logger.exception("JSON normalization failed safely.")
+
+    assert raw_value not in str(error)
+    assert raw_value not in repr(error)
+    assert raw_value not in formatted_traceback
+    assert raw_value not in caplog.text
+
+
+def test_recursive_json_alias_is_runtime_safe_and_provider_compatible() -> None:
+    imported_sdk = importlib.import_module(
+        "sjtuclaw.infrastructure.llm.openai_sdk"
+    )
+    imported_provider = importlib.import_module(
+        "sjtuclaw.infrastructure.llm.openai_provider"
+    )
+
+    for name in ("JSONScalar", "JSONValue", "JSONObject"):
+        assert hasattr(imported_sdk, name)
+    assert imported_sdk.JSONValue is not Any
+    assert imported_sdk.JSONValue is not object
+    assert imported_provider.JSONValue is imported_sdk.JSONValue
+    assert imported_provider.JSONObject is imported_sdk.JSONObject
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        None,
+        True,
+        7,
+        3.5,
+        "text",
+        [None, False, 2, 4.5, "nested"],
+        {"nested": {"items": [1, "two", None]}},
+    ],
+)
+def test_normalize_json_accepts_supported_json_values(value: object) -> None:
+    assert openai_sdk._normalize_json(value) == value
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        _InvalidJSONValue(),
+        ("invalid-json-tuple-never-log",),
+        {1: "invalid-json-key-never-log"},
+        {"invalid-json-set-never-log"},
+        b"invalid-json-bytes-never-log",
+    ],
+)
+def test_normalize_json_rejects_non_json_values(
+    value: object,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    with pytest.raises(OpenAISDKError) as captured:
+        openai_sdk._normalize_json(value)
+
+    _assert_invalid_response_contract(captured.value)
+    _assert_invalid_value_is_not_exposed(value, captured.value, caplog)
+
+
+def test_normalize_json_enforces_depth_limit() -> None:
+    within_limit: object = None
+    for _ in range(32):
+        within_limit = [within_limit]
+    assert openai_sdk._normalize_json(within_limit) == within_limit
+
+    beyond_limit: object = [within_limit]
+    with pytest.raises(OpenAISDKError) as captured:
+        openai_sdk._normalize_json(beyond_limit)
+    _assert_invalid_response_contract(captured.value)
 
 
 def test_openai_sdk_version_is_pinned() -> None:
