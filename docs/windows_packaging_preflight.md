@@ -357,3 +357,149 @@ The current gate is:
 ```text
 safe_code=dependency_walker_execution_authorization_required
 ```
+
+## Bounded Dependency Walker cache and host smoke
+
+The next separately authorized gate does not start a Nuitka build. It adds a
+fixed-path cache transaction and a one-attempt host smoke for the two reviewed
+binaries.
+
+`packaging/stage_dependency_walker_cache.ps1` is inert without
+`-ConfirmStaging`. Its Python component accepts no source or destination path.
+It reads only the two reviewed files from the ignored quarantine and stages
+them into the repository-local cache:
+
+```text
+build/nuitka-cache/downloads/depends/x86_64/
+```
+
+The transaction verifies size, SHA-256, AMD64 PE32+ format, ordinary-file
+status, link count, reparse points, and the exact two-name directory set.
+New files are copied into a unique sibling `.part` directory, flushed and
+fsynced, renamed within that directory, revalidated, and published by one
+directory rename. An exact existing cache is an idempotent success; any
+different or additional content is left untouched and rejected.
+
+Every real `packaging/build_standalone.ps1 -ConfirmBuild` invocation now calls
+the same cache validator before `pyside6-deploy`. Dry-run mode remains inert
+with respect to the cache. Cache validity therefore cannot be inferred merely
+from the presence of `depends.exe`.
+
+The committed probe sources produce an AMD64 `probe.exe` that statically
+imports `probe_dependency.dll`. If the probe process reaches `main`, it creates
+`probe_executed.marker` in its fixed ignored smoke directory. A static
+Dependency Walker scan must produce a parseable `.depends` file containing the
+DLL without creating that marker.
+
+`packaging/run_dependency_walker_smoke.ps1` is inert without
+`-ConfirmExecution`. The confirmed path permits one host attempt and creates a
+persistent ignored execution guard before starting the reviewed PE. The
+executor:
+
+- fixes the exact Nuitka 4.0 argument sequence and rejects `-pb` or `/pb`;
+- sets `PATH` to an empty value and redirects closed stdin, stdout, and stderr;
+- creates a Windows Job Object before the process;
+- enables kill-on-job-close and an active-process limit of one;
+- creates `depends.exe` suspended, assigns it to the Job, and only then resumes
+  its main thread;
+- enforces a 30-second cooperative host wait followed by Job termination;
+- observes Job completion messages for child-process creation or limit events;
+- checks that no `depends.exe` remains;
+- hashes process output instead of copying its contents into the JSON report;
+- parses the result with Nuitka 4.0's current `parseDependsExeOutput`;
+- revalidates both cached binaries after execution.
+
+The harness snapshots three fixed, Dependency Walker-related HKCU candidate
+paths before and after execution. Values are hashed and never reported. It also
+hashes repository files outside the fixed ignored tool directories. These are
+bounded observations, not comprehensive host monitoring. The host has no
+Windows Sandbox and no process-level hard network isolation. Therefore every
+real report must retain:
+
+```text
+host_execution=True
+windows_sandbox=False
+hard_network_isolation=False
+```
+
+The absence of network imports does not prove that network access is
+impossible. A full standalone build, production executable, Provider,
+Credential Manager, external character asset, Defender cloud scan, or remote
+reputation service remains outside this gate.
+
+### Actual bounded host-smoke result
+
+The separately authorized host smoke ran exactly once on 2026-07-27. Before
+execution, the cache contained exactly the two reviewed ordinary files and
+both source-to-cache hashes matched. MSVC 14.44 built the fixed probe locally;
+`dumpbin /DEPENDENTS` confirmed that `probe.exe` imports
+`probe_dependency.dll`.
+
+The actual command was equivalent to this fixed argument array:
+
+```text
+D:\SJTUClaw\build\nuitka-cache\downloads\depends\x86_64\depends.exe
+-c
+-otD:\SJTUClaw\build\dependency-walker-smoke\probe.depends
+-d:D:\SJTUClaw\build\dependency-walker-smoke\probe.dwp
+-f1
+-pa1
+-ps1
+D:\SJTUClaw\build\dependency-walker-smoke\probe.exe
+```
+
+There was no `-pb` or `/pb`. The Job Object was configured before process
+resume with kill-on-job-close and an active-process limit of one. The process
+completed without timeout; no child process or child-process-limit event was
+observed, and no `depends.exe` remained. `probe_executed.marker` was absent, so
+the probe process did not reach `main`. The harness did not observe
+`depends.dll` loaded into the Dependency Walker process during its bounded
+module sampling.
+
+Dependency Walker returned decimal 512 (`0x00000200`). Its generated log
+explains this bit as at least one required implicit or forwarded dependency not
+being found; specifically, the old scanner reported `KERNEL32.DLL` as missing
+under the same empty-PATH search semantics used by Nuitka 4.0. This is not
+collapsed into a generic process failure. Nuitka's current parser successfully
+read the output and returned `probe_dependency.dll`, which is the dependency
+this compatibility smoke was designed to prove.
+
+Both stdout and stderr were empty. The ignored JSON stores only their SHA-256
+and byte count, not raw process output. The generated `.depends` file contains
+host system information, but none of that content is copied into the JSON,
+documentation, Git, or logs.
+
+All bounded postconditions were satisfied:
+
+```text
+dependency_walker_smoke=True
+cache_exe_hash_valid=True
+cache_dll_hash_valid=True
+child_process_count=0
+probe_executed=False
+output_created=True
+output_parsed=True
+expected_dependency_found=True
+registry_changed=False
+unexpected_files=0
+process_timeout=False
+depends_process_remaining=False
+post_execution_hash_valid=True
+```
+
+The three fixed HKCU candidate paths remained absent. No unexpected repository
+file changed outside the ignored smoke and tool directories. Post-execution
+hashes of both reviewed cache binaries remained exact. The ignored execution
+guard remains present and prevents another attempt.
+
+This was host execution without Windows Sandbox or process-level hard network
+isolation. The harness made no network call, but cannot prove that an arbitrary
+target binary could never access the network. No standalone/onefile build,
+`pyside6-deploy`, SJTUClaw production executable, Provider, Credential Manager,
+Defender cloud scan, or external character resource was used.
+
+The next gate is:
+
+```text
+safe_code=standalone_build_authorization_required
+```

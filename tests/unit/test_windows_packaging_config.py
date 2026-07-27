@@ -130,13 +130,17 @@ def test_build_script_defaults_to_dry_run_and_requires_confirmation() -> None:
 def test_real_build_checks_dependency_walker_before_deploy() -> None:
     text = _BUILD_SCRIPT_PATH.read_text(encoding="utf-8")
     dependency_check = text.index(
-        'Stop-Safe -SafeCode "dependency_walker_not_cached"'
+        "& $PythonPath $DependencyWalkerCacheValidator --validate-cache"
     )
     deploy_invocation = text.index(
         "$DeployExitCode = Invoke-DeployWithClosedInput"
     )
 
     assert '"downloads\\depends\\x86_64\\depends.exe"' in text
+    assert (
+        'Stop-Safe -SafeCode "dependency_walker_cache_invalid"' in text
+    )
+    assert "dependency_walker_not_cached" not in text
     assert dependency_check < deploy_invocation
     assert "$Process.StandardInput.Close()" in text
 

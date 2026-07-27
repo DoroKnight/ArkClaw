@@ -23,6 +23,9 @@ $NuitkaCachePath = Join-Path $RepositoryRoot "build\nuitka-cache"
 $DependencyWalkerPath = Join-Path `
     $NuitkaCachePath `
     "downloads\depends\x86_64\depends.exe"
+$DependencyWalkerCacheValidator = Join-Path `
+    $RepositoryRoot `
+    "packaging\dependency_walker_cache.py"
 
 function Stop-Safe {
     param(
@@ -361,6 +364,13 @@ if (-not (Test-Path -LiteralPath $DeployPath -PathType Leaf)) {
 if (-not (Test-Path -LiteralPath $SpecPath -PathType Leaf)) {
     Stop-Safe -SafeCode "deployment_spec_not_found"
 }
+if (
+    -not (Test-Path `
+        -LiteralPath $DependencyWalkerCacheValidator `
+        -PathType Leaf)
+) {
+    Stop-Safe -SafeCode "dependency_walker_cache_validator_missing"
+}
 
 $env:NUITKA_CACHE_DIR = $NuitkaCachePath
 $SelectedVisualStudio = Find-VisualStudioInstallation `
@@ -389,10 +399,11 @@ if (-not $ConfirmBuild) {
     $DeployArguments += "--dry-run"
     $Mode = "dry_run"
 }
-elseif (-not (Test-Path `
-    -LiteralPath $DependencyWalkerPath `
-    -PathType Leaf)) {
-    Stop-Safe -SafeCode "dependency_walker_not_cached"
+else {
+    & $PythonPath $DependencyWalkerCacheValidator --validate-cache
+    if ($LASTEXITCODE -ne 0) {
+        Stop-Safe -SafeCode "dependency_walker_cache_invalid"
+    }
 }
 
 $DeployExitCode = Invoke-DeployWithClosedInput -Arguments $DeployArguments
