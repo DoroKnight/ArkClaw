@@ -16,16 +16,44 @@ $Arch = "amd64"
 $RepositoryRoot = [System.IO.Path]::GetFullPath(
     (Join-Path -Path $PSScriptRoot -ChildPath "..")
 )
-$PythonPath = Join-Path $RepositoryRoot ".venv\Scripts\python.exe"
-$DeployPath = Join-Path $RepositoryRoot ".venv\Scripts\pyside6-deploy.exe"
+$PackagingEnvironment = Join-Path $RepositoryRoot ".venv-packaging"
+$DevelopmentEnvironment = Join-Path $RepositoryRoot ".venv"
+$PythonPath = Join-Path $PackagingEnvironment "Scripts\python.exe"
+$DeployPath = Join-Path $PackagingEnvironment "Scripts\pyside6-deploy.exe"
 $SpecPath = Join-Path $RepositoryRoot "packaging\pysidedeploy.spec"
 $NuitkaCachePath = Join-Path $RepositoryRoot "build\nuitka-cache"
+$QtPluginRoot = Join-Path `
+    $RepositoryRoot `
+    ".venv-packaging\Lib\site-packages\PySide6\plugins"
+$RequiredQtPluginFamilies = @("platforms", "styles")
 $DependencyWalkerPath = Join-Path `
     $NuitkaCachePath `
     "downloads\depends\x86_64\depends.exe"
 $DependencyWalkerCacheValidator = Join-Path `
     $RepositoryRoot `
     "packaging\dependency_walker_cache.py"
+$StandaloneBuildController = Join-Path `
+    $RepositoryRoot `
+    "packaging\standalone_build.py"
+$StandaloneArtifactAuditor = Join-Path `
+    $RepositoryRoot `
+    "packaging\standalone_artifact_audit.py"
+$DryRunWorkspace = Join-Path `
+    $RepositoryRoot `
+    "build\standalone-dry-run"
+$DryRunSpecPath = Join-Path $DryRunWorkspace "pysidedeploy.spec"
+$DryRunStdoutPath = Join-Path `
+    $DryRunWorkspace `
+    "pyside6-deploy.stdout.log"
+$DryRunStderrPath = Join-Path `
+    $DryRunWorkspace `
+    "pyside6-deploy.stderr.log"
+$ProtectedOutputPaths = @(
+    (Join-Path $RepositoryRoot "dist"),
+    (Join-Path $RepositoryRoot "packaging\deployment"),
+    (Join-Path $RepositoryRoot "build\windows-standalone")
+)
+$MinimumFreeBytes = 12GB
 
 function Stop-Safe {
     param(
@@ -316,7 +344,11 @@ function ConvertTo-WindowsProcessArgument {
 function Invoke-DeployWithClosedInput {
     param(
         [Parameter(Mandatory = $true)]
-        [string[]]$Arguments
+        [string[]]$Arguments,
+        [Parameter(Mandatory = $true)]
+        [string]$StandardOutputPath,
+        [Parameter(Mandatory = $true)]
+        [string]$StandardErrorPath
     )
 
     $StartInfo = [System.Diagnostics.ProcessStartInfo]::new()
@@ -346,6 +378,17 @@ function Invoke-DeployWithClosedInput {
     $ExitCode = $Process.ExitCode
     $Process.Dispose()
 
+    $Utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+    [System.IO.File]::WriteAllText(
+        $StandardOutputPath,
+        $StandardOutput,
+        $Utf8NoBom
+    )
+    [System.IO.File]::WriteAllText(
+        $StandardErrorPath,
+        $StandardError,
+        $Utf8NoBom
+    )
     if ($StandardOutput) {
         [System.Console]::Out.WriteLine($StandardOutput.TrimEnd())
     }
@@ -353,6 +396,36 @@ function Invoke-DeployWithClosedInput {
         [System.Console]::Error.WriteLine($StandardError.TrimEnd())
     }
     return $ExitCode
+}
+
+function Set-PackagingProcessEnvironment {
+    $DevelopmentScripts = [System.IO.Path]::GetFullPath(
+        (Join-Path $DevelopmentEnvironment "Scripts")
+    )
+    $PackagingScripts = [System.IO.Path]::GetFullPath(
+        (Join-Path $PackagingEnvironment "Scripts")
+    )
+    $SanitizedPathEntries = @(
+        $env:Path -split [System.IO.Path]::PathSeparator |
+            Where-Object { $_ } |
+            Where-Object {
+                try {
+                    -not [System.IO.Path]::GetFullPath($_).Equals(
+                        $DevelopmentScripts,
+                        [System.StringComparison]::OrdinalIgnoreCase
+                    )
+                }
+                catch {
+                    $false
+                }
+            }
+    )
+    $env:Path = (@($PackagingScripts) + $SanitizedPathEntries) -join (
+        [System.IO.Path]::PathSeparator
+    )
+    $env:VIRTUAL_ENV = $PackagingEnvironment
+    $env:PYTHONPATH = $null
+    $env:PYTHONHOME = $null
 }
 
 if (-not (Test-Path -LiteralPath $PythonPath -PathType Leaf)) {
@@ -364,6 +437,19 @@ if (-not (Test-Path -LiteralPath $DeployPath -PathType Leaf)) {
 if (-not (Test-Path -LiteralPath $SpecPath -PathType Leaf)) {
     Stop-Safe -SafeCode "deployment_spec_not_found"
 }
+foreach ($PluginFamily in $RequiredQtPluginFamilies) {
+    $PluginFamilyPath = Join-Path $QtPluginRoot $PluginFamily
+    if (-not (Test-Path -LiteralPath $PluginFamilyPath -PathType Container)) {
+        Stop-Safe -SafeCode "standalone_toolchain_invalid"
+    }
+}
+if (
+    -not (Test-Path `
+        -LiteralPath (Join-Path $QtPluginRoot "platforms\qwindows.dll") `
+        -PathType Leaf)
+) {
+    Stop-Safe -SafeCode "standalone_toolchain_invalid"
+}
 if (
     -not (Test-Path `
         -LiteralPath $DependencyWalkerCacheValidator `
@@ -371,12 +457,41 @@ if (
 ) {
     Stop-Safe -SafeCode "dependency_walker_cache_validator_missing"
 }
+if (
+    -not (Test-Path `
+        -LiteralPath $StandaloneBuildController `
+        -PathType Leaf) -or
+    -not (Test-Path `
+        -LiteralPath $StandaloneArtifactAuditor `
+        -PathType Leaf)
+) {
+    Stop-Safe -SafeCode "standalone_toolchain_invalid"
+}
+if (Test-Path -LiteralPath $DryRunWorkspace) {
+    Stop-Safe -SafeCode "standalone_dry_run_workspace_occupied"
+}
 
 $env:NUITKA_CACHE_DIR = $NuitkaCachePath
-$SelectedVisualStudio = Find-VisualStudioInstallation `
-    -RequestedPath $VisualStudioPath
-Import-MsvcEnvironment -InstallationPath $SelectedVisualStudio
-Confirm-MsvcToolchain -InstallationPath $SelectedVisualStudio
+$env:PIP_NO_INDEX = "1"
+$env:PIP_DISABLE_PIP_VERSION_CHECK = "1"
+$env:UV_OFFLINE = "1"
+$SensitiveEnvironmentPattern = (
+    "(?i)(?:API_?KEY|AUTHORIZATION|BEARER|COOKIE|CREDENTIAL|" +
+    "PASSWORD|SECRET|TOKEN)"
+)
+[System.Environment]::GetEnvironmentVariables(
+    [System.EnvironmentVariableTarget]::Process
+).Keys |
+    ForEach-Object { [string]$_ } |
+    Where-Object { $_ -match $SensitiveEnvironmentPattern } |
+    ForEach-Object {
+        [System.Environment]::SetEnvironmentVariable(
+            $_,
+            $null,
+            [System.EnvironmentVariableTarget]::Process
+        )
+    }
+Set-PackagingProcessEnvironment
 
 $NuitkaVersionOutput = & $PythonPath -m nuitka --version
 if ($LASTEXITCODE -ne 0) {
@@ -386,34 +501,84 @@ if (($NuitkaVersionOutput | Select-Object -First 1) -ne "4.0") {
     Stop-Safe -SafeCode "nuitka_version_mismatch"
 }
 
-$DeployArguments = @(
-    "--config-file",
-    $SpecPath,
-    "--mode",
-    "standalone",
-    "--nuitka-version",
-    "4.0"
-)
-$Mode = "build"
 if (-not $ConfirmBuild) {
-    $DeployArguments += "--dry-run"
-    $Mode = "dry_run"
-}
-else {
-    & $PythonPath $DependencyWalkerCacheValidator --validate-cache
+    & $PythonPath `
+        $StandaloneBuildController `
+        --prepare-dry-run-workspace
     if ($LASTEXITCODE -ne 0) {
-        Stop-Safe -SafeCode "dependency_walker_cache_invalid"
+        exit 2
+    }
+    $DeployArguments = @(
+        "--config-file",
+        $DryRunSpecPath,
+        "--mode",
+        "standalone",
+        "--nuitka-version",
+        "4.0",
+        "--dry-run"
+    )
+    $DeployExitCode = 2
+    $DeployInvocationFailed = $false
+    try {
+        $DeployExitCode = Invoke-DeployWithClosedInput `
+            -Arguments $DeployArguments `
+            -StandardOutputPath $DryRunStdoutPath `
+            -StandardErrorPath $DryRunStderrPath
+    }
+    catch {
+        $DeployInvocationFailed = $true
+    }
+    & $PythonPath `
+        $StandaloneBuildController `
+        --finalize-dry-run-workspace
+    if ($LASTEXITCODE -ne 0) {
+        exit 2
+    }
+    if ($DeployInvocationFailed -or $DeployExitCode -ne 0) {
+        Stop-Safe -SafeCode "standalone_dry_run_isolation_failed"
+    }
+    Write-Output (
+        "standalone_preflight=True mode=dry_run cache_scope=repository " +
+        "stdin_closed=True safe_code=none"
+    )
+    exit 0
+}
+
+$SelectedVisualStudio = Find-VisualStudioInstallation `
+    -RequestedPath $VisualStudioPath
+Import-MsvcEnvironment -InstallationPath $SelectedVisualStudio
+Set-PackagingProcessEnvironment
+Confirm-MsvcToolchain -InstallationPath $SelectedVisualStudio
+
+foreach ($ProtectedOutputPath in $ProtectedOutputPaths) {
+    if (Test-Path -LiteralPath $ProtectedOutputPath) {
+        Stop-Safe -SafeCode "standalone_output_occupied"
     }
 }
-
-$DeployExitCode = Invoke-DeployWithClosedInput -Arguments $DeployArguments
-if ($DeployExitCode -ne 0) {
-    Stop-Safe -SafeCode "pyside_deploy_failed"
+try {
+    $RepositoryDrive = [System.IO.DriveInfo]::new(
+        [System.IO.Path]::GetPathRoot($RepositoryRoot)
+    )
+    if ($RepositoryDrive.AvailableFreeSpace -lt $MinimumFreeBytes) {
+        Stop-Safe -SafeCode "standalone_disk_space_insufficient"
+    }
+}
+catch {
+    Stop-Safe -SafeCode "standalone_disk_space_insufficient"
 }
 
-Write-Output (
-    (
-        "standalone_preflight=True mode={0} cache_scope=repository " +
-        "stdin_closed=True safe_code=none"
-    ) -f $Mode
-)
+& $PythonPath $DependencyWalkerCacheValidator --validate-cache
+if ($LASTEXITCODE -ne 0) {
+    Stop-Safe -SafeCode "standalone_toolchain_invalid"
+}
+
+& $PythonPath $StandaloneBuildController --confirm-build
+if ($LASTEXITCODE -ne 0) {
+    exit 2
+}
+
+& $PythonPath $StandaloneArtifactAuditor --confirm-audit
+if ($LASTEXITCODE -ne 0) {
+    exit 2
+}
+exit 0

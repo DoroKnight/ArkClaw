@@ -17,6 +17,12 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 _SPEC_PATH = _PROJECT_ROOT / "packaging" / "pysidedeploy.spec"
 _ENTRY_PATH = _PROJECT_ROOT / "packaging" / "pet_entry.py"
 _BUILD_SCRIPT_PATH = _PROJECT_ROOT / "packaging" / "build_standalone.ps1"
+_PREPARE_SCRIPT_PATH = (
+    _PROJECT_ROOT / "packaging" / "prepare_packaging_environment.ps1"
+)
+_INVENTORY_PATH = (
+    _PROJECT_ROOT / "packaging" / "packaging_environment_inventory.py"
+)
 _PYPROJECT_PATH = _PROJECT_ROOT / "pyproject.toml"
 _LOCK_PATH = _PROJECT_ROOT / "uv.lock"
 
@@ -61,7 +67,22 @@ def test_packaging_spec_has_fixed_standalone_gui_configuration() -> None:
     assert "--assume-yes-for-downloads" not in extra_args
     assert not any("mingw" in argument.casefold() for argument in extra_args)
     assert "--onefile" not in extra_args
-    assert "--include-qt-plugins=platforms,platformthemes,styles" in extra_args
+    assert not any(
+        argument.startswith("--include-qt-plugins=")
+        for argument in extra_args
+    )
+    for excluded in (
+        "pydantic.mypy",
+        "mypy",
+        "mypy_extensions",
+        "mypyc",
+        "httpx._main",
+        "pygments",
+    ):
+        assert extra_args.count(f"--nofollow-import-to={excluded}") == 1
+    assert "--nofollow-import-to=pydantic" not in extra_args
+    assert "--nofollow-import-to=httpx" not in extra_args
+    assert "--nofollow-import-to=openai" not in extra_args
     assert {
         "--include-module=PySide6.QtCore",
         "--include-module=PySide6.QtGui",
@@ -74,6 +95,11 @@ def test_packaging_spec_has_fixed_standalone_gui_configuration() -> None:
         "Widgets",
         "Network",
     }
+    assert set(parser["qt"]["plugins"].split(",")) == {
+        "platforms",
+        "styles",
+    }
+    assert "platformthemes" not in parser["qt"]["plugins"]
 
 
 def test_packaging_output_directories_are_git_ignored() -> None:
@@ -105,6 +131,17 @@ def test_pyside_dry_run_has_exactly_one_output_directory_source() -> None:
     assert 'output_dir = source_file.parent / "deployment"' in helper_text
 
 
+def test_configured_qt_plugin_families_exist_in_pinned_pyside() -> None:
+    parser = _load_spec()
+    plugin_root = Path(PySide6.__file__).resolve().parent / "plugins"
+    configured = parser["qt"]["plugins"].split(",")
+
+    assert configured == ["platforms", "styles"]
+    assert all((plugin_root / family).is_dir() for family in configured)
+    assert (plugin_root / "platforms" / "qwindows.dll").is_file()
+    assert not (plugin_root / "platformthemes").exists()
+
+
 def test_build_script_uses_repository_local_nuitka_cache() -> None:
     text = _BUILD_SCRIPT_PATH.read_text(encoding="utf-8")
 
@@ -120,11 +157,65 @@ def test_build_script_defaults_to_dry_run_and_requires_confirmation() -> None:
 
     assert "[switch]$ConfirmBuild" in text
     assert "if (-not $ConfirmBuild)" in text
-    assert '$DeployArguments += "--dry-run"' in text
-    assert '$Mode = "dry_run"' in text
+    assert '"--dry-run"' in text
+    assert "--prepare-dry-run-workspace" in text
+    assert "--finalize-dry-run-workspace" in text
+    assert "standalone_dry_run_side_effect_detected" not in text
+    assert "mode=dry_run" in text
     assert "--assume-yes-for-downloads" not in text
     assert "--mingw64" not in text
     assert "--onefile" not in text
+    assert text.index("if (-not $ConfirmBuild)") < text.index(
+        "foreach ($ProtectedOutputPath in $ProtectedOutputPaths)"
+    )
+    dry_run_branch = text.index("if (-not $ConfirmBuild)")
+    msvc_activation = text.index(
+        "$SelectedVisualStudio = Find-VisualStudioInstallation"
+    )
+    dependency_walker = text.index(
+        "& $PythonPath $DependencyWalkerCacheValidator --validate-cache"
+    )
+    assert dry_run_branch < msvc_activation < dependency_walker
+    assert "-StandardOutputPath $DryRunStdoutPath" in text
+    assert "-StandardErrorPath $DryRunStderrPath" in text
+
+
+def test_packaging_environment_entry_is_fixed_offline_and_no_dev() -> None:
+    text = _PREPARE_SCRIPT_PATH.read_text(encoding="utf-8")
+
+    assert (
+        '"safe_code=packaging_environment_prepare_disabled"' in text
+    )
+    assert '".venv-packaging"' in text
+    assert "--locked" in text
+    assert "--offline" in text
+    assert "--no-python-downloads" in text
+    assert "--no-dev" in text
+    assert "--extra gui" in text
+    assert "--extra packaging" in text
+    assert "--extra dev" not in text
+    assert '$env:UV_OFFLINE = "1"' in text
+    assert '$env:PIP_NO_INDEX = "1"' in text
+    assert "Remove-Item" not in text
+
+
+def test_packaging_inventory_uses_all_four_isolation_views() -> None:
+    text = _INVENTORY_PATH.read_text(encoding="utf-8")
+
+    assert "importlib_metadata.distributions()" in text
+    assert "importlib.util.find_spec" in text
+    assert "site_packages.iterdir()" in text
+    assert "sys.path" in text
+    assert '"environment_values_recorded": False' in text
+    for forbidden in (
+        "mypy",
+        "mypy_extensions",
+        "mypyc",
+        "pytest",
+        "pygments",
+        "ruff",
+    ):
+        assert f'"{forbidden}"' in text
 
 
 def test_real_build_checks_dependency_walker_before_deploy() -> None:
@@ -132,17 +223,18 @@ def test_real_build_checks_dependency_walker_before_deploy() -> None:
     dependency_check = text.index(
         "& $PythonPath $DependencyWalkerCacheValidator --validate-cache"
     )
-    deploy_invocation = text.index(
-        "$DeployExitCode = Invoke-DeployWithClosedInput"
+    build_invocation = text.index(
+        "& $PythonPath $StandaloneBuildController --confirm-build"
     )
 
     assert '"downloads\\depends\\x86_64\\depends.exe"' in text
     assert (
-        'Stop-Safe -SafeCode "dependency_walker_cache_invalid"' in text
+        'Stop-Safe -SafeCode "standalone_toolchain_invalid"' in text
     )
     assert "dependency_walker_not_cached" not in text
-    assert dependency_check < deploy_invocation
+    assert dependency_check < build_invocation
     assert "$Process.StandardInput.Close()" in text
+    assert "--confirm-audit" in text
 
 
 def test_build_script_enforces_exact_msvc_x64_toolchain() -> None:
@@ -162,6 +254,12 @@ def test_build_script_enforces_exact_msvc_x64_toolchain() -> None:
     assert '$Arch = "amd64"' in text
     assert "msys_link_rejected" in text
     assert "msvc_toolchain_mismatch" in text
+    assert '$RequiredQtPluginFamilies = @("platforms", "styles")' in text
+    assert '".venv-packaging\\Lib\\site-packages\\PySide6\\plugins"' in text
+    assert '".venv-packaging"' in text
+    assert '$env:VIRTUAL_ENV = $PackagingEnvironment' in text
+    assert "$env:PYTHONPATH = $null" in text
+    assert '"platforms\\qwindows.dll"' in text
 
 
 def test_build_script_checks_nuitka_version_and_never_compiles_on_parse() -> None:

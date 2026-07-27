@@ -83,7 +83,7 @@ fixes:
   `build/windows-standalone/compilation-report.xml`;
 - explicit `--include-module` options for QtCore, QtGui, QtWidgets, and
   QtNetwork;
-- Qt platforms, platformthemes, and styles plugins;
+- Qt platforms and styles plugins;
 - explicit no-follow boundaries for `tests` and `scripts`.
 
 PySide6 6.11.1's deployment helper supplies exactly one Nuitka output option:
@@ -96,7 +96,9 @@ duplicate-option ordering. `build/`, `dist/`, and the transient
 `packaging/deployment/` directory are ignored by Git.
 
 The Windows platform plugin set retains `qwindows`. Native widget appearance
-uses the styles and platformthemes groups. The current QtNetwork use is local
+uses the platform and styles groups. PySide6 6.11.1 in the reviewed
+environment has no `platformthemes` plugin directory, so that nonexistent
+family is not requested. The current QtNetwork use is local
 IPC/single-instance coordination and does not require the Qt TLS plugin; cloud
 Provider HTTPS uses the Python HTTP stack. A future standalone build must still
 audit the DLL and plugin report before concluding that TLS runtime dependencies
@@ -503,3 +505,333 @@ The next gate is:
 ```text
 safe_code=standalone_build_authorization_required
 ```
+
+## Controlled standalone build and static-audit boundary
+
+The standalone build entry remains dry-run by default. A real build requires
+`packaging/build_standalone.ps1 -ConfirmBuild`, and the script rejects an
+existing `dist/`, `packaging/deployment/`, or `build/windows-standalone/`
+directory instead of deleting or merging it. It also requires at least 12 GiB
+of free space, the fixed Dependency Walker cache, Python 3.13.6, Nuitka 4.0,
+PySide6 6.11.1, and the exact MSVC 14.44 Hostx64/x64 tools.
+
+The confirmed path copies the tracked `pysidedeploy.spec` into the ignored
+build directory. PySide6 may normalize that private copy, but the tracked
+source spec is hashed before and after the build and must remain byte-for-byte
+unchanged. The fixed deployment command includes standalone mode,
+`--keep-deployment-files`, Nuitka 4.0, and no force, onefile, MinGW, ccache, or
+automatic-download option.
+
+`packaging/standalone_build.py` starts `pyside6-deploy.exe` suspended, assigns
+it to a Windows Job Object, and resumes it only after enabling
+kill-on-job-close and an active-process limit of 128. Standard input is the
+null device. Standard output and error go only to ignored logs; the public
+result reports their SHA-256 and byte counts. A 90-minute build deadline
+terminates the Job process tree. The controller records Job accounting and
+rejects a newly remaining `python`, `nuitka`, `cl`, `link`, `depends`, or
+`pyside6-deploy` process. It creates its attempt marker before process start
+and never retries automatically.
+
+The build environment sets `PIP_NO_INDEX=1`,
+`PIP_DISABLE_PIP_VERSION_CHECK=1`, and `UV_OFFLINE=1`, and removes API-key,
+token, authorization, cookie, password, credential, and secret-like
+environment variables. This is an offline expectation, not an operating
+system network sandbox:
+
+```text
+hard_network_isolation=False
+```
+
+A zero deployment exit code is insufficient. Success additionally requires a
+parseable compilation report, the preserved raw
+`packaging/deployment/pet_entry.dist`, the final
+`dist/SJTUClaw.dist`, an AMD64 GUI `SJTUClaw.exe`, exact raw-to-final file and
+SHA-256 equality, an unchanged tracked spec, and an unchanged fixed Dependency
+Walker cache.
+
+`packaging/standalone_artifact_audit.py` does not execute the packaged
+application. It parses the Nuitka XML report, creates a full final-dist
+manifest, parses every PE ordinary and delay-load import table, checks AMD64
+consistency and dependency closure, and uses the fixed MSVC 14.44 `dumpbin`
+only for independent main-executable header and dependency observations. The
+main executable must be Windows GUI, ASLR-enabled, and DEP/NX-compatible.
+Control Flow Guard is reported separately rather than silently assumed.
+
+The audit rejects tests, manual-verification and smoke modules, scripts,
+Dependency Walker files, build logs and reports, local settings, manual test
+Targets, secret-like values, repository/user/virtual-environment paths, and
+PNG/atlas/skel character resources. It records the actual platforms,
+platformthemes, and styles plugin sets (including an empty family), plus the
+included distribution metadata as a preliminary license inventory. This does
+not complete
+Authenticode, public-distribution license, installer, reputation, runtime, or
+wire-level review.
+
+Even after a successful build and static audit, `SJTUClaw.exe` remains
+unexecuted. Runtime testing requires a separate authorization:
+
+```text
+safe_code=packaged_runtime_authorization_required
+```
+
+### Actual one-attempt build result
+
+The separately authorized standalone command ran exactly once on 2026-07-27.
+The Windows Job Object was configured before process resume with
+kill-on-job-close and an active-process limit of 128. The observed peak was 13
+active processes, the root deployment process returned 0, no active-process
+limit was hit, no timeout occurred, and no newly remaining build process was
+observed. The attempt lasted 4.358 seconds and consumed approximately
+5,120,000 bytes of free disk space. The tracked spec and fixed Dependency
+Walker cache hashes remained unchanged. No download or installation prompt was
+detected.
+
+The deployment exit code was not accepted as success. The parseable Nuitka 4.0
+report recorded standalone mode but `completion=error exit message (1)`, zero
+included modules, zero included data files, and zero included binaries. The
+controlled error stated that Nuitka's PySide6 plugin has no `platformthemes`
+plugin family for the installed PySide6 6.11.1 files. Therefore neither the raw
+nor final dist existed, and the controller returned:
+
+```text
+safe_code=standalone_postcondition_failed
+```
+
+This failure occurred before Dependency Walker analysis; its build-time
+execution was not observed. No `SJTUClaw.exe` was generated or executed, so PE,
+DLL-closure, final plugin, local-path, secret, and license artifact audits
+could not be completed. The failed ignored logs are retained only by SHA-256
+and byte count in the structured build report.
+
+The source configuration now requests only the plugin families that exist in
+the reviewed environment (`platforms` and `styles`), and the PowerShell
+preflight explicitly requires those directories plus `qwindows.dll`. This is
+the correction that was later used by the separately authorized second build
+described below. The first build authorization remained exhausted and was not
+reused.
+
+## Existing-artifact audit attribution and dependency-pruning gate
+
+The separately authorized second standalone attempt completed successfully on
+2026-07-27. Its build postconditions passed, but the first static audit used
+overly broad duplicate-DLL, Qt-plugin, `CredentialBlob`, and Bearer-pattern
+rules. Before those rules were changed, the original audit JSON was copied
+byte-for-byte to the ignored fixed history directory:
+
+```text
+build/standalone-audit-history/
+20260727T070135Z-pre-attribution/artifact_audit.json
+```
+
+The archived file is 383,989 bytes with SHA-256
+`2b53b257dbf3e86f93f10e92234b95d51d78b33caa5b75b4b580397a7da5cd14`.
+The raw and final distributions, compilation report, build logs, and
+executable were not modified.
+
+DLL resolution now evaluates a unique candidate at the importer's directory
+before the distribution root, explicitly modeled PySide6 or shiboken6 runtime
+directories, and the Windows system set. Lower-priority duplicates are
+recorded as shadowed rather than making a higher-priority unique result
+ambiguous. The four duplicate basename groups remain in the report as
+inventory. The existing artifact has no ambiguous or unresolved normal or
+delay-load dependency under this model.
+
+Qt plugin paths are accepted only at
+`PySide6/qt-plugins/<family>/<file>.dll`, where the fixed family allowlist is
+`platforms`, `styles`, `imageformats`, `iconengines`, and `tls`. Deeper paths,
+unknown families, and `platformthemes` remain invalid. The existing artifact
+contains 4 platform, 1 style, 10 image-format, 1 icon-engine, and 3 TLS
+plugins. It contains no platformthemes plugin; both `qwindows.dll` and
+`qmodernwindowsstyle.dll` are present.
+
+The literal identifier `CredentialBlob` is expected in the Win32 structure
+binding and in JSON rejection logic, so identifier presence is now
+informational. A contextual high-entropy value after that identifier still
+fails. The former Bearer hit is attributed to prose in
+`openai/providers/bedrock.py`: type `Bearer`, length 22, SHA-256
+`52477424de5444aee8b33d00bc58491877ab0f42f4c587a5149bd069ca1d3df3`.
+The report stores only type, length, hash, artifact-relative file, offset, and
+attribution; it does not store the matched text. JWT-like, high-entropy
+Bearer, known `sk-`, manual Target, and contextual CredentialBlob values
+remain forbidden.
+
+Exactly one attribution-aware static re-audit was run against the preserved
+artifact. All structural, PE, DLL, Qt, path, and real-secret checks passed.
+The only failed check is `production_dependency_surface_valid`, because the
+artifact includes `pydantic.mypy`, the `mypy` and `mypyc` trees,
+`httpx._main`, the `pygments` tree, and the `mypy`, `mypy_extensions`, and
+`Pygments` distributions. These are dependency-surface and license-review
+issues, not credential findings. The current result is:
+
+```text
+safe_code=standalone_dependency_pruning_required
+```
+
+The package has still not been executed and is not authorized for runtime
+testing.
+
+## Isolated production-packaging environment
+
+The third-build chain uses the fixed ignored environment
+`.venv-packaging`; it does not use the ordinary development `.venv`.
+`packaging/prepare_packaging_environment.ps1` is inert unless
+`-ConfirmPrepare` is supplied. Its confirmed path fixes uv to version 0.11.2,
+uses the existing Python 3.13.6 AMD64 interpreter without downloading Python,
+and performs a locked, offline sync with only the runtime dependency set plus
+the `gui` and `packaging` extras. It explicitly excludes the `dev` group and
+checks that `pyproject.toml` and `uv.lock` hashes do not change.
+
+The generated
+`build/windows-packaging-environment/environment_inventory.json` records
+package names and versions but no environment-variable values. Validation
+uses distribution metadata, import specifications, the site-packages
+filesystem, and `sys.path`. It rejects mypy, mypy_extensions, mypyc, pytest,
+Pygments, and ruff; it also rejects a prefix, base prefix, `PYTHONPATH`, or
+`sys.path` that injects the ordinary development environment.
+
+The standalone controller validates the fixed packaging interpreter,
+PySide6, Nuitka, deploy executable, and Qt plugin paths before creating a Job
+Object or starting a build process. Its child environment removes the
+development Scripts directory, clears `PYTHONHOME` and `PYTHONPATH`, and
+prepends only the packaging Scripts directory.
+
+The tracked spec contains one exact no-follow rule for each build-time-only
+surface:
+
+```text
+--nofollow-import-to=pydantic.mypy
+--nofollow-import-to=mypy
+--nofollow-import-to=mypy_extensions
+--nofollow-import-to=mypyc
+--nofollow-import-to=httpx._main
+--nofollow-import-to=pygments
+```
+
+These rules do not exclude pydantic, httpx, openai, any provider, or the Qt
+runtime. The private materialized build spec adds exactly one
+`--include-qt-plugins=platforms,styles` argument. Production imports and the
+Fake Provider are checked by the inert-by-default
+`packaging/production_import_smoke.py`; the six Qt smoke scripts are run with
+the isolated interpreter and offscreen Qt.
+
+The original raw distribution from the successful second build was later
+deleted by an unsafe dry-run lifecycle. PySide6 6.11.1 constructs its
+configuration and calls `cleanup(config)` before checking whether the Nuitka
+command is a dry run; its `finally` path can call cleanup again. The former
+dry-run implementation copied only the spec. Its source remained
+`packaging/pet_entry.py`, so PySide6 derived
+`packaging/deployment` as `generated_files_path` and removed that production
+raw directory together with generated build/dist subdirectories.
+
+The surviving final distribution and seven build-evidence files remain
+unchanged. The raw distribution has not been reconstructed from the final
+copy, and prior raw/final equality is historical audit evidence rather than a
+newly reverified equality claim. The fixed ignored incident record is:
+
+```text
+build/packaging-incidents/20260727-dry-run-cleanup/
+```
+
+It records full current manifests, sizes and SHA-256 values, the final
+executable hash, `raw_dist_present=False`,
+`raw_dist_reconstructed=False`,
+`dry_run_cleanup_side_effect_confirmed=True`, and zero third-build attempts.
+It stores no environment-variable values.
+
+The corrected dry-run owns the complete fixed
+`build/standalone-dry-run` workspace. It byte-copies the production entry to
+`input/pet_entry.py`, verifies its SHA-256, rewrites source, project, exec and
+compilation-report paths into that workspace, and writes command output only
+there. A complete before/after snapshot covers `dist`,
+`packaging/deployment`, and `build/windows-standalone`, including existence,
+relative paths, sizes, hashes, attributes, reparse status and hard-link
+counts. Any difference fails closed before cleanup. Cleanup accepts only a
+fixed owned allowlist; an unknown entry preserves the workspace as evidence.
+
+The canonical `packaging/archive_standalone_attempt.py` is directly runnable
+under Python isolated mode and owns both fixed archive modes. The redundant
+same-directory import wrapper was removed. The degraded surviving-evidence
+mode never reconstructs raw output and can archive only:
+
+```text
+dist/SJTUClaw.dist/
+build/windows-standalone/
+```
+
+Its fixed target is:
+
+```text
+build/standalone-artifact-archive/
+20260727T063632Z-unpruned-degraded/
+```
+
+The archive labels prior raw/final equality as reported but not currently
+reverified.
+
+### Dry-run recovery and degraded archive result
+
+The repaired real dry-run was executed exactly once. Its effective paths
+were:
+
+```text
+source_file:
+build/standalone-dry-run/input/pet_entry.py
+
+generated output:
+build/standalone-dry-run/input/deployment
+
+compilation report:
+build/standalone-dry-run/compilation-report.xml
+
+exec directory:
+build/standalone-dry-run/dist
+```
+
+The emitted command retained standalone mode, the fixed platforms/styles
+plugin set and all six narrow no-follow rules. It contained no production
+deployment, final-dist or build-report output path. The dry-run branch did
+not activate MSVC and PySide6 reported that dumpbin was unavailable; no
+Nuitka compilation, cl, link or Dependency Walker execution occurred.
+
+Before and after the run, the final distribution had 136 files totaling
+187,599,080 bytes, the build-evidence directory had seven files, and every
+recorded size and SHA-256 matched. `packaging/deployment` remained absent.
+The owned dry-run workspace was completely removed after its allowlist and
+protected snapshots passed.
+
+The degraded surviving evidence was then moved by same-volume rename to:
+
+```text
+build/standalone-artifact-archive/
+20260727T063632Z-unpruned-degraded/
+```
+
+It contains 143 evidence files totaling 191,116,359 bytes with aggregate
+manifest SHA-256
+`a5d1762838436f08b9c28e373b90d95e4d0166d76a79ea0416970bbe243798f5`.
+The executable remains
+`10fe39ab457ecf017dc752ce92c90699735f832dbdf44e54d28f6236a5066dae`.
+No staging or `.part` directory remains. The original `dist`,
+`build/windows-standalone`, and `packaging/deployment` paths are absent, while
+the separate incident record is retained. The raw distribution was not
+reconstructed.
+
+### Future third-build plan
+
+A third standalone build requires a new explicit authorization. Before it
+starts:
+
+1. archive the current successful artifact and keep its reports immutable;
+2. create an ignored `.venv-packaging` using the existing lock file and
+   `uv --offline`;
+3. install only runtime dependencies plus the `gui` and `packaging` extras,
+   never the `dev` extra;
+4. make the build entry reject the ordinary development `.venv`;
+5. add narrow no-follow exclusions for `pydantic.mypy`, `mypy`, `mypyc`,
+   `httpx._main`, and `pygments`, without excluding all of pydantic or httpx;
+6. prove with offline import tests that production startup, provider
+   activation, and the Qt entry do not import those modules;
+7. inspect a new dry-run command and compilation plan before authorization;
+8. use fresh output directories rather than reusing the current dist;
+9. rerun the complete manifest, PE, DLL, Qt, secret, path, dependency-surface,
+   and preliminary license audits after that separately authorized build.
