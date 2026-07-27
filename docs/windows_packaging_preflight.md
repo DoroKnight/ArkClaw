@@ -261,13 +261,99 @@ The ignored local evidence is retained at:
 - `build/tool-quarantine/dependency-walker/download_audit.json`;
 - `build/tool-quarantine/dependency-walker/archive_audit.json`.
 
-The ZIP was not extracted, no contained PE was executed, and no file was copied
-into the Nuitka cache. No standalone or onefile compilation was started.
-Moving the reviewed executable into the Nuitka cache, executing it, or starting
-a standalone build requires a new explicit authorization and review.
+At the end of the acquisition stage the ZIP had not been extracted, no
+contained PE had been executed, and no file had been copied into the Nuitka
+cache. The following separately authorized stage supersedes only the static
+extraction-review status; it does not authorize execution or a build.
 
-Until that review is granted, the gate is:
+## Dependency Walker static binary audit
+
+On 2026-07-27, the fixed local ZIP was revalidated and exactly `depends.exe`
+and `depends.dll` were extracted into the ignored
+`build/tool-quarantine/dependency-walker/extracted` directory. Extraction used
+unique `.part` files, streaming SHA-256 verification, flush plus fsync, and
+atomic rename. Existing or unexpected targets fail closed. `depends.chm` was
+neither extracted nor opened.
+
+The reviewed binary identities are:
+
+| File | Bytes | SHA-256 | Version resource |
+| --- | ---: | --- | --- |
+| `depends.exe` | 566,272 | `57c483dc985a9757501993e969c2a7043c26517f97fd49a42b33d2d6a4193d8b` | Dependency Walker for Win64 (x64), Microsoft Corporation, 2.2.6000 |
+| `depends.dll` | 12,288 | `7a5cae7605ae5d8c8aee3e6d8e77e455537b636b395b8f00aebe17bf8b228770` | no version resource fields |
+
+Both files are AMD64 (`0x8664`) PE32+ GUI-subsystem images. The EXE image base
+is `0x100000000`, and the DLL image base is `0x8370000`. Neither image contains
+a writable-and-executable section. Both set ASLR `DYNAMIC_BASE`; neither sets
+DEP/NX, Control Flow Guard, or High Entropy VA. Their PE timestamps decode to
+2006-10-30 06:49:56 UTC for the EXE and 2006-10-30 05:27:43 UTC for the DLL.
+These timestamps and flags are observations, not provenance guarantees.
+
+Neither file contains a PE Certificate Table. Both are therefore recorded as
+`unsigned`; embedded PKCS#7 validation is not applicable. No online
+certificate-chain, CRL, OCSP, AIA, reputation, Defender-cloud, or sample-upload
+operation was attempted.
+
+The EXE imports the following DLLs:
 
 ```text
-safe_code=dependency_walker_review_required
+advapi32.dll comctl32.dll comdlg32.dll gdi32.dll kernel32.dll
+mfc42.dll msvcrt.dll shell32.dll user32.dll
+```
+
+It does not statically import `depends.dll`. Its imports nevertheless include
+debug/process-inspection operations such as `WaitForDebugEvent`,
+`ContinueDebugEvent`, `GetThreadContext`, `SetThreadContext`,
+`ReadProcessMemory`, `WriteProcessMemory`, `VirtualProtectEx`, and
+`VirtualQueryEx`, plus registry read/write operations. The bounded string scan
+also finds profiling and hook-injection messages, including an explicit
+failure message for a successfully injected hook followed by failure to load
+`DEPENDS.DLL`. No network DLL or network API import, service/driver operation,
+or persistence API was identified. One legacy MSDN search URL exists as an
+embedded string; a string is not evidence that this audit or the tool made a
+network request.
+
+The DLL imports only `kernel32.dll`, has no named exports, and exposes five
+ordinal-only exports (1 through 5). Its imports include library-loading and
+diagnostic primitives but no network, registry, service, persistence, or
+remote-process API identified by the audit rules. Static evidence strongly
+supports its role as the runtime profiling helper. Static analysis cannot
+prove that profiling is its only possible use, so the report deliberately
+records that exclusivity as unproven.
+
+Nuitka 4.0 invokes `depends.exe` with `-pa1` and `-ps1`, which enables the
+profiling-oriented command path. Nuitka's generic cached-download helper also
+extracts every archive file with `flatten=True`, even though the cache
+readiness check names only `depends.exe`. Combining that source behavior with
+the EXE's profiling strings gives a material risk that manually caching only
+the EXE would make this scan path fail to load its helper or lose required
+functionality. A future cache-placement authorization should therefore review
+placing both the EXE and DLL together. The CHM is help content and is unrelated
+to Nuitka's command-line scan path; it must not enter the cache or package.
+
+The official site supplied no fixed SHA-256. The ZIP and entry hashes were
+reported by the user as matching some public third-party records. Such a match
+establishes sample consistency only; it does not establish publisher
+authenticity, benign behavior, or redistribution rights. A public sandbox
+risk label for the same hash is likewise a review signal, not a malware
+verdict. No third-party site was revisited and no hash or sample was uploaded
+during this stage.
+
+The ignored detailed report is:
+
+```text
+build/tool-quarantine/dependency-walker/binary_audit.json
+```
+
+MSVC 14.44 x64 `dumpbin.exe` was used only with `/HEADERS`, `/DEPENDENTS`,
+`/IMPORTS`, and `/EXPORTS`; its raw output is not persisted. No target PE was
+executed, no DLL was dynamically loaded, nothing was copied to the Nuitka
+cache, and no standalone/onefile compilation or deployment artifact was
+started.
+
+Static review permits only a later, separate execution-authorization decision.
+The current gate is:
+
+```text
+safe_code=dependency_walker_execution_authorization_required
 ```
