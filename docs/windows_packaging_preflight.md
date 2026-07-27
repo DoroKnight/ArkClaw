@@ -897,3 +897,65 @@ packaged executable, artifact audit, network request, Credential Manager
 operation, or real Provider. The incident record still reports zero
 third-build attempts. A third standalone build remains separately
 authorization-gated.
+
+### Third standalone build verification checkpoint
+
+The separately authorized third and final standalone build started from
+commit `3524d2b92aa832b68524d047782169368a62f176` on
+`codex/windows-packaging-preflight`. The build guard was created once, the
+controller performed no automatic retry, and the build completed with exit
+code 0. No fourth build is authorized.
+
+Before compilation, the packaging environment passed all required version,
+specification, prefix, virtual-environment, `PYTHONPATH`, and development-site
+checks. It contained 23 distributions, with no forbidden distribution,
+import specification, or filesystem entry. The tracked spec retained exactly
+the six reviewed no-follow rules. All controllable temporary files, caches,
+logs, raw output, final output, and evidence stayed below the repository.
+
+The raw and final distributions each contain 70 files totaling 139,376,360
+bytes. Their relative paths, sizes, and SHA-256 values match exactly. The
+static audit identified 69 parseable AMD64 PE files and no unknown or
+unparseable PE. The main executable is AMD64 with the Windows GUI subsystem.
+Its DEP, ASLR, and high-entropy-VA flags are enabled. Control Flow Guard is
+not enabled and Authenticode signing is not required at this preliminary
+checkpoint; both remain release-hardening considerations.
+
+Every normal and delay-load dependency resolved deterministically, with no
+unresolved or ambiguous dependency. The required Windows Qt platform plugin
+is present at
+`PySide6/qt-plugins/platforms/qwindows.dll`; no `platformthemes` file is
+present. The final distribution contains no Dependency Walker executable,
+debug symbol, import library, build report, XML, or JSON evidence file.
+
+The compilation report contains no forbidden production module,
+distribution, or resource. The artifact scan found no real secret material,
+local development path, manual-verification Credential Target, or external
+character-resource path. A source-level `CredentialBlob` identifier is not
+credential material and is tracked separately from the zero real-secret
+finding. The auditor and build harness did not access the network or Windows
+Credential Manager and did not execute the packaged application. The
+controller did not provide an operating-system-enforced hard network
+isolation boundary, so the result is evidence of no observed harness access,
+not a general network non-interference proof.
+
+Post-build regression results were:
+
+```text
+pytest: 920 passed, 1 skipped
+ruff: all checks passed
+mypy strict: 125 source files checked successfully
+PowerShell AST: passed
+git diff --check: passed
+Qt Fake smokes: 6 passed
+production imports: valid
+Fake Provider smoke: passed
+forbidden production imports: 0
+OpenAI manual entry: manual_verification_disabled
+DeepSeek manual entry: manual_verification_disabled
+```
+
+The skipped pytest case remains the explicitly gated real Windows Credential
+Manager integration test. No real Provider, API key, Credential Manager
+integration, packaged executable, DLL, or PYD was run or loaded. Runtime
+execution of the packaged application remains separately authorization-gated.
