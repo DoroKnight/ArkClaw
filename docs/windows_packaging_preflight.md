@@ -198,9 +198,76 @@ SJTUClaw brand asset and must not be presented as the final product icon.
 Before distribution it must be replaced by an original, explicitly authorized
 ICO. This stage does not add or generate character artwork.
 
-Until the separately authorized Dependency Walker acquisition is completed,
-the gate is:
+## Quarantined Dependency Walker review
+
+The separately authorized acquisition was performed on 2026-07-27 with
+`packaging/acquire_dependency_walker.ps1 -ConfirmDownload`. The entry point is
+inert without that switch. Its fixed URL validation rejects HTTP, credentials,
+ports, query strings, fragments, path changes, and host changes. The Python
+audit helper uses system TLS validation, disables redirect handling, reads the
+body in bounded chunks, enforces a 2 MiB limit independently of
+`Content-Length`, flushes and fsyncs a unique `.part`, and performs a
+no-extraction ZIP and PE-header audit before the completed ZIP is atomically
+renamed inside the ignored quarantine.
+
+The actual download result was:
+
+- request and final URL:
+  `https://dependencywalker.com/depends22_x64.zip`;
+- HTTP 200 with no redirect and successful system TLS validation;
+- content type `application/x-zip-compressed`;
+- declared and actual size 468,618 bytes;
+- start `2026-07-27T02:12:27.723Z`;
+- completion `2026-07-27T02:12:29.192Z`;
+- ZIP SHA-256
+  `35db68a613874a2e8c1422eb0ea7861f825fc71717d46dabf1f249ce9634b4f1`;
+- ZIP SHA-512
+  `7d73eaec69c2e39cf447a7c40c7f32db9b02fac3330b1d60296d8b595cd4563cb55fe848ce9ddb35f234da5afa6bba65f5dfcee520e35ea5d01634b4f7c684ce`.
+
+The archive contained exactly three non-directory entries:
+
+| Entry | Compressed | Uncompressed | SHA-256 |
+| --- | ---: | ---: | --- |
+| `depends.chm` | 150,509 | 164,468 | `e5a4e001fbfe731b5d8b9d2046c57fa1786599364366704a800d59239d0c064d` |
+| `depends.dll` | 5,781 | 12,288 | `7a5cae7605ae5d8c8aee3e6d8e77e455537b636b395b8f00aebe17bf8b228770` |
+| `depends.exe` | 312,012 | 566,272 | `57c483dc985a9757501993e969c2a7043c26517f97fd49a42b33d2d6a4193d8b` |
+
+Total compressed entry data was 468,302 bytes and total uncompressed data was
+743,028 bytes. The static checks found no encryption, duplicate or
+case-colliding names, absolute/UNC/drive/ADS/traversal paths, control
+characters, symlinks, special files, size-limit violations, or abnormal
+compression ratio. There was exactly one `depends.exe`; its bounded header
+prefix contained an MZ header, a PE signature, and machine value `0x8664`
+(AMD64). Entry content was streamed for hashing and no archive entry was
+extracted.
+
+The archive is structurally safe under these checks, but `depends.chm` and
+`depends.dll` are additional entries and therefore require explicit human
+review. The result remains `manual_review_required=true`; structural checks
+do not establish provenance or redistribution rights.
+
+The official homepage and FAQ were read over their exact authorized HTTPS URLs
+with redirects disabled. Both returned HTTP 200 without redirect. The homepage
+identifies Dependency Walker version 2.2 as a free utility. It also states
+distribution restrictions: recipients may not profit from distributing it and
+may not bundle it with another product. SJTUClaw therefore treats the tool only
+as a local build-time dependency and does not claim redistribution permission.
+The final SJTUClaw package must not contain the ZIP, `depends.exe`,
+`depends.dll`, or `depends.chm`.
+
+The ignored local evidence is retained at:
+
+- `build/tool-quarantine/dependency-walker/depends22_x64.zip`;
+- `build/tool-quarantine/dependency-walker/download_audit.json`;
+- `build/tool-quarantine/dependency-walker/archive_audit.json`.
+
+The ZIP was not extracted, no contained PE was executed, and no file was copied
+into the Nuitka cache. No standalone or onefile compilation was started.
+Moving the reviewed executable into the Nuitka cache, executing it, or starting
+a standalone build requires a new explicit authorization and review.
+
+Until that review is granted, the gate is:
 
 ```text
-safe_code=dependency_walker_authorization_required
+safe_code=dependency_walker_review_required
 ```
