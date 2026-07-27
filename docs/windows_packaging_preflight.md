@@ -1009,3 +1009,94 @@ Provider operation was performed during this corrective checkpoint. The old
 70-file standalone remains the known failing artifact and was not modified or
 executed again. A corrected standalone has not yet been generated; rebuilding
 and auditing it requires separate authorization.
+
+### Corrective standalone artifact checkpoint
+
+One separately authorized corrective standalone build was performed from
+commit `959285087481b177429bc77b5728c364e3b6cb92`. The attempt guard was
+created before process creation, stdin was closed, automatic retry remained
+disabled, and no second corrective build was attempted. The Job Object was
+configured with kill-on-close and a 128-process active limit. The build
+completed without timeout or remaining child processes:
+
+```text
+build attempts: 1
+automatic retries: 0
+duration: 1406.151 seconds
+disk consumed: 906813440 bytes
+total processes: 1794
+peak active processes: 38
+pyside6-deploy exit code: 0
+```
+
+The MSVC 14.44 toolchain started a `vctip.exe` helper after compilation. The
+Job Object correctly retained the build until that helper exited, rather than
+publishing a premature success result. No download or installation prompt was
+observed. The harness set the fixed offline package-manager variables and
+reported no network or Credential Manager access, but it did not provide an
+operating-system-enforced hard network-isolation boundary.
+
+The raw and final standalone manifests contain the same 70 relative paths,
+sizes, and SHA-256 values. The final artifact contains 70 files, 69 parsed PE
+files, and 139376872 total bytes. The corrected executable SHA-256 is:
+
+```text
+119192a1380a639e4bdce581fe41e72534647ade6f119d27742a745cd275bdfe
+```
+
+It differs from the archived failing executable. The old 147-file failure
+archive and 5308-file residual-build archive were revalidated against their
+stored manifests with zero size or hash mismatches. Their manifest hashes
+remain:
+
+```text
+old failure archive: 293e73a19372f1b53f618f67158c5dd7705c180ed7a025b36393f8d9b9328673
+residual build archive: bf35bb036a84f7c7e22da523deb3229cb92e6ea64258fabe158b0ed5e92fd659
+```
+
+The corrected compilation report has `completion=yes`, `mode=standalone`,
+`architecture=x86_64`, and no onefile node. It includes
+`sjtuclaw.infrastructure.llm.openai_sdk` from the current production entry
+surface. This confirms that the corrected module was compiled; it is not a
+runtime proof that the recursive alias now imports successfully in the
+packaged executable.
+
+All 69 PE files parsed as AMD64. The main executable uses the Windows GUI
+subsystem. ASLR, DEP/NX compatibility, and High Entropy VA are enabled;
+Control Flow Guard is not enabled and remains recorded as a deployment
+hardening limitation. Unresolved and ambiguous dependency counts are both
+zero. The required `qwindows.dll` and `qmodernwindowsstyle.dll` plugins are
+present under the expected Qt plugin layout, `platformthemes` is empty, and
+the plugin dependency closure is complete.
+
+The production dependency scan found zero occurrences of `pydantic.mypy`,
+`mypy`, `mypy.*`, `mypy_extensions`, `mypyc`, `mypyc.*`, `httpx._main`,
+`pygments`, `pygments.*`, or `Pygments`. The artifact contains no real secret
+material, Authorization value, real CredentialBlob, manual-verification
+Credential Target, user directory, development virtual-environment path,
+external character-resource path, settings, conversation, or continuation.
+The source-level `CredentialBlob` identifier remains classified separately
+from credential material. Dependency Walker files are absent from the final
+distribution.
+
+Corrective post-build regression results were:
+
+```text
+OpenAI SDK: 33 passed
+OpenAI Provider: 80 passed
+pytest: 935 passed, 1 skipped
+ruff: all checks passed
+mypy strict: 125 source files checked successfully
+PowerShell AST: 10 files passed
+git diff --check: passed
+Qt Fake smokes: 6 passed
+production imports: valid
+Fake Provider smoke: passed
+forbidden production imports: 0
+OpenAI manual entry: manual_verification_disabled
+DeepSeek manual entry: manual_verification_disabled
+```
+
+Neither the corrected `SJTUClaw.exe` nor any packaged DLL or PYD was executed,
+imported, or loaded during this checkpoint. Runtime validation of the
+corrected executable remains separately authorization-gated.
