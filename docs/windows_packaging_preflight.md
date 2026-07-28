@@ -1100,3 +1100,46 @@ DeepSeek manual entry: manual_verification_disabled
 Neither the corrected `SJTUClaw.exe` nor any packaged DLL or PYD was executed,
 imported, or loaded during this checkpoint. Runtime validation of the
 corrected executable remains separately authorization-gated.
+
+### Packaged-runtime PID/TCP observer checkpoint
+
+The runtime observer now has a tracked, deterministic classification layer and
+a separately tracked PowerShell supervisor. `Get-NetTCPConnection` is the only
+authoritative TCP sampler. Earlier IP Helper output was produced by a
+conflicting experimental sampler and is retained only as invalid historical
+evidence; it must not be combined with or used to override the authoritative
+observations.
+
+Strict loopback classification accepts only IPv4 `127.0.0.0/8`, IPv6 `::1`,
+and IPv4-mapped IPv6 loopback. Unspecified, private, link-local, public, and
+invalid addresses are not loopback. A non-loopback `Listen` endpoint or any
+non-loopback side of an `Established` endpoint fails closed as external
+network activity. A `Bound` endpoint remains unattributed unless it is part of
+the exact packaged-local signature: one compatible `Bound` endpoint plus two
+reverse-direction loopback `Established` endpoints, all owned by the same
+immutable process identity and representing one flow. The signature is only
+accepted after the process exits and all PID-owned endpoint records disappear.
+
+The observer reports poll, sample, unique endpoint, `Bound`, `Listen`,
+`Established`, loopback, external, unattributed, and unique-flow counts.
+Repeated samples are aggregated without turning stale records into active
+connections. PID reuse, post-exit endpoint retention, unexpected states, and
+incomplete signatures fail closed. Raw endpoint observations and the safe
+summary are written to separate ignored evidence files.
+
+The supervisor's default invocation is deliberately inert:
+
+```text
+packaged_runtime_supervisor=False safe_code=packaged_runtime_supervisor_disabled
+```
+
+It exits with code 0, does not create evidence directories, does not normalize
+the caller's environment, and does not start the executable. Diagnostic mode
+requires an explicit switch, redirects all controllable settings and temporary
+paths beneath the repository, removes sensitive and proxy variables from the
+child environment, creates exactly one fixed owner executable, and never
+creates a secondary instance. The prior source-only probes were bounded and
+completed without observed TCP endpoints; Probe 4's shortened rerun completed
+in approximately 7.2 seconds. Those probes are not packaged-runtime proof. The
+single packaged owner diagnostic remains a separately controlled execution
+step after this source checkpoint.
