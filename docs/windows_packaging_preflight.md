@@ -1207,3 +1207,74 @@ zero exit code, completed checkpoint and terminal summary, no `.part` or
 backup file, and no remaining Dummy or launcher process. No packaged
 executable was run during recovery. Re-running a packaged owner diagnostic
 still requires separate explicit authorization.
+
+### Corrective packaged-runtime lifecycle verification
+
+The corrected standalone was subsequently exercised under a separately
+authorized, bounded runtime-verification plan from commit
+`41f27af3b6dac2f265f3f1cc4c010a282babd8a2`. The verified distribution still
+contains 70 files and 139376872 bytes. Before and after execution, every
+relative path, size, and SHA-256 matched the schema-version 2 artifact
+manifest. The main executable SHA-256 remained:
+
+```text
+119192a1380a639e4bdce581fe41e72534647ade6f119d27742a745cd275bdfe
+```
+
+The authorization allowed four executable creations, and exactly four were
+used without retry:
+
+1. Launch 1 created the owner. The desktop pet and tray remained available
+   after hiding the Agent window. Three Fake Provider turns completed, one
+   generation was cancelled, and a later turn completed after cancellation.
+   Pet hide/show also completed. The owner then saved a new position with
+   always-on-top enabled and exited normally through the tray.
+2. Launch 2 created the sole secondary while the owner remained running. The
+   secondary exited with code 0, caused the existing hidden pet to reappear,
+   and created no second pet or tray. Only the original owner remained.
+3. Launch 3 created a new owner using the same redirected settings root. The
+   saved position and always-on-top state were restored. The process exited
+   normally through the tray while the pet was in `falling` or `landing`.
+4. Launch 4 created the final owner and exited normally through the tray while
+   the pet was idle.
+
+All four processes exited with code 0. After every owner exit, the supervisor
+observed the process exit, disappearance of its endpoints, and zero residual
+child processes. The three owner runs each produced only the expected
+three-endpoint loopback single-instance signature: one logical flow, zero
+external endpoints, and zero unattributed endpoints. The secondary produced
+no observed endpoint. This is an observation made with
+`Get-NetTCPConnection`; it is not an operating-system-enforced proof that
+network access was impossible.
+
+All controllable temporary, application-data, and evidence paths were
+redirected beneath
+`build/corrective-packaged-runtime-full-verification`. The persisted pet
+settings document used schema version 1 and the strict field set
+`schema_version`, `window_x`, `window_y`, and `always_on_top`. It contained no
+Provider, credential, API key, conversation, or continuation field. No real
+Provider was activated, no real API key was supplied, and the supervisors
+reported no Credential Manager access. Runtime evidence and settings remain
+ignored and are not part of the Git checkpoint.
+
+Post-verification source regression results were:
+
+```text
+pytest: 1030 passed, 2 skipped
+ruff: all checks passed
+mypy strict: 131 source files checked successfully
+PowerShell AST: 12 files passed
+git diff --check: passed
+Qt Fake smokes: 6 passed
+production imports: valid
+Fake Provider smoke: passed
+forbidden production imports: 0
+OpenAI manual entry: manual_verification_disabled
+DeepSeek manual entry: manual_verification_disabled
+```
+
+The two skipped pytest cases are the explicitly gated Windows Credential
+Manager integration and Dummy supervisor lifecycle tests. Neither was enabled
+during this runtime verification. Authenticode signing, an installer, onefile
+packaging, startup registration, and formal character-resource integration
+remain unimplemented and unverified.
