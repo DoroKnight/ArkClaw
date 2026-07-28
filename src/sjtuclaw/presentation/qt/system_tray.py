@@ -3,12 +3,20 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Protocol
 
 from PySide6.QtCore import QObject, QPoint, QSignalBlocker, Qt
 from PySide6.QtGui import QAction, QColor, QIcon, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import QMenu, QSystemTrayIcon
+
+from sjtuclaw.application.autostart_service import (
+    AutostartSnapshot,
+    AutostartStatus,
+)
+from sjtuclaw.presentation.qt.autostart_controller import (
+    AutostartUiController,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -17,6 +25,13 @@ class PetTrayState:
     paused: bool
     always_on_top: bool
     closing: bool
+    autostart: AutostartSnapshot = field(
+        default_factory=lambda: AutostartSnapshot.for_status(
+            AutostartStatus.UNAVAILABLE
+        )
+    )
+    autostart_busy: bool = False
+    autostart_display_message: str = ""
 
 
 class PetTrayCommands(Protocol):
@@ -51,6 +66,7 @@ class TrayCallbacks:
     toggle_paused: Callable[[], None]
     set_always_on_top: Callable[[bool], None]
     request_safe_exit: Callable[[], None]
+    set_autostart_enabled: Callable[[bool], None] | None = None
 
 
 class TrayView(Protocol):
@@ -109,6 +125,20 @@ class _QtSystemTrayView:
             callbacks.set_always_on_top
         )
         self._menu.addAction(self._always_on_top_action)
+
+        self._autostart_action = QAction(
+            "Start with Windows",
+            self._menu,
+        )
+        self._autostart_action.setCheckable(True)
+        self._autostart_action.toggled.connect(
+            lambda enabled: (
+                callbacks.set_autostart_enabled(enabled)
+                if callbacks.set_autostart_enabled is not None
+                else None
+            )
+        )
+        self._menu.addAction(self._autostart_action)
         self._menu.addSeparator()
 
         self._exit_action = QAction("Exit", self._menu)
@@ -134,14 +164,26 @@ class _QtSystemTrayView:
         blocker = QSignalBlocker(self._always_on_top_action)
         self._always_on_top_action.setChecked(state.always_on_top)
         del blocker
+        autostart_blocker = QSignalBlocker(self._autostart_action)
+        self._autostart_action.setChecked(state.autostart.enabled)
+        del autostart_blocker
+        self._autostart_action.setToolTip(
+            state.autostart_display_message
+            or state.autostart.safe_message
+        )
+        self._autostart_action.setEnabled(
+            not state.closing
+            and not state.autostart_busy
+            and state.autostart.user_toggle_allowed
+        )
         for action in (
             self._visibility_action,
             self._open_agent_action,
             self._pause_action,
             self._always_on_top_action,
-            self._exit_action,
         ):
             action.setEnabled(not state.closing)
+        self._exit_action.setEnabled(not state.closing)
 
     def close(self) -> None:
         if self._closed:
@@ -163,11 +205,13 @@ class SystemTrayController(QObject):
         self,
         commands: PetTrayCommands,
         *,
+        autostart_controller: AutostartUiController | None = None,
         view_factory: TrayViewFactory | None = None,
         parent: QObject | None = None,
     ) -> None:
         super().__init__(parent)
         self._commands = commands
+        self._autostart_controller = autostart_controller
         self._closed = False
         self._shutdown_started = False
         self._exit_requested = False
@@ -182,6 +226,11 @@ class SystemTrayController(QObject):
             toggle_paused=self._toggle_paused,
             set_always_on_top=self._set_always_on_top,
             request_safe_exit=self._request_safe_exit,
+            set_autostart_enabled=(
+                None
+                if autostart_controller is None
+                else self._set_autostart_enabled
+            ),
         )
         factory = view_factory or _create_qt_tray_view
         try:
@@ -193,6 +242,10 @@ class SystemTrayController(QObject):
             self._safe_code = "system_tray_unavailable"
             return
         self._view = view
+        if autostart_controller is not None:
+            autostart_controller.state_changed.connect(
+                self._on_autostart_state_changed
+            )
         try:
             self._update_view(view)
             view.show()
@@ -282,8 +335,38 @@ class SystemTrayController(QObject):
                 paused=self._commands.pet_paused,
                 always_on_top=self._commands.pet_always_on_top,
                 closing=self._commands.pet_closing,
+                autostart=(
+                    AutostartSnapshot.for_status(
+                        AutostartStatus.UNAVAILABLE
+                    )
+                    if self._autostart_controller is None
+                    else self._autostart_controller.snapshot
+                ),
+                autostart_busy=(
+                    False
+                    if self._autostart_controller is None
+                    else self._autostart_controller.busy
+                ),
+                autostart_display_message=(
+                    ""
+                    if self._autostart_controller is None
+                    else self._autostart_controller.display_message
+                ),
             )
         )
+
+    def _on_autostart_state_changed(self, value: object) -> None:
+        del value
+        self.refresh()
+
+    def _set_autostart_enabled(self, enabled: bool) -> None:
+        if self._exit_requested or self._shutdown_started or self._closed:
+            return
+        controller = self._autostart_controller
+        if controller is None:
+            return
+        controller.set_enabled(enabled)
+        self.refresh()
 
     def _toggle_pet_visibility(self) -> None:
         if self._exit_requested or self._shutdown_started or self._closed:

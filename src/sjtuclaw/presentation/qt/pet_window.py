@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import random
 
-from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtCore import QSignalBlocker, Qt, QTimer, Signal
 from PySide6.QtGui import (
     QAction,
     QCloseEvent,
@@ -16,6 +16,10 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import QApplication, QMenu, QWidget
 
+from sjtuclaw.application.autostart_service import (
+    AutostartSnapshot,
+    AutostartStatus,
+)
 from sjtuclaw.application.pet_animation import (
     MonotonicClock,
     PetAnimationConfig,
@@ -30,6 +34,9 @@ from sjtuclaw.application.pet_state import (
     PetLifecycleState,
     PetMotionState,
     PetStateTransitionError,
+)
+from sjtuclaw.presentation.qt.autostart_controller import (
+    AutostartUiController,
 )
 from sjtuclaw.presentation.qt.pet_renderer import (
     PetRenderer,
@@ -56,6 +63,7 @@ class PetWindow(QWidget):
         clock: MonotonicClock | None = None,
         rng: random.Random | None = None,
         animation_config: PetAnimationConfig | None = None,
+        autostart_controller: AutostartUiController | None = None,
     ) -> None:
         super().__init__()
         self._always_on_top = always_on_top
@@ -63,6 +71,8 @@ class PetWindow(QWidget):
         self._exit_emitted = False
         self._drag_offset: Point | None = None
         self._context_menu: QMenu | None = None
+        self._autostart_controller = autostart_controller
+        self._autostart_action: QAction | None = None
         self._renderer = renderer or PlaceholderPetRenderer()
         self.setObjectName("placeholderPetWindow")
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
@@ -97,6 +107,10 @@ class PetWindow(QWidget):
         self._animation_timer.setInterval(_TIMER_INTERVAL_MS)
         self._animation_timer.timeout.connect(self._advance_animation)
         self._animation_timer.start()
+        if autostart_controller is not None:
+            autostart_controller.state_changed.connect(
+                self._on_autostart_state_changed
+            )
 
     @property
     def lifecycle_state(self) -> PetLifecycleState:
@@ -343,6 +357,14 @@ class PetWindow(QWidget):
         top_action.setChecked(self._always_on_top)
         top_action.toggled.connect(self.set_always_on_top)
         menu.addAction(top_action)
+
+        self._autostart_action = QAction("Start with Windows", menu)
+        self._autostart_action.setCheckable(True)
+        self._autostart_action.toggled.connect(
+            self._set_autostart_enabled
+        )
+        menu.addAction(self._autostart_action)
+        self._sync_autostart_action()
         menu.addSeparator()
 
         open_action = QAction("Open Agent window", menu)
@@ -358,6 +380,45 @@ class PetWindow(QWidget):
         menu.addAction(exit_action)
         menu.popup(event.globalPos())
         event.accept()
+
+    def _set_autostart_enabled(self, enabled: bool) -> None:
+        controller = self._autostart_controller
+        if (
+            controller is None
+            or self.lifecycle_state is PetLifecycleState.CLOSING
+        ):
+            self._sync_autostart_action()
+            return
+        controller.set_enabled(enabled)
+        self._sync_autostart_action()
+
+    def _on_autostart_state_changed(self, value: object) -> None:
+        del value
+        self._sync_autostart_action()
+
+    def _sync_autostart_action(self) -> None:
+        action = self._autostart_action
+        if action is None:
+            return
+        controller = self._autostart_controller
+        snapshot = (
+            AutostartSnapshot.for_status(AutostartStatus.UNAVAILABLE)
+            if controller is None
+            else controller.snapshot
+        )
+        blocker = QSignalBlocker(action)
+        action.setChecked(snapshot.enabled)
+        del blocker
+        action.setToolTip(
+            snapshot.safe_message
+            if controller is None
+            else controller.display_message
+        )
+        action.setEnabled(
+            self.lifecycle_state is not PetLifecycleState.CLOSING
+            and controller is not None
+            and controller.user_toggle_allowed
+        )
 
     def closeEvent(self, event: QCloseEvent) -> None:
         if self._allow_final_close:

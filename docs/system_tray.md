@@ -67,5 +67,8 @@ The offline tray smoke uses an injected Fake Tray:
 
 It does not claim to verify the Windows Explorer notification area. Real tray
 presence, icon appearance, and interaction require manual Windows acceptance.
-This stage does not implement autostart, single-instance locking, packaging,
-notifications, external icons, Spine, or official character resources.
+The optional autostart action shares one RuntimeThread-owned state with Agent
+Settings and the pet context menu; its ownership and Windows-control rules are
+documented in [Optional Windows Autostart](windows_autostart.md). This stage
+does not implement notifications, external icons, Spine, or official character
+resources.

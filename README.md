@@ -141,6 +141,13 @@ Runtime。详见[占位桌宠窗口文档](docs/pet_window_placeholder.md)和
 混合。严格 JSON schema、原子写入、损坏保护及双生命周期离线 smoke 见
 [桌宠设置文档](docs/pet_settings.md)。
 
+Windows 开机自启动是默认关闭的用户选项，可从 Agent 设置页、系统托盘或桌宠
+右键菜单显式切换，三个入口共享同一状态。它只管理当前用户 HKCU Run 下固定的
+`SJTUClaw` 值，不使用 `StartupApproved`，也不需要管理员权限。Windows 设置或
+任务管理器仍可在系统层禁用启动项。源码环境与 onefile 模式不能启用；真实 HKCU
+验证、稳定安装路径和卸载清理尚未完成。详见
+[Windows 自启动文档](docs/windows_autostart.md)。
+
 ## 架构约束
 
 `domain` 和 `application` 包不得导入 PySide6、OpenAI、Ollama 或 SQLite。

@@ -9,8 +9,14 @@ from typing import NoReturn
 
 from PySide6.QtWidgets import QApplication
 
+from sjtuclaw.bootstrap.autostart import (
+    create_production_autostart_service,
+)
 from sjtuclaw.bootstrap.qt_runtime import (
     ProductionQtRuntimeCompositionRoot,
+)
+from sjtuclaw.presentation.qt.autostart_controller import (
+    AutostartUiController,
 )
 from sjtuclaw.presentation.qt.main_window import MainWindow
 from sjtuclaw.presentation.qt.runtime_bridge import QtRuntimeBridge
@@ -37,9 +43,14 @@ def main(argv: list[str] | None = None) -> int:
     bridge = QtRuntimeBridge(
         ProductionQtRuntimeCompositionRoot(
             default_provider_metadata_path()
-        )
+        ),
+        autostart_service_factory=create_production_autostart_service,
     )
-    window = MainWindow(bridge)
+    autostart_controller = AutostartUiController(bridge, bridge)
+    window = MainWindow(
+        bridge,
+        autostart_controller=autostart_controller,
+    )
     window.show()
     return app.exec()
 

@@ -8,9 +8,11 @@ from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import dataclass, field
 from enum import Enum
+from pathlib import Path
 
 from PySide6.QtCore import QThread, Signal
 
+from sjtuclaw.application.autostart_service import AutostartService
 from sjtuclaw.application.provider_profile_service import (
     ActiveTurnHandling,
     ProviderActivationOptions,
@@ -40,6 +42,8 @@ class RuntimeThreadCommandType(Enum):
     DELETE_PROVIDER_PROFILE = "delete_provider_profile"
     SAVE_PROVIDER_CREDENTIAL = "save_provider_credential"
     DELETE_PROVIDER_CREDENTIAL = "delete_provider_credential"
+    REQUEST_AUTOSTART = "request_autostart"
+    SET_AUTOSTART = "set_autostart"
     SHUTDOWN = "shutdown"
 
 
@@ -57,6 +61,7 @@ class RuntimeThreadCommand:
     display_name: str = ""
     model: str = ""
     credential_id: str = ""
+    enabled: bool = False
     secret: str = field(default="", repr=False, compare=False)
 
     def clear_sensitive(self) -> None:
@@ -69,6 +74,15 @@ RuntimeControllerFactory = Callable[
     [RuntimeEventSink, int],
     RuntimeSessionController,
 ]
+AutostartServiceFactory = Callable[[], AutostartService]
+
+
+def _create_unavailable_autostart_service() -> AutostartService:
+    return AutostartService(
+        None,
+        lambda: Path(__file__),
+        platform_supported=False,
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -86,15 +100,22 @@ class RuntimeThread(QThread):
     runtime_event_emitted = Signal(object)
     snapshot_emitted = Signal(object)
     provider_settings_emitted = Signal(str, object)
+    autostart_state_emitted = Signal(str, object)
     command_result_emitted = Signal(str, bool, str, str)
     shutdown_outcome_emitted = Signal(str, bool, str, str)
 
     def __init__(
         self,
         controller_factory: RuntimeControllerFactory,
+        autostart_service_factory: AutostartServiceFactory | None = None,
     ) -> None:
         super().__init__()
         self._controller_factory = controller_factory
+        self._autostart_service_factory = (
+            autostart_service_factory
+            or _create_unavailable_autostart_service
+        )
+        self._autostart_service: AutostartService | None = None
         self._guard = threading.Lock()
         self._loop: asyncio.AbstractEventLoop | None = None
         self._queue: asyncio.Queue[RuntimeThreadCommand] | None = None
@@ -249,6 +270,7 @@ class RuntimeThread(QThread):
                 event_sink,
                 threading.get_ident(),
             )
+            self._autostart_service = self._autostart_service_factory()
             controller_ref.append(controller)
             with self._guard:
                 self._loop = loop
@@ -455,6 +477,24 @@ class RuntimeThread(QThread):
             settings = self._require_provider_settings(controller)
             settings.delete_credential(CredentialId(command.credential_id))
             return self._publish_provider_settings(command, controller)
+        if command.type is RuntimeThreadCommandType.REQUEST_AUTOSTART:
+            service = self._require_autostart_service()
+            snapshot = service.query()
+            self.autostart_state_emitted.emit(command.command_id, snapshot)
+            return RuntimeCommandResult.ok()
+        if command.type is RuntimeThreadCommandType.SET_AUTOSTART:
+            service = self._require_autostart_service()
+            result = service.set_enabled(command.enabled)
+            self.autostart_state_emitted.emit(
+                command.command_id,
+                result.snapshot,
+            )
+            if result.success:
+                return RuntimeCommandResult.ok()
+            return RuntimeCommandResult.failure(
+                result.safe_code,
+                result.safe_message,
+            )
         if command.type is RuntimeThreadCommandType.SHUTDOWN:
             return await controller.shutdown(
                 cancel_active=command.cancel_active
@@ -463,6 +503,12 @@ class RuntimeThread(QThread):
             "invalid_command",
             "The runtime command is not supported.",
         )
+
+    def _require_autostart_service(self) -> AutostartService:
+        service = self._autostart_service
+        if service is None:
+            raise RuntimeError("The autostart service is unavailable.")
+        return service
 
     @staticmethod
     def _require_provider_settings(

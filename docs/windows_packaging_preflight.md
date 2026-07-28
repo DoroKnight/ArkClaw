@@ -1276,5 +1276,7 @@ DeepSeek manual entry: manual_verification_disabled
 The two skipped pytest cases are the explicitly gated Windows Credential
 Manager integration and Dummy supervisor lifecycle tests. Neither was enabled
 during this runtime verification. Authenticode signing, an installer, onefile
-packaging, startup registration, and formal character-resource integration
-remain unimplemented and unverified.
+packaging, and formal character-resource integration remain unimplemented and
+unverified. Optional startup registration was implemented later at source
+level and still requires a new packaged artifact and separate Windows runtime
+acceptance.

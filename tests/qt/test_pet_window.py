@@ -873,6 +873,7 @@ def test_qt_tray_view_builds_reviewed_menu_and_synchronizes_labels(
         "Open Agent Window",
         "Pause",
         "Always on Top",
+        "Start with Windows",
         "Exit",
     ]
 
@@ -1216,6 +1217,7 @@ def test_right_click_exit_waits_for_shutdown_result(
     } == {
         "Pause",
         "Always on top",
+        "Start with Windows",
         "Open Agent window",
         "Exit",
     }

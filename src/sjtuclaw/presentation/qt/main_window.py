@@ -19,6 +19,9 @@ from sjtuclaw.application.provider_settings_service import (
     ProviderSettingsSnapshot,
 )
 from sjtuclaw.application.runtime_session_controller import RuntimeSnapshot
+from sjtuclaw.presentation.qt.autostart_controller import (
+    AutostartUiController,
+)
 from sjtuclaw.presentation.qt.provider_settings_dialog import (
     ProviderSettingsDialog,
 )
@@ -33,9 +36,11 @@ class MainWindow(QMainWindow):
         bridge: QtRuntimeBridge,
         *,
         hide_on_close: bool = False,
+        autostart_controller: AutostartUiController | None = None,
     ) -> None:
         super().__init__()
         self._bridge = bridge
+        self._autostart_controller = autostart_controller
         self._hide_on_close = hide_on_close
         self._safe_close_requested = False
         self._runtime_ready = False
@@ -57,7 +62,7 @@ class MainWindow(QMainWindow):
         self.send_button.setObjectName("sendMessageButton")
         self.cancel_button = QPushButton("Cancel reply")
         self.cancel_button.setObjectName("cancelTurnButton")
-        self.settings_button = QPushButton("Provider settings")
+        self.settings_button = QPushButton("Agent settings")
         self.settings_button.setObjectName("openProviderSettingsButton")
         self.profile_label = QLabel("Profile: inactive")
         self.profile_label.setObjectName("activeProfileLabel")
@@ -211,6 +216,7 @@ class MainWindow(QMainWindow):
             self._settings_dialog = ProviderSettingsDialog(
                 self._bridge,
                 self,
+                autostart_controller=self._autostart_controller,
             )
         self._settings_dialog.show()
         self._settings_dialog.raise_()

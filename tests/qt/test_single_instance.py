@@ -1296,6 +1296,11 @@ def test_secondary_main_path_constructs_no_runtime_gui_or_tray(
         "ProductionQtRuntimeCompositionRoot",
         forbidden,
     )
+    monkeypatch.setattr(
+        pet_application,
+        "create_production_autostart_service",
+        forbidden,
+    )
     monkeypatch.setattr(pet_application, "QtRuntimeBridge", forbidden)
     monkeypatch.setattr(pet_application, "MainWindow", forbidden)
     monkeypatch.setattr(pet_application, "PetWindow", forbidden)
@@ -1316,7 +1321,7 @@ def test_secondary_main_path_constructs_no_runtime_gui_or_tray(
     assert constructed == []
 
 
-def test_owner_main_starts_runtime_window_and_tray_when_settings_fail(
+def test_startup_owner_keeps_agent_hidden_and_starts_pet_and_tray(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     events: list[str] = []
@@ -1340,6 +1345,9 @@ def test_owner_main_starts_runtime_window_and_tray_when_settings_fail(
             events.append("lock_close")
 
     class FakePet:
+        def __init__(self, *, autostart_controller: object) -> None:
+            del autostart_controller
+
         def show(self) -> None:
             events.append("pet")
 
@@ -1377,17 +1385,31 @@ def test_owner_main_starts_runtime_window_and_tray_when_settings_fail(
         events.append("runtime_root")
         return object()
 
-    def create_bridge(root: object) -> object:
-        del root
+    def create_bridge(
+        root: object,
+        *,
+        autostart_service_factory: object,
+    ) -> object:
+        del root, autostart_service_factory
         events.append("bridge")
         return object()
 
     def create_main_window(
         bridge: object,
         hide_on_close: bool,
+        *,
+        autostart_controller: object,
     ) -> object:
-        del bridge, hide_on_close
+        del bridge, hide_on_close, autostart_controller
         events.append("main")
+        return object()
+
+    def create_autostart_controller(
+        bridge: object,
+        parent: object,
+    ) -> object:
+        del bridge, parent
+        events.append("autostart_controller")
         return object()
 
     fake_application = _FakeApplication()
@@ -1421,6 +1443,11 @@ def test_owner_main_starts_runtime_window_and_tray_when_settings_fail(
         "MainWindow",
         create_main_window,
     )
+    monkeypatch.setattr(
+        pet_application,
+        "AutostartUiController",
+        create_autostart_controller,
+    )
     monkeypatch.setattr(pet_application, "PetWindow", FakePet)
     monkeypatch.setattr(
         pet_application,
@@ -1430,10 +1457,10 @@ def test_owner_main_starts_runtime_window_and_tray_when_settings_fail(
     monkeypatch.setattr(
         pet_application,
         "SystemTrayController",
-        lambda coordinator, parent: object(),
+        lambda coordinator, autostart_controller, parent: object(),
     )
 
-    exit_code = pet_application.main([])
+    exit_code = pet_application.main(["SJTUClaw.exe", "--startup"])
 
     assert exit_code == 0
     assert events[:2] == ["owner", "runtime_root"]
@@ -1442,6 +1469,9 @@ def test_owner_main_starts_runtime_window_and_tray_when_settings_fail(
     assert "main" in events
     assert "pet" in events
     assert "tray" in events
+    assert "provider" not in events
+    assert "credential" not in events
+    assert "network" not in events
 
 
 def test_invalid_sensitive_payload_is_not_exposed(

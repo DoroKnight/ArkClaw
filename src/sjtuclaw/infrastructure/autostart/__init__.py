@@ -1,0 +1,1 @@
+"""Windows autostart infrastructure adapters."""

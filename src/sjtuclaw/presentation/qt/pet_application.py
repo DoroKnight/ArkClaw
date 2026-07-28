@@ -11,11 +11,21 @@ from PySide6.QtWidgets import QApplication
 
 from sjtuclaw.application.pet_settings import PetSettings
 from sjtuclaw.application.pet_state import PetLifecycleState
+from sjtuclaw.application.startup_mode import (
+    StartupModeArgumentError,
+    parse_startup_mode,
+)
+from sjtuclaw.bootstrap.autostart import (
+    create_production_autostart_service,
+)
 from sjtuclaw.bootstrap.qt_runtime import (
     ProductionQtRuntimeCompositionRoot,
 )
 from sjtuclaw.presentation.qt.application import (
     default_provider_metadata_path,
+)
+from sjtuclaw.presentation.qt.autostart_controller import (
+    AutostartUiController,
 )
 from sjtuclaw.presentation.qt.main_window import MainWindow
 from sjtuclaw.presentation.qt.pet_settings_controller import (
@@ -226,7 +236,12 @@ def _create_optional_pet_settings_controller() -> PetSettingsController:
 def main(argv: list[str] | None = None) -> int:
     """Run the placeholder pet without activating a cloud Provider."""
 
-    app = QApplication(sys.argv if argv is None else argv)
+    arguments = list(sys.argv if argv is None else argv)
+    try:
+        parse_startup_mode(arguments)
+    except StartupModeArgumentError:
+        return 2
+    app = QApplication(arguments)
     app.setApplicationName("SJTUClaw")
     app.setOrganizationName("SJTU")
     app.setQuitOnLastWindowClosed(False)
@@ -238,10 +253,18 @@ def main(argv: list[str] | None = None) -> int:
     bridge = QtRuntimeBridge(
         ProductionQtRuntimeCompositionRoot(
             default_provider_metadata_path()
-        )
+        ),
+        autostart_service_factory=create_production_autostart_service,
     )
-    main_window = MainWindow(bridge, hide_on_close=True)
-    pet_window = PetWindow()
+    autostart_controller = AutostartUiController(bridge, bridge)
+    main_window = MainWindow(
+        bridge,
+        hide_on_close=True,
+        autostart_controller=autostart_controller,
+    )
+    pet_window = PetWindow(
+        autostart_controller=autostart_controller,
+    )
     coordinator = PetApplicationCoordinator(
         bridge,
         main_window,
@@ -252,6 +275,7 @@ def main(argv: list[str] | None = None) -> int:
     pet_window.show()
     system_tray = SystemTrayController(
         coordinator,
+        autostart_controller=autostart_controller,
         parent=coordinator,
     )
     coordinator.attach_system_tray(system_tray)

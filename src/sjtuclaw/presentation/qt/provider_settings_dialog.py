@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Slot
+from PySide6.QtCore import QSignalBlocker, Qt, Slot
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QDialog,
     QFormLayout,
+    QGroupBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -27,6 +29,9 @@ from sjtuclaw.application.provider_settings_service import (
     ProviderProfileView,
     ProviderSettingsSnapshot,
 )
+from sjtuclaw.presentation.qt.autostart_controller import (
+    AutostartUiController,
+)
 from sjtuclaw.presentation.qt.runtime_bridge import QtRuntimeBridge
 
 _ACTIVATION_OPTIONS = ProviderActivationOptions(
@@ -43,15 +48,18 @@ class ProviderSettingsDialog(QDialog):
         self,
         bridge: QtRuntimeBridge,
         parent: QWidget | None = None,
+        *,
+        autostart_controller: AutostartUiController | None = None,
     ) -> None:
         super().__init__(parent)
         self._bridge = bridge
+        self._autostart_controller = autostart_controller
         self._snapshot: ProviderSettingsSnapshot | None = None
         self._profiles: dict[str, ProviderProfileView] = {}
         self._bindings: dict[str, CredentialBindingView] = {}
         self._activation_commands: set[str] = set()
-        self.setWindowTitle("Provider Settings")
-        self.resize(760, 560)
+        self.setWindowTitle("Agent Settings")
+        self.resize(760, 650)
 
         self.profile_list = QListWidget()
         self.profile_list.setObjectName("providerProfileList")
@@ -80,6 +88,25 @@ class ProviderSettingsDialog(QDialog):
         self.error_label = QLabel("")
         self.error_label.setObjectName("providerSettingsErrorLabel")
         self.error_label.setWordWrap(True)
+        self.autostart_checkbox = QCheckBox(
+            "Start SJTUClaw when I sign in"
+        )
+        self.autostart_checkbox.setObjectName("autostartEnabledCheckBox")
+        self.autostart_status_label = QLabel(
+            "Autostart status is unavailable."
+        )
+        self.autostart_status_label.setObjectName("autostartStatusLabel")
+        self.autostart_status_label.setWordWrap(True)
+        self.autostart_error_label = QLabel("")
+        self.autostart_error_label.setObjectName("autostartErrorLabel")
+        self.autostart_error_label.setWordWrap(True)
+        self.autostart_help_label = QLabel(
+            "Windows Settings > Apps > Startup or Task Manager may also "
+            "disable startup. SJTUClaw does not change Windows "
+            "StartupApproved state."
+        )
+        self.autostart_help_label.setObjectName("autostartHelpLabel")
+        self.autostart_help_label.setWordWrap(True)
 
         self.api_key_edit = QLineEdit()
         self.api_key_edit.setObjectName("providerApiKeyEdit")
@@ -152,6 +179,13 @@ class ProviderSettingsDialog(QDialog):
         layout.addLayout(credential_actions)
         layout.addLayout(activation_actions)
         layout.addWidget(self.error_label)
+        autostart_group = QGroupBox("Startup")
+        autostart_layout = QVBoxLayout(autostart_group)
+        autostart_layout.addWidget(self.autostart_checkbox)
+        autostart_layout.addWidget(self.autostart_status_label)
+        autostart_layout.addWidget(self.autostart_error_label)
+        autostart_layout.addWidget(self.autostart_help_label)
+        layout.addWidget(autostart_group)
 
         self.profile_list.itemSelectionChanged.connect(
             self._on_profile_selected
@@ -170,20 +204,77 @@ class ProviderSettingsDialog(QDialog):
         self.delete_key_button.clicked.connect(self._delete_credential)
         self.activate_button.clicked.connect(self._activate_profile)
         self.refresh_button.clicked.connect(self.refresh)
+        self.autostart_checkbox.toggled.connect(
+            self._on_autostart_toggled
+        )
         self._bridge.provider_settings_changed.connect(
             self._on_settings_changed
         )
         self._bridge.command_failed.connect(self._on_command_failed)
         self._bridge.command_completed.connect(self._on_command_completed)
+        if self._autostart_controller is not None:
+            self._autostart_controller.state_changed.connect(
+                self._on_autostart_state_changed
+            )
+            self._autostart_controller.operation_failed.connect(
+                self._on_autostart_failed
+            )
+        self._render_autostart()
         self._set_controls_enabled()
 
     def showEvent(self, event: object) -> None:
         super().showEvent(event)  # type: ignore[arg-type]
         self.refresh()
+        if self._autostart_controller is not None:
+            self._autostart_controller.refresh()
 
     def refresh(self) -> None:
         self.error_label.clear()
         self._bridge.request_provider_settings()
+
+    @Slot(bool)
+    def _on_autostart_toggled(self, enabled: bool) -> None:
+        controller = self._autostart_controller
+        if controller is None:
+            self._render_autostart()
+            return
+        self.autostart_error_label.clear()
+        if controller.set_enabled(enabled) is None:
+            self._render_autostart()
+
+    @Slot(object)
+    def _on_autostart_state_changed(self, value: object) -> None:
+        del value
+        self._render_autostart()
+
+    @Slot(str, str)
+    def _on_autostart_failed(
+        self,
+        safe_code: str,
+        safe_message: str,
+    ) -> None:
+        self.autostart_error_label.setText(
+            f"{safe_code}: {safe_message}"
+        )
+        self._render_autostart()
+
+    def _render_autostart(self) -> None:
+        controller = self._autostart_controller
+        if controller is None:
+            self.autostart_checkbox.setChecked(False)
+            self.autostart_checkbox.setEnabled(False)
+            self.autostart_status_label.setText(
+                "Autostart is unavailable in this runtime."
+            )
+            return
+        snapshot = controller.snapshot
+        blocker = QSignalBlocker(self.autostart_checkbox)
+        self.autostart_checkbox.setChecked(snapshot.enabled)
+        del blocker
+        self.autostart_checkbox.setEnabled(
+            controller.user_toggle_allowed
+        )
+        self.autostart_status_label.setText(controller.display_message)
 
     @Slot(str, object)
     def _on_settings_changed(

@@ -7,6 +7,7 @@ from uuid import uuid4
 
 from PySide6.QtCore import QObject, Qt, Signal, Slot
 
+from sjtuclaw.application.autostart_service import AutostartSnapshot
 from sjtuclaw.application.provider_profile_service import (
     ActiveTurnHandling,
     ProviderActivationOptions,
@@ -20,6 +21,7 @@ from sjtuclaw.application.runtime_session_controller import (
     RuntimeSnapshot,
 )
 from sjtuclaw.presentation.qt.runtime_thread import (
+    AutostartServiceFactory,
     RuntimeControllerFactory,
     RuntimeThread,
     RuntimeThreadCommand,
@@ -51,14 +53,20 @@ class QtRuntimeBridge(QObject):
     command_completed = Signal(str)
     command_failed = Signal(str, str, str)
     provider_settings_changed = Signal(str, object)
+    autostart_state_changed = Signal(str, object)
     shutdown_finished = Signal(bool, str)
 
     def __init__(
         self,
         controller_factory: RuntimeControllerFactory,
+        *,
+        autostart_service_factory: AutostartServiceFactory | None = None,
     ) -> None:
         super().__init__()
-        self._thread = RuntimeThread(controller_factory)
+        self._thread = RuntimeThread(
+            controller_factory,
+            autostart_service_factory,
+        )
         self._state = _BridgeState.NEW
         self._start_command_id: str | None = None
         self._shutdown_command_id: str | None = None
@@ -82,6 +90,10 @@ class QtRuntimeBridge(QObject):
             self._relay_provider_settings,
             connection,
         )
+        self._thread.autostart_state_emitted.connect(
+            self._relay_autostart_state,
+            connection,
+        )
         self._thread.command_result_emitted.connect(
             self._on_command_result,
             connection,
@@ -100,6 +112,13 @@ class QtRuntimeBridge(QObject):
         """Expose only the QThread handle for ownership tests and diagnostics."""
 
         return self._thread
+
+    @property
+    def accepting_commands(self) -> bool:
+        return self._state is _BridgeState.READY
+
+    def is_command_pending(self, command_id: str) -> bool:
+        return command_id in self._pending_command_ids
 
     def start_runtime(self) -> str:
         command_id = self._new_command_id()
@@ -187,6 +206,23 @@ class QtRuntimeBridge(QObject):
             RuntimeThreadCommand(
                 command_id=self._new_command_id(),
                 type=RuntimeThreadCommandType.REQUEST_PROVIDER_SETTINGS,
+            )
+        )
+
+    def request_autostart(self) -> str:
+        return self._submit(
+            RuntimeThreadCommand(
+                command_id=self._new_command_id(),
+                type=RuntimeThreadCommandType.REQUEST_AUTOSTART,
+            )
+        )
+
+    def set_autostart_enabled(self, enabled: bool) -> str:
+        return self._submit(
+            RuntimeThreadCommand(
+                command_id=self._new_command_id(),
+                type=RuntimeThreadCommandType.SET_AUTOSTART,
+                enabled=enabled,
             )
         )
 
@@ -458,6 +494,19 @@ class QtRuntimeBridge(QObject):
         ):
             return
         self.provider_settings_changed.emit(command_id, value)
+
+    @Slot(str, object)
+    def _relay_autostart_state(
+        self,
+        command_id: str,
+        value: object,
+    ) -> None:
+        if (
+            command_id not in self._pending_command_ids
+            or not isinstance(value, AutostartSnapshot)
+        ):
+            return
+        self.autostart_state_changed.emit(command_id, value)
 
     @Slot(str, bool, str, str)
     def _on_command_result(
