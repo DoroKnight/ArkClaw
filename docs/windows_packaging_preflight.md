@@ -1143,3 +1143,67 @@ completed without observed TCP endpoints; Probe 4's shortened rerun completed
 in approximately 7.2 seconds. Those probes are not packaged-runtime proof. The
 single packaged owner diagnostic remains a separately controlled execution
 step after this source checkpoint.
+
+### Packaged-runtime supervisor lifecycle recovery
+
+The first packaged owner diagnostic created exactly one owner process, but the
+PowerShell supervisor disappeared while the child was still running. The old
+implementation had no phase checkpoint and did not persist TCP observations
+until after child exit. The surviving evidence therefore narrows the failure
+to the `child_running`/`observing` interval, before `child_exit_observed`, but
+cannot honestly identify one failed PowerShell statement. The empty output and
+exit code 1 also show that the old fixed-code catch did not complete. Treating
+that historical event as a particular `Get-NetTCPConnection`, `Refresh`, or
+`WaitForExit` exception would be unsupported.
+
+The recovery implementation removes that diagnostic ambiguity. Its tracked
+state machine is:
+
+```text
+created
+-> preconditions_validated
+-> child_created
+-> child_running
+-> observing
+-> child_exit_observed
+-> finalizing
+-> completed
+```
+
+Every nonterminal state can instead enter `supervisor_failed`. Each transition
+atomically updates a safe checkpoint containing only the phase sequence, child
+PID and lifecycle booleans, poll counts, last successful poll timestamp, raw
+record count, terminal-summary flag, and fixed safe code.
+
+Each successful poll appends one or more compact JSONL records and calls
+`flush(true)`. An empty authoritative `Get-NetTCPConnection` result is a
+successful observation and produces an explicit `state=empty` record. Endpoint
+addresses are never written: stable endpoint and flow identifiers are SHA-256
+digests, while only address categories and port numbers are retained. The
+terminal summary is rebuilt from the durable JSONL file rather than the
+in-memory collection.
+
+The inner boundary owns child creation, refresh/wait, TCP sampling, aggregation
+and normal finalization. The outer boundary independently attempts raw failure
+recording, child-state refresh, stop signalling, bounded Dummy cleanup,
+process disposal, terminal failure summary, and final checkpoint persistence.
+One cleanup failure does not skip later independent cleanup. Exception
+messages, stack traces, invocation data, environment values and network
+payloads never enter evidence.
+
+The first recovery Dummy attempt exposed a separate Windows PowerShell 5.1
+compatibility bug before child creation. `[IO.File]::Replace()` with a null
+backup argument was wrapped as `MethodInvocationException` with an inner
+`ArgumentException`. Recovery now uses a unique, same-directory non-null
+backup, removes that backup after successful replacement, and unwraps safe
+PowerShell exception wrappers for fixed categorization. Attempt 2 completed
+the supervisor lifecycle, but its test correctly rejected a PID mismatch
+caused by the virtual-environment Python launcher and actual interpreter using
+different PIDs. The fixed Dummy is therefore a repository PowerShell child;
+attempt 3 confirmed that the tracked PID is the Dummy PID.
+
+The successful Dummy evidence contains three empty TCP polls, a normal
+zero exit code, completed checkpoint and terminal summary, no `.part` or
+backup file, and no remaining Dummy or launcher process. No packaged
+executable was run during recovery. Re-running a packaged owner diagnostic
+still requires separate explicit authorization.

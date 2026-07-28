@@ -93,7 +93,7 @@ def test_supervisor_uses_only_authoritative_tcp_sampler() -> None:
 def test_supervisor_keeps_raw_observations_and_summary_separate() -> None:
     source = _script_text()
 
-    assert '"tcp-observations.json"' in source
+    assert '"tcp-observations.jsonl"' in source
     assert '"diagnostic-summary.json"' in source
     assert "$RawObservationPath" in source
     assert "$SummaryPath" in source
@@ -197,7 +197,7 @@ def test_supervisor_environment_test_does_not_create_executable() -> None:
         "function Invoke-EnvironmentTest",
         maxsplit=1,
     )[1].split(
-        "function Invoke-PackagedDiagnostic",
+        "function Write-StopSignalAtomically",
         maxsplit=1,
     )[0]
 
@@ -228,3 +228,133 @@ def test_supervisor_diagnostic_schema_is_safe_and_fixed() -> None:
             "summary": "diagnostic-summary.json",
         }
     ).casefold()
+
+
+def test_supervisor_versions_every_lifecycle_phase() -> None:
+    source = _script_text()
+
+    for phase in (
+        "created",
+        "preconditions_validated",
+        "child_created",
+        "child_running",
+        "observing",
+        "child_exit_observed",
+        "finalizing",
+        "completed",
+        "supervisor_failed",
+    ):
+        assert f'"{phase}"' in source
+    for field in (
+        "phase_sequence",
+        "child_pid",
+        "child_created",
+        "child_running",
+        "child_exit_observed",
+        "poll_attempt_count",
+        "successful_poll_count",
+        "last_successful_poll_utc",
+        "raw_observation_count",
+        "terminal_summary_written",
+    ):
+        assert field in source
+
+
+def test_supervisor_persists_incremental_jsonl_with_durable_flush() -> None:
+    source = _script_text()
+    writer = source.split(
+        "function Write-RawObservationLine",
+        maxsplit=1,
+    )[1].split(
+        "function Write-SafeJsonAtomically",
+        maxsplit=1,
+    )[0]
+
+    assert "[IO.FileMode]::Append" in writer
+    assert "$writer.WriteLine($payload)" in writer
+    assert "$writer.Flush()" in writer
+    assert "$stream.Flush($true)" in writer
+    assert "ConvertTo-Json -Compress" in writer
+
+
+def test_supervisor_rebuilds_terminal_summary_from_jsonl() -> None:
+    source = _script_text()
+    summary_function = source.split(
+        "function Get-DiagnosticSummaryFromDisk",
+        maxsplit=1,
+    )[1].split(
+        "function Invoke-EnvironmentTest",
+        maxsplit=1,
+    )[0]
+
+    assert "[IO.File]::ReadLines($RawObservationPath)" in summary_function
+    assert "ConvertFrom-Json" in summary_function
+    assert "$Observations.Values" not in summary_function
+
+
+def test_supervisor_inner_function_never_exits_process_directly() -> None:
+    source = _script_text()
+    supervised_function = source.split(
+        "function Invoke-SupervisedChild",
+        maxsplit=1,
+    )[1].split(
+        "\ntry {",
+        maxsplit=1,
+    )[0]
+
+    assert "\n        exit " not in supervised_function
+    assert "finally {" in supervised_function
+    assert "return $result" in supervised_function
+
+
+def test_supervisor_fault_injection_is_dummy_only_and_fixed() -> None:
+    source = _script_text()
+
+    for fault in (
+        "SamplerFirst",
+        "SamplerMid",
+        "RawWrite",
+        "SummaryWrite",
+        "Serialization",
+        "Refresh",
+        "Wait",
+        "Finalize",
+        "Cancel",
+    ):
+        assert f'"{fault}"' in source
+    assert "diagnostic_test_fault_forbidden" in source
+
+
+def test_supervisor_does_not_overwrite_existing_attempt_directory() -> None:
+    source = _script_text()
+
+    assert "result_directory_already_exists" in source
+    assert "Test-Path -LiteralPath $VerificationRoot" in source
+    assert "[IO.FileMode]::Append" in source
+
+
+def test_supervisor_dummy_is_fixed_and_has_bounded_cleanup() -> None:
+    source = _script_text()
+
+    assert '"packaging\\packaged_runtime_dummy_child.ps1"' in source
+    assert "[ValidateSet(" in source
+    assert '"attempt-01"' in source
+    assert '"attempt-06"' in source
+    assert "$process.WaitForExit(5000)" in source
+    assert "$process.Kill()" in source
+
+
+def test_supervisor_failure_summary_never_contains_raw_exception() -> None:
+    source = _script_text()
+    terminal_failure = source.split(
+        "$terminalFailure = [ordered]@{",
+        maxsplit=1,
+    )[1].split(
+        "}",
+        maxsplit=1,
+    )[0]
+
+    assert "fixed_exception_category" in terminal_failure
+    assert "exception_message" not in terminal_failure.casefold()
+    assert "stack" not in terminal_failure.casefold()
+    assert "invocation" not in terminal_failure.casefold()
