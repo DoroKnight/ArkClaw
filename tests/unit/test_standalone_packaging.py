@@ -573,6 +573,10 @@ def test_standalone_manifests_reject_reparse_like_entries(
 
 def _write_compilation_report(root: Path, *, extra: str = "") -> None:
     path = root / _BUILD.BUILD_RELATIVE_PATH / _BUILD.REPORT_NAME
+    required_autostart_modules = "".join(
+        f'<module name="{name}" source_path="repository"/>'
+        for name in sorted(_AUDIT._REQUIRED_AUTOSTART_MODULES)
+    )
     path.write_text(
         (
             '<nuitka-compilation-report nuitka_version="4.0" '
@@ -583,7 +587,8 @@ def _write_compilation_report(root: Path, *, extra: str = "") -> None:
             '<distributions><distribution name="PySide6" version="6.11.1" '
             'installer="uv"/></distributions>'
             '<python arch_name="x86_64"/>'
-            f"{extra}</nuitka-compilation-report>"
+            f"{required_autostart_modules}{extra}"
+            "</nuitka-compilation-report>"
         ),
         encoding="utf-8",
     )
@@ -1642,6 +1647,28 @@ def test_compilation_report_forbidden_module_is_rejected(
     assert not outcome.completed
     compilation = outcome.report["compilation_report"]
     assert compilation["forbidden_modules"] == ["tests.test_secret"]
+
+
+def test_compilation_report_requires_all_autostart_modules(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _prepare_audit_root(tmp_path)
+    report = tmp_path / _AUDIT.REPORT_RELATIVE_PATH
+    missing = "sjtuclaw.infrastructure.autostart.windows_run_key"
+    text = report.read_text(encoding="utf-8")
+    text = text.replace(
+        f'<module name="{missing}" source_path="repository"/>',
+        "",
+    )
+    report.write_text(text, encoding="utf-8")
+
+    outcome = _audit(tmp_path, monkeypatch)
+
+    assert not outcome.completed
+    compilation = outcome.report["compilation_report"]
+    assert compilation["missing_required_autostart_modules"] == [missing]
+    assert missing not in compilation["required_autostart_modules_present"]
 
 
 def test_corrupt_compilation_report_is_rejected(

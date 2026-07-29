@@ -104,6 +104,14 @@ _FORBIDDEN_PRODUCTION_MODULE_PREFIXES = (
 _FORBIDDEN_PRODUCTION_DISTRIBUTIONS = frozenset(
     {"mypy", "mypy_extensions", "pygments"}
 )
+_REQUIRED_AUTOSTART_MODULES = frozenset(
+    {
+        "sjtuclaw.application.autostart_service",
+        "sjtuclaw.infrastructure.autostart.windows_run_key",
+        "sjtuclaw.presentation.qt.autostart_controller",
+        "sjtuclaw.presentation.qt.provider_settings_dialog",
+    }
+)
 _KNOWN_SYSTEM_DLLS = frozenset(
     {
         "advapi32.dll",
@@ -696,6 +704,12 @@ def _audit_compilation_report(path: Path) -> tuple[bool, dict[str, object]]:
         ),
         key=str.casefold,
     )
+    required_autostart_modules_present = sorted(
+        _REQUIRED_AUTOSTART_MODULES.intersection(modules)
+    )
+    missing_required_autostart_modules = sorted(
+        _REQUIRED_AUTOSTART_MODULES.difference(modules)
+    )
     report_text = raw.decode("utf-8", errors="replace")
     forbidden_resources = sorted(
         value
@@ -742,6 +756,12 @@ def _audit_compilation_report(path: Path) -> tuple[bool, dict[str, object]]:
             forbidden_production_modules
             or forbidden_production_distributions
         ),
+        "required_autostart_modules_present": (
+            required_autostart_modules_present
+        ),
+        "missing_required_autostart_modules": (
+            missing_required_autostart_modules
+        ),
         "manual_targets_present": (
             "SJTUClaw/Test/OpenAI/APIKey" in report_text
             or "SJTUClaw/Test/DeepSeek/APIKey" in report_text
@@ -770,6 +790,7 @@ def _audit_compilation_report(path: Path) -> tuple[bool, dict[str, object]]:
             in {"x86_64", "amd64"},
             not forbidden_modules,
             not forbidden_resources,
+            not missing_required_autostart_modules,
             not result["manual_targets_present"],
             not result["external_character_path_present"],
             not result["real_secret_findings"],

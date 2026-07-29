@@ -1280,3 +1280,123 @@ packaging, and formal character-resource integration remain unimplemented and
 unverified. Optional startup registration was implemented later at source
 level and still requires a new packaged artifact and separate Windows runtime
 acceptance.
+
+### Autostart UI corrective standalone checkpoint
+
+The packaged autostart rebuild started from commit
+`9894e8bed939232f3957ed28e541ba39543f4ebd`. The first archive helper failed
+before any build was attempted. Its staging directory embedded the full
+archive name and a 32-character UUID; the deepest deployment path consequently
+reached 263 characters and Windows reported `path_not_found` during the
+post-move snapshot. Rollback restored all four source directories and the
+failed `.part` was retained as ignored incident evidence.
+
+The replacement archive transaction uses a short, archive-name-derived
+staging identifier, rejects any stale hidden `.part`, snapshots every ordinary
+file by relative path, size, and SHA-256, and preserves empty directories. It
+rejects reparse points, special files, and abnormal hard links. Partial moves
+are rolled back in reverse order; safe diagnostics expose only fixed stage,
+source-class, exception-category, numeric error-code, and rollback booleans.
+The repaired same-volume transaction archived the old outputs at:
+
+```text
+build/standalone-artifact-archive/
+20260729T071602Z-pre-autostart-ui-rebuild
+```
+
+The archive contains 5,473 files totaling 893,604,991 bytes. Its aggregate
+manifest SHA-256 is:
+
+```text
+05ac619a815a0354dcde84410a0faebe15e07dcf5894b21fbed1f8e8c2cb8173
+```
+
+The archived manifest was re-read and every file was rehashed after the new
+build; path, directory, size, and hash comparisons remained exact. The
+packaged-runtime evidence directories were not moved into this archive.
+
+Exactly one new standalone build was executed. It was not retried. The build
+used Python 3.13.6, Nuitka 4.0, PySide6 6.11.1, MSVC 14.44, the validated
+Dependency Walker cache, the isolated packaging environment, and the fixed
+`platforms,styles` Qt plugin configuration. The six narrow production
+`nofollow` tokens were each present exactly once; broad `pydantic`, `httpx`,
+and `openai` exclusions were absent. The execution result was:
+
+```text
+exit code: 0
+duration: 1306.158 seconds
+disk consumed: 896978944 bytes
+peak active processes: 38
+total processes: 1813
+automatic retry: false
+timeout: false
+processes remaining: false
+stdout bytes: 66
+stdout SHA-256: c72698942f9e2d35bb2666a6cf32f6a0a5ed2958a63916f634c5042988087dfd
+stderr bytes: 426
+stderr SHA-256: 57a7fb860dbabe26c1bf04a278e4f705af9c464fb64671f77b912b71a8280e69
+```
+
+The harness set `UV_OFFLINE=1`, `PIP_NO_INDEX=1`, and
+`PIP_DISABLE_PIP_VERSION_CHECK=1`, removed secret-bearing environment names,
+recorded no network access, and observed no download or installation prompt.
+This was not an operating-system-enforced network sandbox:
+`hard_network_isolation=false`.
+
+The raw and final distributions each contain 70 files and their path, size,
+and SHA-256 manifests are identical. The final distribution totals
+139,594,984 bytes. The new main executable SHA-256 is:
+
+```text
+c0c129d78051785d95ebcc4bf3c87f38c4eda3c7ebb9a99c02fc2a2d8c986c81
+```
+
+All 69 PE files parsed as AMD64 and the main executable uses the Windows GUI
+subsystem. ASLR, DEP/NX compatibility, and High Entropy VA are enabled.
+Control Flow Guard remains disabled and is recorded as a hardening limitation.
+Unresolved and ambiguous dependency counts are zero. `qwindows.dll` and
+`qmodernwindowsstyle.dll` are present, the Qt dependency closure is complete,
+and `platformthemes` is empty.
+
+The production dependency surface contains none of `pydantic.mypy`, `mypy`,
+`mypy.*`, `mypy_extensions`, `mypyc`, `mypyc.*`, `httpx._main`, `pygments`,
+`pygments.*`, or `Pygments`. Real secret findings, manual Credential Targets,
+external character-resource paths, local user paths, settings, conversations,
+and continuations are absent. The source-level `CredentialBlob` identifier is
+reported separately and is not credential material. Dependency Walker files
+are absent from the distribution.
+
+The fresh Nuitka compilation report contains all four required autostart
+modules:
+
+```text
+sjtuclaw.application.autostart_service
+sjtuclaw.infrastructure.autostart.windows_run_key
+sjtuclaw.presentation.qt.autostart_controller
+sjtuclaw.presentation.qt.provider_settings_dialog
+```
+
+Post-build offline regression results were:
+
+```text
+pytest: 1108 passed, 2 skipped
+ruff: all checks passed
+mypy strict: 146 source files checked successfully
+PowerShell AST: passed
+git diff --check: passed
+autostart layout probes: 100%, 125%, 150%, and 200% passed
+Qt Fake smokes: 7 passed
+production imports: valid
+Fake Provider smoke: passed
+forbidden production imports: 0
+OpenAI manual entry: manual_verification_disabled
+DeepSeek manual entry: manual_verification_disabled
+```
+
+Both skipped tests remain explicitly opt-in: the real Windows Credential
+Manager integration and the Dummy packaged-runtime supervisor. No real
+registry, Credential Manager, Provider, API, API key, or character resource
+was accessed. Neither the new `SJTUClaw.exe` nor any packaged DLL or PYD was
+executed, imported, or loaded. The artifact therefore still requires a
+separately authorized packaged-runtime validation; the static checkpoint does
+not prove real registry behavior or packaged GUI accessibility.
