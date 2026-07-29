@@ -359,6 +359,9 @@ class PetWindow(QWidget):
         menu.addAction(top_action)
 
         self._autostart_action = QAction("Start with Windows", menu)
+        self._autostart_action.setObjectName(
+            "petAutostartEnabledAction"
+        )
         self._autostart_action.setCheckable(True)
         self._autostart_action.toggled.connect(
             self._set_autostart_enabled

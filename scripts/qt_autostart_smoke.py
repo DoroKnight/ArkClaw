@@ -12,7 +12,14 @@ from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import QEventLoop, QObject, QPoint, QTimer
+from PySide6.QtCore import (
+    QEventLoop,
+    QObject,
+    QPoint,
+    QRect,
+    QSignalBlocker,
+    QTimer,
+)
 from PySide6.QtGui import QAction, QContextMenuEvent
 from PySide6.QtTest import QSignalSpy
 from PySide6.QtWidgets import QApplication
@@ -74,12 +81,29 @@ class _FakeTrayView:
         self.callbacks = callbacks
         self.states: list[PetTrayState] = []
         self.closed = False
+        self.autostart_action = QAction("Start with Windows")
+        self.autostart_action.setObjectName(
+            "trayAutostartEnabledAction"
+        )
+        self.autostart_action.setCheckable(True)
+        if callbacks.set_autostart_enabled is not None:
+            self.autostart_action.toggled.connect(
+                callbacks.set_autostart_enabled
+            )
 
     def show(self) -> None:
         pass
 
     def update_state(self, state: PetTrayState) -> None:
         self.states.append(state)
+        blocker = QSignalBlocker(self.autostart_action)
+        self.autostart_action.setChecked(state.autostart.enabled)
+        del blocker
+        self.autostart_action.setEnabled(
+            not state.closing
+            and not state.autostart_busy
+            and state.autostart.user_toggle_allowed
+        )
 
     def close(self) -> None:
         self.closed = True
@@ -135,7 +159,7 @@ def _pet_autostart_action(pet: PetWindow) -> QAction:
     return next(
         action
         for action in pet.findChildren(QAction)
-        if action.text() == "Start with Windows"
+        if action.objectName() == "petAutostartEnabledAction"
     )
 
 
@@ -187,6 +211,33 @@ def _run_smoke(root: Path) -> int:
     if view is None:
         return 2
     pet_action = _pet_autostart_action(pet)
+    dialog.resize(560, 360)
+    dialog.show()
+    dialog.settings_tabs.setCurrentWidget(dialog.general_page)
+    app.processEvents()
+    viewport = dialog.general_scroll_area.viewport()
+    checkbox = dialog.autostart_checkbox
+    checkbox_rect = QRect(
+        checkbox.mapTo(viewport, QPoint(0, 0)),
+        checkbox.size(),
+    )
+    settings_control_visible = (
+        checkbox.isVisible()
+        and checkbox.isVisibleTo(dialog)
+        and checkbox.isEnabled()
+        and viewport.rect().contains(checkbox_rect)
+    )
+    tray_action_available = (
+        view.autostart_action.objectName()
+        == "trayAutostartEnabledAction"
+        and view.autostart_action.isVisible()
+        and view.autostart_action.isEnabled()
+    )
+    pet_action_available = (
+        pet_action.objectName() == "petAutostartEnabledAction"
+        and pet_action.isVisible()
+        and pet_action.isEnabled()
+    )
 
     dialog.autostart_checkbox.click()
     settings_enabled = _run_until(
@@ -244,6 +295,9 @@ def _run_smoke(root: Path) -> int:
     timer_stopped = not pet.physics_timer.isActive()
     success = (
         initial_disabled
+        and settings_control_visible
+        and tray_action_available
+        and pet_action_available
         and three_entry_enable_sync
         and three_entry_disable_sync
         and failure_rolled_back
@@ -256,6 +310,9 @@ def _run_smoke(root: Path) -> int:
     print(
         f"qt_autostart_smoke={success} "
         f"initial_disabled={initial_disabled} "
+        f"settings_control_visible={settings_control_visible} "
+        f"tray_action_available={tray_action_available} "
+        f"pet_action_available={pet_action_available} "
         f"three_entry_enable_sync={three_entry_enable_sync} "
         f"three_entry_disable_sync={three_entry_disable_sync} "
         f"failure_rolled_back={failure_rolled_back} "
@@ -263,6 +320,9 @@ def _run_smoke(root: Path) -> int:
         f"runtime_thread_closed={not bridge.runtime_thread.isRunning()} "
         f"pending_asyncio_tasks={pending_tasks} "
         f"timer_active={pet.physics_timer.isActive()} "
+        f"fake_registry_reads={backend.read_count} "
+        f"fake_registry_writes={backend.write_count} "
+        f"fake_registry_deletes={backend.delete_count} "
         "real_registry_access_count=0 network_access_count=0"
     )
     return 0 if success else 2

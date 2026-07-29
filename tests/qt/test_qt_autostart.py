@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import os
 import socket
+import subprocess
+import sys
 import threading
 from collections.abc import Callable, Iterator
 from pathlib import Path
@@ -10,9 +12,9 @@ import pytest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import QEventLoop, QObject, QPoint, Qt, QTimer
+from PySide6.QtCore import QEventLoop, QObject, QPoint, QRect, Qt, QTimer
 from PySide6.QtGui import QAction, QContextMenuEvent
-from PySide6.QtTest import QSignalSpy
+from PySide6.QtTest import QSignalSpy, QTest
 from PySide6.QtWidgets import QApplication
 
 from sjtuclaw.application.autostart_service import (
@@ -82,6 +84,7 @@ class _FakeBackend:
         self.delete_count = 0
         self.fail_write = False
         self.fail_delete = False
+        self.fail_read = False
         self.thread_ids: list[int] = []
         self.write_entered = threading.Event()
         self.write_gate: threading.Event | None = None
@@ -95,6 +98,8 @@ class _FakeBackend:
         self.read_entered.set()
         if self.read_gate is not None and not self.read_gate.wait(5):
             raise RuntimeError("offline read gate timed out")
+        if self.fail_read:
+            raise OSError("unsafe-autostart-value-never-display")
         self.read_count += 1
         return self.value
 
@@ -208,6 +213,8 @@ def _create_bridge(
     backend: _FakeBackend,
     *,
     expected_status: AutostartStatus = AutostartStatus.DISABLED,
+    platform_supported: bool = True,
+    packaged_runtime: bool = True,
 ) -> tuple[QtRuntimeBridge, AutostartUiController]:
     executable = tmp_path / "SJTUClaw.exe"
     executable.write_bytes(b"offline-placeholder")
@@ -219,8 +226,8 @@ def _create_bridge(
         autostart_service_factory=lambda: AutostartService(
             backend,
             lambda: executable,
-            platform_supported=True,
-            packaged_runtime_probe=lambda: True,
+            platform_supported=platform_supported,
+            packaged_runtime_probe=lambda: packaged_runtime,
         ),
     )
     controller = AutostartUiController(bridge, bridge)
@@ -251,8 +258,237 @@ def _pet_autostart_action(pet: PetWindow) -> QAction:
     return next(
         action
         for action in pet.findChildren(QAction)
-        if action.text() == "Start with Windows"
+        if action.objectName() == "petAutostartEnabledAction"
     )
+
+
+def _autostart_checkbox_rect_in_viewport(
+    dialog: ProviderSettingsDialog,
+) -> QRect:
+    checkbox = dialog.autostart_checkbox
+    viewport = dialog.general_scroll_area.viewport()
+    return QRect(
+        checkbox.mapTo(viewport, QPoint(0, 0)),
+        checkbox.size(),
+    )
+
+
+@pytest.mark.parametrize(
+    "status",
+    [
+        AutostartStatus.DISABLED,
+        AutostartStatus.ENABLED,
+        AutostartStatus.UNAVAILABLE,
+        AutostartStatus.INVALID_EXECUTABLE,
+        AutostartStatus.OCCUPIED,
+        AutostartStatus.OWNERSHIP_LOST,
+        AutostartStatus.ERROR,
+    ],
+)
+def test_dialog_renders_every_autostart_status_with_safe_interaction_state(
+    qt_application: QApplication,
+    tmp_path: Path,
+    status: AutostartStatus,
+) -> None:
+    backend = _FakeBackend()
+    executable = (tmp_path / "SJTUClaw.exe").resolve()
+    if status is AutostartStatus.ENABLED:
+        backend.value = AutostartStoredValue(
+            REGISTRY_STRING_VALUE_TYPE,
+            f'"{executable}" --startup',
+        )
+    elif status in {
+        AutostartStatus.OCCUPIED,
+        AutostartStatus.OWNERSHIP_LOST,
+    }:
+        backend.value = AutostartStoredValue(
+            REGISTRY_STRING_VALUE_TYPE,
+            '"C:\\Other\\other.exe" --startup',
+        )
+    elif status is AutostartStatus.ERROR:
+        backend.fail_read = True
+    initial_status = (
+        AutostartStatus.ENABLED
+        if status is AutostartStatus.OWNERSHIP_LOST
+        else status
+    )
+    if status is AutostartStatus.OWNERSHIP_LOST:
+        backend.value = AutostartStoredValue(
+            REGISTRY_STRING_VALUE_TYPE,
+            f'"{executable}" --startup',
+        )
+    bridge, controller = _create_bridge(
+        tmp_path,
+        backend,
+        expected_status=initial_status,
+        platform_supported=status is not AutostartStatus.UNAVAILABLE,
+        packaged_runtime=status is not AutostartStatus.INVALID_EXECUTABLE,
+    )
+    if status is AutostartStatus.OWNERSHIP_LOST:
+        backend.value = AutostartStoredValue(
+            REGISTRY_STRING_VALUE_TYPE,
+            '"C:\\Other\\other.exe" --startup',
+        )
+        controller.refresh()
+        assert _run_until(
+            lambda: (
+                controller.snapshot.status
+                is AutostartStatus.OWNERSHIP_LOST
+            )
+        )
+    dialog = ProviderSettingsDialog(
+        bridge,
+        autostart_controller=controller,
+    )
+    dialog.show()
+    dialog.settings_tabs.setCurrentWidget(dialog.general_page)
+    qt_application.processEvents()
+
+    assert controller.snapshot.status is status
+    assert dialog.autostart_checkbox.isVisible()
+    assert dialog.autostart_checkbox.isVisibleTo(dialog)
+    assert dialog.autostart_checkbox.isChecked() is (
+        status is AutostartStatus.ENABLED
+    )
+    assert dialog.autostart_checkbox.isEnabled() is (
+        status
+        in {
+            AutostartStatus.DISABLED,
+            AutostartStatus.ENABLED,
+        }
+    )
+    assert dialog.autostart_status_label.text()
+    assert "C:\\Other" not in dialog.autostart_status_label.text()
+
+    _shutdown(bridge)
+    dialog.close()
+
+
+def test_general_page_checkbox_is_visible_keyboard_reachable_and_clickable(
+    qt_application: QApplication,
+    tmp_path: Path,
+) -> None:
+    backend = _FakeBackend()
+    bridge, controller = _create_bridge(tmp_path, backend)
+    dialog = ProviderSettingsDialog(
+        bridge,
+        autostart_controller=controller,
+    )
+    dialog.resize(560, 360)
+    dialog.show()
+    assert dialog.settings_tabs.currentWidget() is dialog.providers_page
+    dialog.settings_tabs.setCurrentWidget(dialog.general_page)
+    qt_application.processEvents()
+
+    checkbox = dialog.autostart_checkbox
+    viewport = dialog.general_scroll_area.viewport()
+    checkbox_rect = _autostart_checkbox_rect_in_viewport(dialog)
+    assert dialog.providers_scroll_area.widgetResizable()
+    assert dialog.general_scroll_area.widgetResizable()
+    assert checkbox.isVisible()
+    assert checkbox.isVisibleTo(dialog)
+    assert checkbox.isEnabled()
+    assert not checkbox.geometry().isEmpty()
+    assert viewport.rect().contains(checkbox_rect)
+
+    dialog.settings_tabs.setFocus(Qt.FocusReason.OtherFocusReason)
+    tab_focus_reached = False
+    for _ in range(32):
+        dialog.focusNextChild()
+        if qt_application.focusWidget() is checkbox:
+            tab_focus_reached = True
+            break
+    assert tab_focus_reached
+
+    writes_before = backend.write_count
+    QTest.mouseClick(
+        checkbox,
+        Qt.MouseButton.LeftButton,
+        pos=checkbox.rect().center(),
+    )
+    assert _run_until(
+        lambda: controller.snapshot.status is AutostartStatus.ENABLED
+        and not controller.busy
+    )
+    assert backend.write_count == writes_before + 1
+
+    _shutdown(bridge)
+    dialog.close()
+
+
+def test_long_safe_autostart_error_wraps_without_hiding_control(
+    qt_application: QApplication,
+    tmp_path: Path,
+) -> None:
+    backend = _FakeBackend()
+    bridge, controller = _create_bridge(tmp_path, backend)
+    dialog = ProviderSettingsDialog(
+        bridge,
+        autostart_controller=controller,
+    )
+    dialog.resize(520, 320)
+    dialog.show()
+    dialog.settings_tabs.setCurrentWidget(dialog.general_page)
+    dialog.autostart_error_label.setText(
+        "autostart_write_failed: The autostart setting could not be "
+        "changed safely. " * 12
+    )
+    qt_application.processEvents()
+
+    assert dialog.autostart_error_label.wordWrap()
+    assert dialog.autostart_help_label.wordWrap()
+    assert dialog.autostart_checkbox.isVisibleTo(dialog)
+    assert dialog.general_scroll_area.horizontalScrollBar().maximum() == 0
+    assert (
+        dialog.autostart_error_label.width()
+        <= dialog.general_scroll_area.viewport().width()
+    )
+
+    _shutdown(bridge)
+    dialog.close()
+
+
+@pytest.mark.parametrize("scale_factor", ["1", "1.25", "1.5", "2"])
+def test_autostart_layout_probe_at_supported_scale_factors(
+    tmp_path: Path,
+    scale_factor: str,
+) -> None:
+    repository = Path(__file__).resolve().parents[2]
+    redirected = tmp_path / "process-environment"
+    redirected.mkdir()
+    environment = os.environ.copy()
+    environment.update(
+        {
+            "QT_QPA_PLATFORM": "offscreen",
+            "QT_SCALE_FACTOR": scale_factor,
+            "TEMP": str(redirected),
+            "TMP": str(redirected),
+            "TMPDIR": str(redirected),
+        }
+    )
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(repository / "scripts" / "qt_autostart_layout_probe.py"),
+        ],
+        cwd=repository,
+        env=environment,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    combined = completed.stdout + completed.stderr
+
+    assert completed.returncode == 0, combined
+    assert "qt_autostart_layout_probe=true" in combined
+    assert "checkbox_visible=true" in combined
+    assert "focus_reachable=true" in combined
+    assert "set_autostart_count=1" in combined
+    assert "pending_asyncio_tasks=0" in combined
+    assert "real_registry_access_count=0" in combined
+    assert "network_access_count=0" in combined
+    assert "Traceback" not in combined
 
 
 def test_three_ui_entries_share_one_runtime_owned_state(
@@ -292,6 +528,8 @@ def test_three_ui_entries_share_one_runtime_owned_state(
     assert dialog.autostart_checkbox.isChecked()
     assert tray_view.states[-1].autostart.enabled
     assert pet_action.isChecked()
+    assert backend.write_count == 1
+    assert backend.delete_count == 0
 
     assert tray_view.callbacks.set_autostart_enabled is not None
     tray_view.callbacks.set_autostart_enabled(False)
@@ -302,6 +540,8 @@ def test_three_ui_entries_share_one_runtime_owned_state(
     assert not dialog.autostart_checkbox.isChecked()
     assert not tray_view.states[-1].autostart.enabled
     assert not pet_action.isChecked()
+    assert backend.write_count == 1
+    assert backend.delete_count == 1
 
     pet_action.trigger()
     assert _run_until(
@@ -311,6 +551,8 @@ def test_three_ui_entries_share_one_runtime_owned_state(
     assert dialog.autostart_checkbox.isChecked()
     assert tray_view.states[-1].autostart.enabled
     assert pet_action.isChecked()
+    assert backend.write_count == 2
+    assert backend.delete_count == 1
     ui_visible = " ".join(
         (
             repr(controller.snapshot),
@@ -330,6 +572,35 @@ def test_three_ui_entries_share_one_runtime_owned_state(
     assert backend.delete_count == 1
     tray.complete_shutdown()
     pet.complete_safe_close()
+    dialog.close()
+
+
+def test_autostart_refresh_does_not_steal_current_dialog_focus(
+    qt_application: QApplication,
+    tmp_path: Path,
+) -> None:
+    backend = _FakeBackend()
+    bridge, controller = _create_bridge(tmp_path, backend)
+    dialog = ProviderSettingsDialog(
+        bridge,
+        autostart_controller=controller,
+    )
+    dialog.show()
+    dialog.settings_tabs.setCurrentWidget(dialog.providers_page)
+    dialog.display_name_edit.setFocus(Qt.FocusReason.OtherFocusReason)
+    qt_application.processEvents()
+    assert qt_application.focusWidget() is dialog.display_name_edit
+    reads_before = backend.read_count
+
+    command_id = controller.refresh()
+
+    assert command_id is not None
+    assert _run_until(lambda: not bridge.is_command_pending(command_id))
+    assert backend.read_count == reads_before + 1
+    assert qt_application.focusWidget() is dialog.display_name_edit
+    assert backend.write_count == 0
+    assert backend.delete_count == 0
+    _shutdown(bridge)
     dialog.close()
 
 

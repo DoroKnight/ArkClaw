@@ -41,6 +41,13 @@ Agent Settings, the system tray, and the pet context menu use one
 `QtRuntimeBridge`; `AutostartService` and the Windows backend are created and
 used only inside `RuntimeThread`.
 
+Agent Settings separates Provider configuration from autostart configuration
+with **Providers** and **General** tabs. The startup control, safe status,
+safe error area, and Windows-control explanation live in the scrollable
+General page. Both pages use resizable scroll containers and wrapped status
+text so the startup checkbox remains reachable at supported high-DPI scales
+and smaller legal dialog sizes.
+
 The backend performs only short, synchronous access to one fixed HKCU value.
 It does not enumerate keys, recurse, scan files, or use a network. This may
 briefly occupy `RuntimeThread`, while the GUI event loop remains non-blocking.

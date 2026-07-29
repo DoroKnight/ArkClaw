@@ -16,6 +16,8 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QMessageBox,
     QPushButton,
+    QScrollArea,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -83,8 +85,10 @@ class ProviderSettingsDialog(QDialog):
         self.credential_status_label.setObjectName("credentialStatusLabel")
         self.capabilities_label = QLabel("Capabilities: select a Profile")
         self.capabilities_label.setObjectName("providerCapabilitiesLabel")
+        self.capabilities_label.setWordWrap(True)
         self.lifecycle_label = QLabel("Runtime: unavailable")
         self.lifecycle_label.setObjectName("providerLifecycleLabel")
+        self.lifecycle_label.setWordWrap(True)
         self.error_label = QLabel("")
         self.error_label.setObjectName("providerSettingsErrorLabel")
         self.error_label.setWordWrap(True)
@@ -170,22 +174,57 @@ class ProviderSettingsDialog(QDialog):
         activation_actions.addWidget(self.activate_button)
         activation_actions.addWidget(self.refresh_button)
 
-        layout = QVBoxLayout(self)
-        layout.addWidget(self.lifecycle_label)
-        layout.addWidget(self.profile_list)
-        layout.addLayout(form)
-        layout.addWidget(self.capabilities_label)
-        layout.addLayout(profile_actions)
-        layout.addLayout(credential_actions)
-        layout.addLayout(activation_actions)
-        layout.addWidget(self.error_label)
-        autostart_group = QGroupBox("Startup")
-        autostart_layout = QVBoxLayout(autostart_group)
+        providers_content = QWidget()
+        providers_content.setObjectName("providersSettingsContent")
+        providers_layout = QVBoxLayout(providers_content)
+        providers_layout.addWidget(self.lifecycle_label)
+        providers_layout.addWidget(self.profile_list)
+        providers_layout.addLayout(form)
+        providers_layout.addWidget(self.capabilities_label)
+        providers_layout.addLayout(profile_actions)
+        providers_layout.addLayout(credential_actions)
+        providers_layout.addLayout(activation_actions)
+        providers_layout.addWidget(self.error_label)
+
+        self.providers_scroll_area = QScrollArea()
+        self.providers_scroll_area.setObjectName(
+            "providersSettingsScrollArea"
+        )
+        self.providers_scroll_area.setWidgetResizable(True)
+        self.providers_scroll_area.setWidget(providers_content)
+        self.providers_page = QWidget()
+        self.providers_page.setObjectName("providersSettingsPage")
+        providers_page_layout = QVBoxLayout(self.providers_page)
+        providers_page_layout.addWidget(self.providers_scroll_area)
+
+        self.autostart_group = QGroupBox("Startup")
+        self.autostart_group.setObjectName("autostartSettingsGroup")
+        autostart_layout = QVBoxLayout(self.autostart_group)
         autostart_layout.addWidget(self.autostart_checkbox)
         autostart_layout.addWidget(self.autostart_status_label)
         autostart_layout.addWidget(self.autostart_error_label)
         autostart_layout.addWidget(self.autostart_help_label)
-        layout.addWidget(autostart_group)
+
+        general_content = QWidget()
+        general_content.setObjectName("generalSettingsContent")
+        general_layout = QVBoxLayout(general_content)
+        general_layout.addWidget(self.autostart_group)
+        general_layout.addStretch()
+        self.general_scroll_area = QScrollArea()
+        self.general_scroll_area.setObjectName("generalSettingsScrollArea")
+        self.general_scroll_area.setWidgetResizable(True)
+        self.general_scroll_area.setWidget(general_content)
+        self.general_page = QWidget()
+        self.general_page.setObjectName("generalSettingsPage")
+        general_page_layout = QVBoxLayout(self.general_page)
+        general_page_layout.addWidget(self.general_scroll_area)
+
+        self.settings_tabs = QTabWidget()
+        self.settings_tabs.setObjectName("providerSettingsTabs")
+        self.settings_tabs.addTab(self.providers_page, "Providers")
+        self.settings_tabs.addTab(self.general_page, "General")
+        layout = QVBoxLayout(self)
+        layout.addWidget(self.settings_tabs)
 
         self.profile_list.itemSelectionChanged.connect(
             self._on_profile_selected

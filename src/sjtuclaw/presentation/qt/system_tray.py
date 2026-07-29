@@ -130,6 +130,9 @@ class _QtSystemTrayView:
             "Start with Windows",
             self._menu,
         )
+        self._autostart_action.setObjectName(
+            "trayAutostartEnabledAction"
+        )
         self._autostart_action.setCheckable(True)
         self._autostart_action.toggled.connect(
             lambda enabled: (
