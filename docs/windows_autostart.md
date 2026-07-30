@@ -149,3 +149,17 @@ validates that the packaged executable is exactly one distribution-directory
 level below that marker. This check remains separate from the executable's
 absolute-path, regular-file, reparse-point, hard-link, fixed-name, virtual
 environment, and command-length checks.
+
+The corrected standalone artifact was subsequently exercised once through
+the explicit diagnostic-only entry point. The fixed five-field result reported
+`supported=true` and `reason=supported`, with exit code 0, empty stderr, no
+observed TCP endpoint, and an unchanged 70-file distribution manifest. This
+confirms that the packaged Nuitka marker and executable eligibility checks
+accept the corrected directory relationship.
+
+The diagnostic did not construct the Windows Run-key backend or ordinary Qt
+runtime. It does not verify that the packaged checkbox is operable, that the
+tray and pet actions synchronize, that an HKCU Run value can be written or
+deleted, that `--startup` behaves correctly, or that Windows login startup
+works. Those behaviors still require a separately authorized packaged UI
+runtime validation.

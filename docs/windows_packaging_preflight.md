@@ -1435,3 +1435,44 @@ not access the registry, credentials, or network. No corrected standalone has
 been built or executed in this checkpoint; one new build, static audit, and
 one separately authorized diagnostic execution are still required to identify
 the exact packaged branch.
+
+### Corrected packaged autostart eligibility result
+
+The Nuitka 4.0 containing-directory relationship was corrected and a fresh
+standalone was built and statically audited. Its main executable SHA-256 is:
+
+```text
+88709739f78015ec2ebba6366cac78b329a11dc65281a5619187331ee3495944
+```
+
+The raw and final distributions each contain 70 files totaling 139,651,304
+bytes, with zero path, size, or SHA-256 differences. All static audit checks
+passed: 69 PE files parsed as AMD64, the main executable uses the Windows GUI
+subsystem, unresolved and ambiguous dependency counts are zero, forbidden
+production dependencies and real-secret findings are zero, and the compiled
+report includes the autostart eligibility and diagnostic modules.
+
+The frozen supervisor and its 19/19 self-test authority were then used for one
+diagnostic-only child execution. The child exited with code 0 and produced the
+following fixed result:
+
+```text
+schema_version=1
+autostart_runtime_diagnostic=true
+safe_code=autostart_runtime_diagnostic_complete
+supported=true
+reason=supported
+```
+
+The supervisor reached its `completed` checkpoint. Captured stdout was 148
+bytes with SHA-256
+`13eaa9b7c44ac3866565b113e391c62075633138ca6a53552e22cc506c9e0db9`;
+stderr was empty with the standard empty-content SHA-256. No TCP endpoint was
+observed, no residual process remained, and the distribution's complete
+70-file manifest was unchanged after execution.
+
+This result verifies packaged executable eligibility only. The diagnostic
+entry point exits before constructing the ordinary Qt runtime, single-instance
+IPC, Provider, SecretStore, or Windows Run-key backend. It does not verify
+checkbox operability, three-entry UI synchronization, real HKCU Run ownership,
+`--startup`, or Windows login-startup behavior.
