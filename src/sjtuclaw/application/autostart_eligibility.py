@@ -180,8 +180,10 @@ def inspect_nuitka_runtime(
         resolved_executable is not None
         and resolved_containing_dir is not None
     ):
+        # Nuitka 4.0 reports the parent of the standalone distribution
+        # directory, not the directory that directly contains the executable.
         executable_parent_matches = (
-            resolved_executable.parent == resolved_containing_dir
+            resolved_executable.parent.parent == resolved_containing_dir
         )
     return evaluate_nuitka_runtime(
         NuitkaRuntimeFacts(

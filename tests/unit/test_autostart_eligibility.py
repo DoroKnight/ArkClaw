@@ -231,3 +231,46 @@ def test_marker_attribute_failure_is_reduced_to_fixed_reason(
 
     assert result.reason is expected
     assert "unsafe-runtime-path-never-display" not in repr(result)
+
+
+def test_nuitka_four_standalone_containing_directory_is_supported(
+    tmp_path: Path,
+) -> None:
+    distribution = tmp_path / "SJTUClaw.dist"
+    distribution.mkdir()
+    executable = distribution / "SJTUClaw.exe"
+    executable.write_bytes(b"offline-placeholder")
+
+    class _Marker:
+        standalone = True
+        onefile = False
+        containing_dir = str(tmp_path)
+
+    _Marker.__name__ = "__nuitka_version__"
+
+    result = inspect_nuitka_runtime(_Marker(), executable)
+
+    assert result.reason is AutostartEligibilityReason.SUPPORTED
+
+
+def test_direct_executable_parent_is_not_nuitka_four_containing_directory(
+    tmp_path: Path,
+) -> None:
+    distribution = tmp_path / "SJTUClaw.dist"
+    distribution.mkdir()
+    executable = distribution / "SJTUClaw.exe"
+    executable.write_bytes(b"offline-placeholder")
+
+    class _Marker:
+        standalone = True
+        onefile = False
+        containing_dir = str(distribution)
+
+    _Marker.__name__ = "__nuitka_version__"
+
+    result = inspect_nuitka_runtime(_Marker(), executable)
+
+    assert (
+        result.reason
+        is AutostartEligibilityReason.EXECUTABLE_PARENT_MISMATCH
+    )

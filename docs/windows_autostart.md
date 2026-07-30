@@ -19,10 +19,11 @@ Value data: "<absolute packaged SJTUClaw.exe>" --startup
 The executable must be an absolute, local, ordinary, non-reparse, single-link
 file named `SJTUClaw.exe`. The current process must carry Nuitka's compiled
 runtime marker with `standalone=true`, `onefile=false`, and a containing
-directory that strictly matches the executable directory. Source launches,
-Python executables, scripts, `.venv`, `.venv-packaging`, UNC paths, control
-characters, and over-limit commands are rejected. The command has one fixed
-argument and cannot be supplied or extended by UI input.
+directory that has Nuitka 4.0's emitted one-level relationship to the
+standalone distribution directory. Source launches, Python executables,
+scripts, `.venv`, `.venv-packaging`, UNC paths, control characters, and
+over-limit commands are rejected. The command has one fixed argument and
+cannot be supplied or extended by UI input.
 
 Enabling first confirms that the fixed value is absent or already equals the
 expected command. A different value is `occupied` and is never overwritten.
@@ -139,3 +140,12 @@ unverified. Future uninstallation is responsible for safely removing an
 exactly owned Run value. File-system and registry time-of-check/time-of-use
 (TOCTOU) races can be reduced by strict re-reading and ownership checks but
 cannot be eliminated completely.
+
+# Packaged runtime eligibility
+
+Nuitka 4.0 reports `__compiled__.containing_dir` as the parent of the
+standalone distribution directory. For a non-onefile build, SJTUClaw therefore
+validates that the packaged executable is exactly one distribution-directory
+level below that marker. This check remains separate from the executable's
+absolute-path, regular-file, reparse-point, hard-link, fixed-name, virtual
+environment, and command-length checks.

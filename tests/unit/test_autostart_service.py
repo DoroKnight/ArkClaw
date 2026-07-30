@@ -453,7 +453,7 @@ def test_nuitka_runtime_probe_rejects_source_forgery_and_onefile(
     monkeypatch.setattr(
         autostart_bootstrap,
         "__compiled__",
-        marker_type(True, False, str(tmp_path)),
+        marker_type(True, False, str(tmp_path.parent)),
     )
     assert (
         autostart_bootstrap._is_supported_nuitka_standalone_runtime()
@@ -482,7 +482,7 @@ def test_packaged_diagnostic_includes_executable_eligibility(
         marker_type(
             standalone=True,
             onefile=False,
-            containing_dir=str(tmp_path),
+            containing_dir=str(tmp_path.parent),
         ),
         raising=False,
     )
