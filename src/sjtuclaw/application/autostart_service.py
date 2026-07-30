@@ -2,18 +2,26 @@
 
 from __future__ import annotations
 
-import stat
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
 from typing import Protocol
 
+from sjtuclaw.application.autostart_eligibility import (
+    MAX_AUTOSTART_COMMAND_LENGTH,
+    AutostartEligibilityReason,
+    AutostartEligibilityResult,
+    inspect_autostart_executable,
+)
+from sjtuclaw.application.autostart_eligibility import (
+    _path_text_is_safe as _eligibility_path_text_is_safe,
+)
+
 AUTOSTART_VALUE_NAME = "SJTUClaw"
 AUTOSTART_ARGUMENT = "--startup"
 REGISTRY_STRING_VALUE_TYPE = 1
-_WINDOWS_REPARSE_POINT_ATTRIBUTE = 0x400
-_MAX_AUTOSTART_COMMAND_LENGTH = 32_767
+_MAX_AUTOSTART_COMMAND_LENGTH = MAX_AUTOSTART_COMMAND_LENGTH
 
 
 class AutostartStatus(StrEnum):
@@ -131,14 +139,13 @@ class AutostartOperationResult:
 
 ExecutableResolver = Callable[[], Path]
 PackagedRuntimeProbe = Callable[[], bool]
+AutostartEligibilityProbe = Callable[[Path], AutostartEligibilityResult]
 
 
 def _path_text_is_safe(path_text: str) -> bool:
-    return (
-        not path_text.startswith("\\\\")
-        and '"' not in path_text
-        and not any(ord(character) < 32 for character in path_text)
-    )
+    """Retain the established testable compatibility helper."""
+
+    return _eligibility_path_text_is_safe(path_text)
 
 
 class AutostartService:
@@ -151,6 +158,7 @@ class AutostartService:
         *,
         platform_supported: bool,
         packaged_runtime_probe: PackagedRuntimeProbe | None = None,
+        eligibility_probe: AutostartEligibilityProbe | None = None,
     ) -> None:
         self._backend = backend
         self._executable_resolver = executable_resolver
@@ -158,6 +166,7 @@ class AutostartService:
         self._packaged_runtime_probe = (
             packaged_runtime_probe or (lambda: False)
         )
+        self._eligibility_probe = eligibility_probe
         self._ownership_confirmed = False
         self._ownership_lost = False
         self._snapshot = AutostartSnapshot.for_status(
@@ -218,35 +227,36 @@ class AutostartService:
             )
             return None
         try:
-            packaged_runtime = self._packaged_runtime_probe()
             executable = self._executable_resolver()
+            if self._eligibility_probe is None:
+                runtime = AutostartEligibilityResult(
+                    AutostartEligibilityReason.SUPPORTED
+                    if self._packaged_runtime_probe() is True
+                    else AutostartEligibilityReason.STANDALONE_MODE_INVALID
+                )
+            else:
+                runtime = self._eligibility_probe(executable)
             resolved = executable.resolve(strict=True)
-            metadata = executable.lstat()
         except Exception:
             self._snapshot = AutostartSnapshot.for_status(
                 AutostartStatus.INVALID_EXECUTABLE
             )
             return None
-        file_attributes = getattr(metadata, "st_file_attributes", 0)
-        components = {part.casefold() for part in resolved.parts}
         resolved_text = str(resolved)
         command = f'"{resolved_text}" {AUTOSTART_ARGUMENT}'
-        valid = (
-            packaged_runtime is True
-            and executable.is_absolute()
-            and resolved == executable
-            and stat.S_ISREG(metadata.st_mode)
-            and metadata.st_nlink == 1
-            and not executable.is_symlink()
-            and not file_attributes & _WINDOWS_REPARSE_POINT_ATTRIBUTE
-            and _path_text_is_safe(resolved_text)
-            and resolved.name.casefold() == "sjtuclaw.exe"
-            and resolved.suffix.casefold() == ".exe"
-            and ".venv" not in components
-            and ".venv-packaging" not in components
-            and len(command) <= _MAX_AUTOSTART_COMMAND_LENGTH
-        )
-        if not valid:
+        try:
+            eligibility = inspect_autostart_executable(
+                executable,
+                runtime,
+                command_length=len(command),
+                maximum_command_length=_MAX_AUTOSTART_COMMAND_LENGTH,
+            )
+        except Exception:
+            self._snapshot = AutostartSnapshot.for_status(
+                AutostartStatus.INVALID_EXECUTABLE
+            )
+            return None
+        if not eligibility.supported:
             self._snapshot = AutostartSnapshot.for_status(
                 AutostartStatus.INVALID_EXECUTABLE
             )

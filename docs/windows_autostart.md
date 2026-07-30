@@ -69,6 +69,35 @@ been verified. Backend failures restore the last confirmed checked state and
 show only fixed safe codes and messages. Registry data and the complete command
 are never sent to Qt signals.
 
+## Controlled packaged-runtime diagnosis
+
+The packaged entry also accepts one exact, explicitly invoked diagnostic
+argument:
+
+```text
+--diagnose-autostart-runtime
+```
+
+This mode exits before constructing `QApplication`, the single-instance
+manager, `RuntimeThread`, a Provider, a SecretStore, or the Windows Run-key
+backend. It emits one bounded JSON object containing only a schema version,
+the fixed completion code, a supported boolean, and one fixed eligibility
+reason. It never emits a path, registry value, environment value, exception
+message, credential, or command line.
+
+The internal eligibility reasons distinguish the Nuitka marker, standalone
+and onefile modes, containing-directory validation, executable resolution and
+parent matching, regular-file and reparse-point checks, hard-link count,
+fixed executable name, virtual-environment rejection, path safety, and command
+length. Ordinary UI state remains intentionally coarser: every failed packaged
+eligibility check still maps to the existing fixed `invalid_executable` state.
+The internal reason is not sent through Qt signals, logs, public exceptions,
+tray state, or pet-menu state.
+
+The diagnostic is observational only. It does not query or mutate the Run key,
+and it does not prove registry write/delete behavior. Normal launch and the
+fixed `--startup` launch keep their existing behavior.
+
 ## Startup mode
 
 The packaged entry accepts only the exact argument:

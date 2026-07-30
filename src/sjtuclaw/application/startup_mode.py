@@ -6,6 +6,8 @@ from collections.abc import Sequence
 
 from sjtuclaw.application.autostart_service import AUTOSTART_ARGUMENT
 
+AUTOSTART_DIAGNOSTIC_ARGUMENT = "--diagnose-autostart-runtime"
+
 
 class StartupModeArgumentError(ValueError):
     """Raised without retaining or displaying an unsupported argument."""

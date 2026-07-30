@@ -1400,3 +1400,38 @@ was accessed. Neither the new `SJTUClaw.exe` nor any packaged DLL or PYD was
 executed, imported, or loaded. The artifact therefore still requires a
 separately authorized packaged-runtime validation; the static checkpoint does
 not prove real registry behavior or packaged GUI accessibility.
+
+### Autostart packaged-runtime eligibility diagnostic checkpoint
+
+The first authorized runtime launch of the autostart-enabled artifact exited
+normally through the tray with code 0, but the Agent Settings autostart
+checkbox was disabled and could not receive Tab focus. The fixed Run value was
+absent before the launch, after the UI failure, and after exit. No value body
+was recorded, and no write or delete occurred. PID-scoped TCP observation
+reported one local single-instance flow, zero external endpoints, and zero
+unattributed endpoints. The distribution remained identical to its 70-entry
+artifact manifest after exit.
+
+The disabled-widget mechanism is confirmed: Qt enables the checkbox only when
+the shared controller reports both a user-toggleable public state and a READY
+runtime. The failed artifact did not preserve the controller's safe state or
+the internal packaged-eligibility branch, so the exact failing eligibility
+check cannot be reconstructed from the existing evidence. Static generated C
+confirms that Nuitka 4.0 compiled the marker fields, but that is not a runtime
+evaluation of their values and is not treated as the root-cause proof.
+
+The source now separates runtime and executable eligibility into immutable,
+path-free facts evaluated to fixed internal reasons. The production service
+continues to map every failed eligibility reason to the existing public
+`autostart_invalid_executable` boundary and retains standalone, onefile,
+reparse-point, single-hard-link, fixed-name, virtual-environment, path-safety,
+and command-length rejection.
+
+An explicit `--diagnose-autostart-runtime` mode was added for a future
+corrective artifact. It exits before creating `QApplication`, single-instance
+IPC, `RuntimeThread`, a Provider, SecretStore, or Windows Run-key backend, and
+outputs only a bounded JSON schema with a fixed eligibility reason. It does
+not access the registry, credentials, or network. No corrected standalone has
+been built or executed in this checkpoint; one new build, static audit, and
+one separately authorized diagnostic execution are still required to identify
+the exact packaged branch.

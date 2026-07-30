@@ -18,6 +18,9 @@ from sjtuclaw.application.startup_mode import (
 from sjtuclaw.bootstrap.autostart import (
     create_production_autostart_service,
 )
+from sjtuclaw.bootstrap.autostart_diagnostics import (
+    run_autostart_runtime_diagnostic_if_requested,
+)
 from sjtuclaw.bootstrap.qt_runtime import (
     ProductionQtRuntimeCompositionRoot,
 )
@@ -237,6 +240,11 @@ def main(argv: list[str] | None = None) -> int:
     """Run the placeholder pet without activating a cloud Provider."""
 
     arguments = list(sys.argv if argv is None else argv)
+    diagnostic_exit_code = (
+        run_autostart_runtime_diagnostic_if_requested(arguments)
+    )
+    if diagnostic_exit_code is not None:
+        return diagnostic_exit_code
     try:
         parse_startup_mode(arguments)
     except StartupModeArgumentError:

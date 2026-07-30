@@ -5,30 +5,40 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from sjtuclaw.application.autostart_service import AutostartService
+from sjtuclaw.application.autostart_eligibility import (
+    MAX_AUTOSTART_COMMAND_LENGTH,
+    AutostartEligibilityResult,
+    inspect_autostart_executable,
+    inspect_nuitka_runtime,
+)
+from sjtuclaw.application.autostart_service import (
+    AUTOSTART_ARGUMENT,
+    AutostartService,
+)
+
+
+def diagnose_production_autostart_eligibility(
+    executable: Path | None = None,
+) -> AutostartEligibilityResult:
+    """Return one fixed reason without retaining paths or exception details."""
+
+    candidate = Path(sys.executable) if executable is None else executable
+    runtime = inspect_nuitka_runtime(globals().get("__compiled__"), candidate)
+    if not runtime.supported:
+        return runtime
+    command_length = len(f'"{candidate}" {AUTOSTART_ARGUMENT}')
+    return inspect_autostart_executable(
+        candidate,
+        runtime,
+        command_length=command_length,
+        maximum_command_length=MAX_AUTOSTART_COMMAND_LENGTH,
+    )
 
 
 def _is_supported_nuitka_standalone_runtime() -> bool:
     """Accept Nuitka standalone while keeping source and onefile fail-closed."""
 
-    marker = globals().get("__compiled__")
-    if marker is None or type(marker).__name__ != "__nuitka_version__":
-        return False
-    standalone = getattr(marker, "standalone", None)
-    onefile = getattr(marker, "onefile", None)
-    containing_dir = getattr(marker, "containing_dir", None)
-    if (
-        standalone is not True
-        or onefile is not False
-        or not isinstance(containing_dir, str)
-    ):
-        return False
-    try:
-        executable_parent = Path(sys.executable).resolve(strict=True).parent
-        compiled_parent = Path(containing_dir).resolve(strict=True)
-    except (OSError, RuntimeError, ValueError):
-        return False
-    return compiled_parent == executable_parent
+    return diagnose_production_autostart_eligibility().supported
 
 
 def create_production_autostart_service() -> AutostartService:
@@ -49,5 +59,7 @@ def create_production_autostart_service() -> AutostartService:
         WindowsRunKeyAutostartBackend(),
         lambda: Path(sys.executable),
         platform_supported=True,
-        packaged_runtime_probe=_is_supported_nuitka_standalone_runtime,
+        eligibility_probe=lambda executable: (
+            diagnose_production_autostart_eligibility(executable)
+        ),
     )

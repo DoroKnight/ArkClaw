@@ -10,6 +10,9 @@ from typing import cast
 
 import pytest
 
+from sjtuclaw.application.autostart_eligibility import (
+    AutostartEligibilityReason,
+)
 from sjtuclaw.application.autostart_service import (
     AUTOSTART_ARGUMENT,
     AUTOSTART_VALUE_NAME,
@@ -406,6 +409,10 @@ def test_nuitka_runtime_probe_rejects_source_forgery_and_onefile(
         autostart_bootstrap._is_supported_nuitka_standalone_runtime()
         is False
     )
+    assert (
+        autostart_bootstrap.diagnose_production_autostart_eligibility().reason
+        is AutostartEligibilityReason.MARKER_MISSING
+    )
     monkeypatch.setattr(
         autostart_bootstrap,
         "__compiled__",
@@ -419,6 +426,10 @@ def test_nuitka_runtime_probe_rejects_source_forgery_and_onefile(
     assert (
         autostart_bootstrap._is_supported_nuitka_standalone_runtime()
         is False
+    )
+    assert (
+        autostart_bootstrap.diagnose_production_autostart_eligibility().reason
+        is AutostartEligibilityReason.MARKER_TYPE_MISMATCH
     )
     marker_type = namedtuple(
         "marker_type",
@@ -435,6 +446,10 @@ def test_nuitka_runtime_probe_rejects_source_forgery_and_onefile(
         autostart_bootstrap._is_supported_nuitka_standalone_runtime()
         is False
     )
+    assert (
+        autostart_bootstrap.diagnose_production_autostart_eligibility().reason
+        is AutostartEligibilityReason.ONEFILE_MODE_INVALID
+    )
     monkeypatch.setattr(
         autostart_bootstrap,
         "__compiled__",
@@ -444,6 +459,39 @@ def test_nuitka_runtime_probe_rejects_source_forgery_and_onefile(
         autostart_bootstrap._is_supported_nuitka_standalone_runtime()
         is True
     )
+    assert (
+        autostart_bootstrap.diagnose_production_autostart_eligibility().reason
+        is AutostartEligibilityReason.SUPPORTED
+    )
+
+
+def test_packaged_diagnostic_includes_executable_eligibility(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    executable = tmp_path / "wrong-name.exe"
+    executable.write_bytes(b"offline-placeholder")
+    marker_type = namedtuple(
+        "marker_type",
+        "standalone onefile containing_dir",
+    )
+    marker_type.__name__ = "__nuitka_version__"
+    monkeypatch.setattr(
+        autostart_bootstrap,
+        "__compiled__",
+        marker_type(
+            standalone=True,
+            onefile=False,
+            containing_dir=str(tmp_path),
+        ),
+        raising=False,
+    )
+
+    result = autostart_bootstrap.diagnose_production_autostart_eligibility(
+        executable
+    )
+
+    assert result.reason is AutostartEligibilityReason.EXECUTABLE_NAME_INVALID
 
 
 def test_source_virtual_environment_is_rejected(
