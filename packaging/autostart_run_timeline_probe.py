@@ -11,6 +11,7 @@ import argparse
 import hashlib
 import json
 import os
+import secrets
 import stat
 import sys
 import time
@@ -19,16 +20,18 @@ from contextlib import suppress
 from dataclasses import asdict, dataclass
 from enum import StrEnum
 from pathlib import Path
-from typing import Protocol
+from typing import Protocol, TypeGuard
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 RUN_KEY_PATH = r"Software\Microsoft\Windows\CurrentVersion\Run"
 RUN_VALUE_NAME = "SJTUClaw"
 AUTOSTART_ARGUMENT = "--startup"
 REGISTRY_STRING_VALUE_TYPE = 1
 POLL_INTERVAL_SECONDS = 0.2
-MAX_RUNTIME_SECONDS = 15 * 60
-MAX_POLL_COUNT = 4_500
+READY_UNARMED_TIMEOUT_SECONDS = 60 * 60
+ACTIVE_TIMEOUT_SECONDS = 90 * 60
+STAGE_LEASE_SECONDS = 30 * 60
+TOTAL_RUNTIME_SECONDS = 3 * 60 * 60
 EXPECTED_EXECUTABLE_RELATIVE_PATH = Path("dist/SJTUClaw.dist/SJTUClaw.exe")
 EVIDENCE_RELATIVE_PATH = Path("build/autostart-run-timeline-probe")
 PHASES = (
@@ -43,10 +46,19 @@ PHASES = (
     "T8",
     "T9",
 )
+PHASE_INDEX = {phase: index for index, phase in enumerate(PHASES)}
 
 
 class TimelineProbeError(RuntimeError):
     """Fixed-message probe failure without registry or path disclosure."""
+
+
+class TimelineCoordinationError(TimelineProbeError):
+    """Fixed safe-code coordination failure."""
+
+    def __init__(self, safe_code: str, message: str) -> None:
+        super().__init__(message)
+        self.safe_code = safe_code
 
 
 class FixedValueState(StrEnum):
@@ -56,6 +68,67 @@ class FixedValueState(StrEnum):
     OWNED = "owned"
     OCCUPIED = "occupied"
     READ_ERROR = "read_error"
+
+
+class ProbeLifecycleState(StrEnum):
+    """Explicit observer lifecycle independent from Owner and supervisor."""
+
+    INITIALIZING = "initializing"
+    READY_UNARMED = "ready_unarmed"
+    ARMED = "armed"
+    OBSERVING = "observing"
+    FINALIZING = "finalizing"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+class OwnerTerminalState(StrEnum):
+    """Safe Owner status without paths or process command lines."""
+
+    NOT_REGISTERED = "not_registered"
+    RUNNING = "running"
+    EXITED = "exited"
+    IDENTITY_LOST = "identity_lost"
+
+
+@dataclass(frozen=True, slots=True)
+class ControlMessage:
+    """Strict, nonce-bound, revisioned phase transition."""
+
+    schema_version: int
+    session_nonce: str
+    revision: int
+    expected_previous_phase: str | None
+    phase: str
+    stop: bool
+    abort: bool
+
+
+@dataclass(frozen=True, slots=True)
+class OwnerRegistration:
+    """Owner PID plus immutable process creation identity."""
+
+    schema_version: int
+    session_nonce: str
+    process_id: int
+    process_identity: str
+
+
+@dataclass(frozen=True, slots=True)
+class CoordinationCheckpoint:
+    """Non-sensitive state shared with the independent supervisor."""
+
+    schema_version: int
+    lifecycle_state: str
+    current_phase: str
+    revision: int
+    active_budget_started: bool
+    owner_terminal_state: str
+    observer_terminal_state: str
+    supervisor_terminal_state: str
+    owner_safe_exit_required: bool
+    safe_code: str
+    value_text_recorded: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -157,6 +230,12 @@ class TimelineSummary:
     process_exit_sequence: int | None
     disappearance_interval: str | None
     phase_states: Mapping[str, str]
+    lifecycle_state: str = ProbeLifecycleState.FAILED
+    observer_terminal_state: str = "failed"
+    owner_terminal_state: str = OwnerTerminalState.NOT_REGISTERED
+    supervisor_terminal_state: str = "independent"
+    owner_safe_exit_required: bool = False
+    final_revision: int = 0
     observer_registry_write_count: int = 0
     observer_registry_delete_count: int = 0
     value_text_recorded: bool = False
@@ -170,6 +249,248 @@ class ValueReader(Protocol):
 
 class ProcessProbe(Protocol):
     def __call__(self, process_id: int) -> bool: ...
+
+
+class ProcessIdentityProbe(Protocol):
+    def __call__(self, process_id: int) -> str | None: ...
+
+
+class ProbeCoordinator:
+    """Pure lifecycle, revision, nonce, and deadline coordinator."""
+
+    def __init__(
+        self,
+        session_nonce: str,
+        started_at: float,
+        *,
+        ready_timeout_seconds: float = READY_UNARMED_TIMEOUT_SECONDS,
+        active_timeout_seconds: float = ACTIVE_TIMEOUT_SECONDS,
+        stage_lease_seconds: float = STAGE_LEASE_SECONDS,
+        total_timeout_seconds: float = TOTAL_RUNTIME_SECONDS,
+    ) -> None:
+        if not _valid_session_nonce(session_nonce):
+            raise TimelineCoordinationError(
+                "autostart_timeline_nonce_mismatch",
+                "The timeline session nonce is invalid.",
+            )
+        self.session_nonce = session_nonce
+        self.started_at = started_at
+        self.ready_timeout_seconds = ready_timeout_seconds
+        self.active_timeout_seconds = active_timeout_seconds
+        self.stage_lease_seconds = stage_lease_seconds
+        self.total_timeout_seconds = total_timeout_seconds
+        self.lifecycle_state = ProbeLifecycleState.INITIALIZING
+        self.current_phase = "T0"
+        self.revision = 0
+        self.ready_at: float | None = None
+        self.active_started_at: float | None = None
+        self.stage_lease_started_at: float | None = None
+        self.owner_registration: OwnerRegistration | None = None
+        self.owner_terminal_state = OwnerTerminalState.NOT_REGISTERED
+        self.safe_code = "none"
+
+    def mark_ready(self, now: float) -> None:
+        if self.lifecycle_state is not ProbeLifecycleState.INITIALIZING:
+            raise TimelineCoordinationError(
+                "autostart_timeline_lifecycle_invalid",
+                "The timeline lifecycle transition is invalid.",
+            )
+        self.ready_at = now
+        self.lifecycle_state = ProbeLifecycleState.READY_UNARMED
+
+    def register_owner(self, registration: OwnerRegistration) -> None:
+        if registration.session_nonce != self.session_nonce:
+            raise TimelineCoordinationError(
+                "autostart_timeline_nonce_mismatch",
+                "The timeline session nonce is invalid.",
+            )
+        if self.owner_registration == registration:
+            return
+        if self.lifecycle_state is not ProbeLifecycleState.READY_UNARMED:
+            raise TimelineCoordinationError(
+                "autostart_timeline_owner_registration_invalid",
+                "Owner registration is no longer allowed.",
+            )
+        if self.owner_registration is not None:
+            raise TimelineCoordinationError(
+                "autostart_timeline_owner_registration_invalid",
+                "Owner process data is invalid.",
+            )
+        self.owner_registration = registration
+        self.owner_terminal_state = OwnerTerminalState.RUNNING
+
+    def accept_control(
+        self,
+        message: ControlMessage,
+        now: float,
+        *,
+        current_process_identity: str | None,
+    ) -> None:
+        if self.lifecycle_state in {
+            ProbeLifecycleState.COMPLETED,
+            ProbeLifecycleState.FAILED,
+            ProbeLifecycleState.FINALIZING,
+        }:
+            raise TimelineCoordinationError(
+                "autostart_timeline_lifecycle_invalid",
+                "The timeline observer is finalizing.",
+            )
+        if message.session_nonce != self.session_nonce:
+            raise TimelineCoordinationError(
+                "autostart_timeline_nonce_mismatch",
+                "The timeline session nonce is invalid.",
+            )
+        if message.revision != self.revision + 1:
+            raise TimelineCoordinationError(
+                "autostart_timeline_control_revision_invalid",
+                "The timeline control revision is invalid.",
+            )
+        if message.expected_previous_phase != self.current_phase:
+            raise TimelineCoordinationError(
+                "autostart_timeline_control_sequence_invalid",
+                "The timeline control sequence is invalid.",
+            )
+        if message.abort:
+            if message.phase != self.current_phase or message.stop:
+                raise TimelineCoordinationError(
+                    "autostart_timeline_abort_invalid",
+                    "The timeline abort request is invalid.",
+                )
+            self.revision = message.revision
+            self.stage_lease_started_at = now
+            self.safe_code = "autostart_timeline_probe_aborted"
+            self.lifecycle_state = ProbeLifecycleState.FINALIZING
+            return
+        expected_index = PHASE_INDEX[self.current_phase] + 1
+        if expected_index >= len(PHASES) or message.phase != PHASES[expected_index]:
+            raise TimelineCoordinationError(
+                "autostart_timeline_control_sequence_invalid",
+                "The timeline control sequence is invalid.",
+            )
+        if message.stop != (message.phase == "T9"):
+            raise TimelineCoordinationError(
+                "autostart_timeline_stop_invalid",
+                "The timeline stop request is invalid.",
+            )
+        if message.phase == "T1":
+            registration = self.owner_registration
+            if registration is None:
+                raise TimelineCoordinationError(
+                    "autostart_timeline_owner_missing",
+                    "The timeline Owner is not registered.",
+                )
+            if current_process_identity is None:
+                self.owner_terminal_state = OwnerTerminalState.EXITED
+                raise TimelineCoordinationError(
+                    "autostart_timeline_owner_exited_early",
+                    "The timeline Owner exited too early.",
+                )
+            if current_process_identity != registration.process_identity:
+                self.owner_terminal_state = OwnerTerminalState.IDENTITY_LOST
+                raise TimelineCoordinationError(
+                    "autostart_timeline_owner_identity_lost",
+                    "The timeline Owner identity changed.",
+                )
+            self.lifecycle_state = ProbeLifecycleState.ARMED
+            self.active_started_at = now
+        self.current_phase = message.phase
+        self.revision = message.revision
+        self.stage_lease_started_at = now
+        if message.phase == "T9":
+            self.lifecycle_state = ProbeLifecycleState.FINALIZING
+        elif message.phase == "T1":
+            self.lifecycle_state = ProbeLifecycleState.ARMED
+        else:
+            self.lifecycle_state = ProbeLifecycleState.OBSERVING
+
+    def begin_observing(self) -> None:
+        if self.lifecycle_state is not ProbeLifecycleState.ARMED:
+            raise TimelineCoordinationError(
+                "autostart_timeline_lifecycle_invalid",
+                "The timeline lifecycle transition is invalid.",
+            )
+        self.lifecycle_state = ProbeLifecycleState.OBSERVING
+
+    def observe_owner_identity(self, identity: str | None) -> str | None:
+        registration = self.owner_registration
+        if registration is None:
+            return None
+        if identity == registration.process_identity:
+            self.owner_terminal_state = OwnerTerminalState.RUNNING
+            return None
+        if identity is not None:
+            self.owner_terminal_state = OwnerTerminalState.IDENTITY_LOST
+            return "autostart_timeline_owner_identity_lost"
+        self.owner_terminal_state = OwnerTerminalState.EXITED
+        if PHASE_INDEX[self.current_phase] < PHASE_INDEX["T7-before-shutdown"]:
+            return "autostart_timeline_owner_exited_early"
+        return None
+
+    def timeout_code(self, now: float) -> str | None:
+        if now - self.started_at >= self.total_timeout_seconds:
+            return "autostart_timeline_total_timeout"
+        if self.lifecycle_state is ProbeLifecycleState.READY_UNARMED:
+            ready_at = self.ready_at
+            if ready_at is None:
+                raise TimelineCoordinationError(
+                    "autostart_timeline_lifecycle_invalid",
+                    "The timeline lifecycle state is invalid.",
+                )
+            if now - ready_at >= self.ready_timeout_seconds:
+                return "autostart_timeline_ready_timeout"
+            return None
+        if self.lifecycle_state in {
+            ProbeLifecycleState.ARMED,
+            ProbeLifecycleState.OBSERVING,
+        }:
+            active_started_at = self.active_started_at
+            lease_started_at = self.stage_lease_started_at
+            if active_started_at is None or lease_started_at is None:
+                raise TimelineCoordinationError(
+                    "autostart_timeline_lifecycle_invalid",
+                    "The timeline lifecycle state is invalid.",
+                )
+            if now - active_started_at >= self.active_timeout_seconds:
+                return "autostart_timeline_active_timeout"
+            if now - lease_started_at >= self.stage_lease_seconds:
+                return "autostart_timeline_stage_timeout"
+        return None
+
+    def fail(self, safe_code: str) -> None:
+        self.safe_code = safe_code
+        self.lifecycle_state = ProbeLifecycleState.FAILED
+
+    def complete(self) -> None:
+        self.safe_code = "autostart_run_value_timeline_verified"
+        self.lifecycle_state = ProbeLifecycleState.COMPLETED
+
+    def checkpoint(self) -> CoordinationCheckpoint:
+        owner_running = self.owner_terminal_state is OwnerTerminalState.RUNNING
+        if self.lifecycle_state is ProbeLifecycleState.COMPLETED:
+            observer_terminal = "completed"
+        elif self.lifecycle_state is ProbeLifecycleState.FAILED:
+            observer_terminal = "failed"
+        else:
+            observer_terminal = "running"
+        supervisor_terminal = (
+            "awaiting_owner_safe_exit"
+            if self.lifecycle_state is ProbeLifecycleState.FAILED and owner_running
+            else "independent"
+        )
+        return CoordinationCheckpoint(
+            schema_version=SCHEMA_VERSION,
+            lifecycle_state=self.lifecycle_state,
+            current_phase=self.current_phase,
+            revision=self.revision,
+            active_budget_started=self.active_started_at is not None,
+            owner_terminal_state=self.owner_terminal_state,
+            observer_terminal_state=observer_terminal,
+            supervisor_terminal_state=supervisor_terminal,
+            owner_safe_exit_required=(
+                self.lifecycle_state is ProbeLifecycleState.FAILED and owner_running
+            ),
+            safe_code=self.safe_code,
+        )
 
 
 class TimelineTracker:
@@ -252,9 +573,17 @@ class TimelineTracker:
         self._last_process_running = process_running
         return record
 
-    def summarize(self, *, timed_out: bool = False) -> TimelineSummary:
+    def summarize(
+        self,
+        *,
+        timed_out: bool = False,
+        safe_code_override: str | None = None,
+        checkpoint: CoordinationCheckpoint | None = None,
+    ) -> TimelineSummary:
         states = [record for record in self.records]
-        if timed_out:
+        if safe_code_override is not None:
+            safe_code = safe_code_override
+        elif timed_out:
             safe_code = "autostart_timeline_probe_timeout"
         elif any(record.query_error for record in states):
             safe_code = "autostart_timeline_probe_read_failed"
@@ -272,6 +601,18 @@ class TimelineTracker:
             safe_code = "autostart_run_value_timeline_verified"
         else:
             safe_code = "autostart_timeline_probe_incomplete"
+        coordination = checkpoint or CoordinationCheckpoint(
+            schema_version=SCHEMA_VERSION,
+            lifecycle_state=ProbeLifecycleState.FAILED,
+            current_phase=self._last_phase or "T0",
+            revision=0,
+            active_budget_started=False,
+            owner_terminal_state=OwnerTerminalState.NOT_REGISTERED,
+            observer_terminal_state="failed",
+            supervisor_terminal_state="independent",
+            owner_safe_exit_required=False,
+            safe_code=safe_code,
+        )
         return TimelineSummary(
             schema_version=SCHEMA_VERSION,
             autostart_run_timeline_probe=True,
@@ -289,6 +630,12 @@ class TimelineTracker:
                 phase: state.value
                 for phase, state in sorted(self._phase_states.items())
             },
+            lifecycle_state=coordination.lifecycle_state,
+            observer_terminal_state=coordination.observer_terminal_state,
+            owner_terminal_state=coordination.owner_terminal_state,
+            supervisor_terminal_state=coordination.supervisor_terminal_state,
+            owner_safe_exit_required=coordination.owner_safe_exit_required,
+            final_revision=coordination.revision,
         )
 
     def _transition(
@@ -383,59 +730,111 @@ def _write_json_atomically(path: Path, document: object) -> None:
             stream.flush()
             os.fsync(stream.fileno())
         os.replace(temporary, path)
-    except Exception as error:
+    except Exception:
         raise TimelineProbeError(
             "Timeline evidence could not be written safely."
-        ) from error
+        ) from None
     finally:
         with suppress(OSError):
             temporary.unlink(missing_ok=True)
 
 
-def _read_control(path: Path) -> tuple[str, bool]:
+def _valid_session_nonce(value: object) -> TypeGuard[str]:
+    return (
+        isinstance(value, str)
+        and len(value) == 32
+        and value == value.casefold()
+        and all(character in "0123456789abcdef" for character in value)
+    )
+
+
+def _control_document(message: ControlMessage) -> dict[str, object]:
+    return asdict(message)
+
+
+def _read_control(path: Path) -> ControlMessage:
     try:
         document = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError) as error:
-        raise TimelineProbeError("Timeline control data is invalid.") from error
+    except (OSError, ValueError):
+        raise TimelineProbeError("Timeline control data is invalid.") from None
     if not isinstance(document, dict) or set(document) != {
         "schema_version",
+        "session_nonce",
+        "revision",
+        "expected_previous_phase",
         "phase",
         "stop",
+        "abort",
     }:
         raise TimelineProbeError("Timeline control data is invalid.")
+    nonce = document.get("session_nonce")
+    revision = document.get("revision")
+    previous = document.get("expected_previous_phase")
     phase = document.get("phase")
     stop = document.get("stop")
+    abort = document.get("abort")
     if (
         document.get("schema_version") != SCHEMA_VERSION
+        or not _valid_session_nonce(nonce)
+        or not isinstance(revision, int)
+        or isinstance(revision, bool)
+        or revision < 0
+        or (previous is not None and previous not in PHASES)
         or not isinstance(phase, str)
         or phase not in PHASES
         or not isinstance(stop, bool)
+        or not isinstance(abort, bool)
     ):
         raise TimelineProbeError("Timeline control data is invalid.")
-    return phase, stop
+    return ControlMessage(
+        schema_version=SCHEMA_VERSION,
+        session_nonce=nonce,
+        revision=revision,
+        expected_previous_phase=previous,
+        phase=phase,
+        stop=stop,
+        abort=abort,
+    )
 
 
-def _read_owner_pid(path: Path) -> int | None:
+def _read_owner_registration(path: Path) -> OwnerRegistration | None:
     if not path.exists():
         return None
     try:
         document = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError) as error:
-        raise TimelineProbeError("Owner process data is invalid.") from error
+    except (OSError, ValueError):
+        raise TimelineProbeError("Owner process data is invalid.") from None
     if not isinstance(document, dict) or set(document) != {
         "schema_version",
-        "pid",
+        "session_nonce",
+        "process_id",
+        "process_identity",
     }:
         raise TimelineProbeError("Owner process data is invalid.")
-    process_id = document.get("pid")
+    nonce = document.get("session_nonce")
+    process_id = document.get("process_id")
+    process_identity = document.get("process_identity")
     if (
         document.get("schema_version") != SCHEMA_VERSION
+        or not _valid_session_nonce(nonce)
         or not isinstance(process_id, int)
         or isinstance(process_id, bool)
         or process_id <= 0
+        or not isinstance(process_identity, str)
+        or len(process_identity) != 16
+        or process_identity != process_identity.casefold()
+        or any(
+            character not in "0123456789abcdef"
+            for character in process_identity
+        )
     ):
         raise TimelineProbeError("Owner process data is invalid.")
-    return process_id
+    return OwnerRegistration(
+        schema_version=SCHEMA_VERSION,
+        session_nonce=nonce,
+        process_id=process_id,
+        process_identity=process_identity,
+    )
 
 
 def _process_is_running(process_id: int) -> bool:
@@ -444,6 +843,63 @@ def _process_is_running(process_id: int) -> bool:
     except OSError:
         return False
     return True
+
+
+def _process_identity(process_id: int) -> str | None:
+    """Return the Windows process creation FILETIME without opening its image."""
+
+    if sys.platform != "win32":
+        return None
+    import ctypes
+    from ctypes import wintypes
+
+    class FileTime(ctypes.Structure):
+        _fields_ = [
+            ("low", wintypes.DWORD),
+            ("high", wintypes.DWORD),
+        ]
+
+    process_query_limited_information = 0x1000
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    open_process = kernel32.OpenProcess
+    open_process.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    open_process.restype = wintypes.HANDLE
+    get_process_times = kernel32.GetProcessTimes
+    get_process_times.argtypes = [
+        wintypes.HANDLE,
+        ctypes.POINTER(FileTime),
+        ctypes.POINTER(FileTime),
+        ctypes.POINTER(FileTime),
+        ctypes.POINTER(FileTime),
+    ]
+    get_process_times.restype = wintypes.BOOL
+    close_handle = kernel32.CloseHandle
+    close_handle.argtypes = [wintypes.HANDLE]
+    close_handle.restype = wintypes.BOOL
+    handle = open_process(
+        process_query_limited_information,
+        False,
+        process_id,
+    )
+    if not handle:
+        return None
+    try:
+        created = FileTime()
+        exited = FileTime()
+        kernel = FileTime()
+        user = FileTime()
+        if not get_process_times(
+            handle,
+            ctypes.byref(created),
+            ctypes.byref(exited),
+            ctypes.byref(kernel),
+            ctypes.byref(user),
+        ):
+            return None
+        creation_value = (int(created.high) << 32) | int(created.low)
+        return f"{creation_value:016x}"
+    finally:
+        close_handle(handle)
 
 
 def _repository_root() -> Path:
@@ -489,24 +945,97 @@ def _persist_tracker(root: Path, tracker: TimelineTracker) -> None:
     )
 
 
+def _persist_checkpoint(root: Path, coordinator: ProbeCoordinator) -> None:
+    _write_json_atomically(
+        root / "observer-checkpoint.json",
+        asdict(coordinator.checkpoint()),
+    )
+
+
+def _persist_terminal_summary(
+    root: Path,
+    tracker: TimelineTracker,
+    coordinator: ProbeCoordinator,
+) -> TimelineSummary:
+    checkpoint = coordinator.checkpoint()
+    summary = tracker.summarize(
+        safe_code_override=coordinator.safe_code,
+        checkpoint=checkpoint,
+    )
+    _write_json_atomically(root / "terminal-summary.json", asdict(summary))
+    return summary
+
+
+def _read_ready_session_nonce(path: Path) -> str:
+    try:
+        document = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        raise TimelineProbeError("The timeline observer is not ready.") from None
+    if not isinstance(document, dict):
+        raise TimelineProbeError("The timeline observer is not ready.")
+    nonce = document.get("session_nonce")
+    if (
+        document.get("schema_version") != SCHEMA_VERSION
+        or document.get("observer_ready") is not True
+        or document.get("lifecycle_state")
+        != ProbeLifecycleState.READY_UNARMED
+        or not _valid_session_nonce(nonce)
+    ):
+        raise TimelineProbeError("The timeline observer is not ready.")
+    try:
+        checkpoint = json.loads(
+            (path.parent / "observer-checkpoint.json").read_text(
+                encoding="utf-8"
+            )
+        )
+    except (OSError, ValueError):
+        raise TimelineProbeError("The timeline observer is not ready.") from None
+    if (
+        not isinstance(checkpoint, dict)
+        or checkpoint.get("schema_version") != SCHEMA_VERSION
+        or checkpoint.get("lifecycle_state")
+        not in {
+            ProbeLifecycleState.READY_UNARMED,
+            ProbeLifecycleState.ARMED,
+            ProbeLifecycleState.OBSERVING,
+        }
+        or checkpoint.get("observer_terminal_state") != "running"
+    ):
+        raise TimelineProbeError("The timeline observer is not ready.")
+    return nonce
+
+
 def _run_real_observer(
     expected_sha256: str,
     *,
     reader: ValueReader = query_fixed_run_value,
-    process_probe: ProcessProbe = _process_is_running,
+    identity_probe: ProcessIdentityProbe = _process_identity,
     monotonic: Callable[[], float] = time.monotonic,
     sleeper: Callable[[float], None] = time.sleep,
+    nonce_factory: Callable[[], str] = lambda: secrets.token_hex(16),
+    evidence_root: Path | None = None,
 ) -> int:
-    root = _evidence_root()
+    root = evidence_root or _evidence_root()
     if root.exists():
         raise TimelineProbeError("The timeline evidence directory is occupied.")
     root.mkdir(parents=False)
     _, expected_command = _authoritative_executable(expected_sha256)
+    started_at = monotonic()
+    coordinator = ProbeCoordinator(nonce_factory(), started_at)
     control_path = root / "control.json"
     owner_path = root / "owner-pid.json"
+    initial_control = ControlMessage(
+        schema_version=SCHEMA_VERSION,
+        session_nonce=coordinator.session_nonce,
+        revision=0,
+        expected_previous_phase=None,
+        phase="T0",
+        stop=False,
+        abort=False,
+    )
     _write_json_atomically(
         control_path,
-        {"schema_version": SCHEMA_VERSION, "phase": "T0", "stop": False},
+        _control_document(initial_control),
     )
     tracker = TimelineTracker()
     first = reader(expected_command)
@@ -518,81 +1047,241 @@ def _run_real_observer(
             if first.state in {FixedValueState.OWNED, FixedValueState.OCCUPIED}
             else "autostart_timeline_probe_read_failed"
         )
-        summary = tracker.summarize()
-        summary_document = asdict(summary)
-        summary_document["safe_code"] = safe_code
-        _write_json_atomically(root / "terminal-summary.json", summary_document)
+        coordinator.fail(safe_code)
+        _persist_checkpoint(root, coordinator)
+        _persist_terminal_summary(root, tracker, coordinator)
         _write_json_atomically(
             root / "ready.json",
             {
                 "schema_version": SCHEMA_VERSION,
                 "observer_ready": False,
+                "lifecycle_state": ProbeLifecycleState.FAILED,
                 "safe_code": safe_code,
                 "value_text_recorded": False,
             },
         )
         return 2
+    coordinator.mark_ready(monotonic())
+    _persist_checkpoint(root, coordinator)
     _write_json_atomically(
         root / "ready.json",
         {
             "schema_version": SCHEMA_VERSION,
             "observer_ready": True,
+            "lifecycle_state": ProbeLifecycleState.READY_UNARMED,
+            "session_nonce": coordinator.session_nonce,
             "safe_code": "autostart_timeline_observer_ready",
             "value_text_recorded": False,
         },
     )
-    started = monotonic()
-    timed_out = False
-    for _ in range(MAX_POLL_COUNT):
-        phase, stop = _read_control(control_path)
-        process_id = _read_owner_pid(owner_path)
-        running = (
-            process_id is not None and process_probe(process_id)
+    while True:
+        now = monotonic()
+        timeout_code = coordinator.timeout_code(now)
+        if timeout_code is not None:
+            coordinator.fail(timeout_code)
+            _persist_checkpoint(root, coordinator)
+            _persist_terminal_summary(root, tracker, coordinator)
+            return 2
+        try:
+            registration = _read_owner_registration(owner_path)
+            if registration is not None:
+                coordinator.register_owner(registration)
+            control = _read_control(control_path)
+            if control.revision < coordinator.revision:
+                raise TimelineCoordinationError(
+                    "autostart_timeline_control_revision_invalid",
+                    "The timeline control revision is invalid.",
+                )
+            if control.revision > coordinator.revision:
+                current_identity = (
+                    identity_probe(registration.process_id)
+                    if registration is not None
+                    else None
+                )
+                coordinator.accept_control(
+                    control,
+                    now,
+                    current_process_identity=current_identity,
+                )
+                _persist_checkpoint(root, coordinator)
+                if coordinator.lifecycle_state is ProbeLifecycleState.ARMED:
+                    coordinator.begin_observing()
+                    _persist_checkpoint(root, coordinator)
+        except TimelineCoordinationError as error:
+            coordinator.fail(error.safe_code)
+            _persist_checkpoint(root, coordinator)
+            _persist_terminal_summary(root, tracker, coordinator)
+            return 2
+        except TimelineProbeError:
+            coordinator.fail("autostart_timeline_control_invalid")
+            _persist_checkpoint(root, coordinator)
+            _persist_terminal_summary(root, tracker, coordinator)
+            return 2
+
+        active_registration = coordinator.owner_registration
+        current_identity = (
+            identity_probe(active_registration.process_id)
+            if active_registration is not None
+            else None
         )
+        owner_error = coordinator.observe_owner_identity(current_identity)
+        if owner_error is not None:
+            coordinator.fail(owner_error)
+            _persist_checkpoint(root, coordinator)
+            _persist_terminal_summary(root, tracker, coordinator)
+            return 2
+        running = coordinator.owner_terminal_state is OwnerTerminalState.RUNNING
         observation = reader(expected_command)
-        record = tracker.observe(phase, running, observation)
+        record = tracker.observe(coordinator.current_phase, running, observation)
         if record is not None:
             _persist_tracker(root, tracker)
         if observation.state in {
             FixedValueState.OCCUPIED,
             FixedValueState.READ_ERROR,
         }:
-            break
-        if stop:
-            break
-        if monotonic() - started >= MAX_RUNTIME_SECONDS:
-            timed_out = True
-            break
+            coordinator.fail(
+                "autostart_ownership_lost"
+                if observation.state is FixedValueState.OCCUPIED
+                else "autostart_timeline_probe_read_failed"
+            )
+            _persist_checkpoint(root, coordinator)
+            _persist_terminal_summary(root, tracker, coordinator)
+            return 2
+        if (
+            coordinator.lifecycle_state is ProbeLifecycleState.FINALIZING
+            and coordinator.safe_code == "autostart_timeline_probe_aborted"
+        ):
+            coordinator.fail(coordinator.safe_code)
+            _persist_checkpoint(root, coordinator)
+            _persist_terminal_summary(root, tracker, coordinator)
+            return 2
+        if (
+            coordinator.lifecycle_state is ProbeLifecycleState.FINALIZING
+            and coordinator.current_phase == "T9"
+        ):
+            candidate = tracker.summarize()
+            if candidate.safe_code == "autostart_run_value_timeline_verified":
+                coordinator.complete()
+            else:
+                coordinator.fail(candidate.safe_code)
+            _persist_checkpoint(root, coordinator)
+            summary = _persist_terminal_summary(root, tracker, coordinator)
+            return (
+                0
+                if summary.safe_code
+                == "autostart_run_value_timeline_verified"
+                else 2
+            )
         sleeper(POLL_INTERVAL_SECONDS)
-    else:
-        timed_out = True
-    summary = tracker.summarize(timed_out=timed_out)
-    _write_json_atomically(root / "terminal-summary.json", asdict(summary))
-    return 0 if summary.safe_code == "autostart_run_value_timeline_verified" else 2
 
 
-def _set_phase(phase: str, *, stop: bool) -> int:
-    if phase not in PHASES:
+def _set_phase(
+    phase: str,
+    *,
+    expected_previous_phase: str,
+    revision: int,
+    session_nonce: str,
+    stop: bool,
+) -> int:
+    if phase not in PHASES or expected_previous_phase not in PHASES:
         raise TimelineProbeError("The timeline phase is invalid.")
     root = _evidence_root()
-    if not (root / "ready.json").is_file():
-        raise TimelineProbeError("The timeline observer is not ready.")
+    ready_nonce = _read_ready_session_nonce(root / "ready.json")
+    if session_nonce != ready_nonce:
+        raise TimelineProbeError("The timeline session nonce is invalid.")
+    current = _read_control(root / "control.json")
+    if (
+        current.session_nonce != session_nonce
+        or revision != current.revision + 1
+        or expected_previous_phase != current.phase
+        or PHASE_INDEX[phase] != PHASE_INDEX[current.phase] + 1
+        or stop != (phase == "T9")
+    ):
+        raise TimelineProbeError("The timeline control sequence is invalid.")
     _write_json_atomically(
         root / "control.json",
-        {"schema_version": SCHEMA_VERSION, "phase": phase, "stop": stop},
+        _control_document(
+            ControlMessage(
+                schema_version=SCHEMA_VERSION,
+                session_nonce=session_nonce,
+                revision=revision,
+                expected_previous_phase=expected_previous_phase,
+                phase=phase,
+                stop=stop,
+                abort=False,
+            )
+        ),
     )
     return 0
 
 
-def _set_owner_pid(process_id: int) -> int:
+def _abort_probe(
+    *,
+    expected_previous_phase: str,
+    revision: int,
+    session_nonce: str,
+) -> int:
+    if expected_previous_phase not in PHASES:
+        raise TimelineProbeError("The timeline phase is invalid.")
+    root = _evidence_root()
+    ready_nonce = _read_ready_session_nonce(root / "ready.json")
+    current = _read_control(root / "control.json")
+    if (
+        session_nonce != ready_nonce
+        or current.session_nonce != session_nonce
+        or expected_previous_phase != current.phase
+        or revision != current.revision + 1
+    ):
+        raise TimelineProbeError("The timeline abort request is invalid.")
+    _write_json_atomically(
+        root / "control.json",
+        _control_document(
+            ControlMessage(
+                schema_version=SCHEMA_VERSION,
+                session_nonce=session_nonce,
+                revision=revision,
+                expected_previous_phase=expected_previous_phase,
+                phase=current.phase,
+                stop=False,
+                abort=True,
+            )
+        ),
+    )
+    return 0
+
+
+def _set_owner_pid(
+    process_id: int,
+    *,
+    session_nonce: str,
+    identity_probe: ProcessIdentityProbe = _process_identity,
+) -> int:
     if process_id <= 0:
         raise TimelineProbeError("Owner process data is invalid.")
     root = _evidence_root()
-    if not (root / "ready.json").is_file():
-        raise TimelineProbeError("The timeline observer is not ready.")
+    ready_nonce = _read_ready_session_nonce(root / "ready.json")
+    current = _read_control(root / "control.json")
+    if (
+        session_nonce != ready_nonce
+        or current.session_nonce != session_nonce
+        or current.phase != "T0"
+        or current.revision != 0
+        or (root / "owner-pid.json").exists()
+    ):
+        raise TimelineProbeError("Owner process data is invalid.")
+    identity = identity_probe(process_id)
+    if identity is None:
+        raise TimelineProbeError("Owner process data is invalid.")
     _write_json_atomically(
         root / "owner-pid.json",
-        {"schema_version": SCHEMA_VERSION, "pid": process_id},
+        asdict(
+            OwnerRegistration(
+                schema_version=SCHEMA_VERSION,
+                session_nonce=session_nonce,
+                process_id=process_id,
+                process_identity=identity,
+            )
+        ),
     )
     return 0
 
@@ -603,7 +1292,11 @@ def _parser() -> argparse.ArgumentParser:
     modes.add_argument("--confirm-real-registry", action="store_true")
     modes.add_argument("--set-phase", choices=PHASES)
     modes.add_argument("--set-owner-pid", type=int)
+    modes.add_argument("--abort", action="store_true")
     parser.add_argument("--stop", action="store_true")
+    parser.add_argument("--session-nonce", default="")
+    parser.add_argument("--revision", type=int)
+    parser.add_argument("--expected-previous-phase", choices=PHASES)
     parser.add_argument("--expected-executable-sha256", default="")
     return parser
 
@@ -612,6 +1305,13 @@ def main(argv: list[str] | None = None) -> int:
     arguments = _parser().parse_args(argv)
     try:
         if arguments.confirm_real_registry:
+            if (
+                arguments.stop
+                or arguments.session_nonce
+                or arguments.revision is not None
+                or arguments.expected_previous_phase is not None
+            ):
+                raise TimelineProbeError("Timeline control data is invalid.")
             expected = str(arguments.expected_executable_sha256)
             if (
                 len(expected) != 64
@@ -623,9 +1323,56 @@ def main(argv: list[str] | None = None) -> int:
                 )
             return _run_real_observer(expected)
         if arguments.set_phase is not None:
-            return _set_phase(str(arguments.set_phase), stop=bool(arguments.stop))
+            nonce = str(arguments.session_nonce)
+            revision = arguments.revision
+            previous = arguments.expected_previous_phase
+            if (
+                not _valid_session_nonce(nonce)
+                or not isinstance(revision, int)
+                or revision <= 0
+                or previous is None
+            ):
+                raise TimelineProbeError("Timeline control data is invalid.")
+            return _set_phase(
+                str(arguments.set_phase),
+                expected_previous_phase=str(previous),
+                revision=revision,
+                session_nonce=nonce,
+                stop=bool(arguments.stop),
+            )
         if arguments.set_owner_pid is not None:
-            return _set_owner_pid(int(arguments.set_owner_pid))
+            nonce = str(arguments.session_nonce)
+            if not _valid_session_nonce(nonce):
+                raise TimelineProbeError("Owner process data is invalid.")
+            return _set_owner_pid(
+                int(arguments.set_owner_pid),
+                session_nonce=nonce,
+            )
+        if arguments.abort:
+            nonce = str(arguments.session_nonce)
+            revision = arguments.revision
+            previous = arguments.expected_previous_phase
+            if (
+                not _valid_session_nonce(nonce)
+                or not isinstance(revision, int)
+                or revision <= 0
+                or previous is None
+                or arguments.stop
+            ):
+                raise TimelineProbeError("The timeline abort request is invalid.")
+            return _abort_probe(
+                expected_previous_phase=str(previous),
+                revision=revision,
+                session_nonce=nonce,
+            )
+        if (
+            arguments.stop
+            or arguments.session_nonce
+            or arguments.revision is not None
+            or arguments.expected_previous_phase is not None
+            or arguments.expected_executable_sha256
+        ):
+            raise TimelineProbeError("Timeline control data is invalid.")
         print(
             "autostart_run_timeline_probe=false "
             "safe_code=autostart_timeline_probe_disabled"

@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import sys
+import traceback
 from pathlib import Path
 from types import ModuleType
 from typing import Any
@@ -31,6 +32,66 @@ probe: Any = _load_module()
 
 EXPECTED = '"D:\\fixed\\SJTUClaw.exe" --startup'
 TEST_SECRET = "unsafe-autostart-timeline-value-never-record"
+NONCE = "0123456789abcdef0123456789abcdef"
+OTHER_NONCE = "fedcba9876543210fedcba9876543210"
+OWNER_IDENTITY = "0123456789abcdef"
+
+
+class FakeClock:
+    def __init__(self, initial: float = 0.0) -> None:
+        self.current = initial
+
+    def monotonic(self) -> float:
+        return self.current
+
+    def advance(self, seconds: float) -> None:
+        self.current += seconds
+
+
+def _coordinator(
+    clock: FakeClock,
+    **timeouts: float,
+) -> probe.ProbeCoordinator:
+    coordinator = probe.ProbeCoordinator(
+        NONCE,
+        clock.monotonic(),
+        **timeouts,
+    )
+    coordinator.mark_ready(clock.monotonic())
+    return coordinator
+
+
+def _registration(
+    *,
+    nonce: str = NONCE,
+    identity: str = OWNER_IDENTITY,
+) -> probe.OwnerRegistration:
+    return probe.OwnerRegistration(
+        schema_version=probe.SCHEMA_VERSION,
+        session_nonce=nonce,
+        process_id=1234,
+        process_identity=identity,
+    )
+
+
+def _control(
+    phase: str,
+    revision: int,
+    previous: str,
+    *,
+    nonce: str = NONCE,
+    stop: bool = False,
+    abort: bool = False,
+) -> probe.ControlMessage:
+    return probe.ControlMessage(
+        schema_version=probe.SCHEMA_VERSION,
+        session_nonce=nonce,
+        revision=revision,
+        expected_previous_phase=previous,
+        phase=phase,
+        stop=stop,
+        abort=abort,
+    )
 
 
 def _owned() -> probe.SafeValueObservation:
@@ -267,11 +328,496 @@ def test_invalid_phase_and_control_are_rejected(tmp_path: Path) -> None:
         json.dumps(
             {
                 "schema_version": probe.SCHEMA_VERSION,
+                "session_nonce": NONCE,
+                "revision": 0,
+                "expected_previous_phase": None,
                 "phase": "T0",
                 "stop": "false",
+                "abort": False,
             }
         ),
         encoding="utf-8",
     )
     with pytest.raises(probe.TimelineProbeError):
         probe._read_control(control)
+
+
+def test_ready_unarmed_wait_does_not_consume_old_or_active_budget() -> None:
+    clock = FakeClock()
+    coordinator = _coordinator(clock)
+
+    clock.advance(15 * 60 + 1)
+
+    assert coordinator.lifecycle_state is probe.ProbeLifecycleState.READY_UNARMED
+    assert coordinator.active_started_at is None
+    assert coordinator.timeout_code(clock.monotonic()) is None
+
+
+def test_t1_starts_active_budget_only_after_owner_registration() -> None:
+    clock = FakeClock()
+    coordinator = _coordinator(
+        clock,
+        stage_lease_seconds=probe.ACTIVE_TIMEOUT_SECONDS * 2,
+    )
+    coordinator.register_owner(_registration())
+    clock.advance(20 * 60)
+
+    coordinator.accept_control(
+        _control("T1", 1, "T0"),
+        clock.monotonic(),
+        current_process_identity=OWNER_IDENTITY,
+    )
+
+    assert coordinator.lifecycle_state is probe.ProbeLifecycleState.ARMED
+    assert coordinator.active_started_at == 20 * 60
+    clock.advance(probe.ACTIVE_TIMEOUT_SECONDS - 1)
+    assert coordinator.timeout_code(clock.monotonic()) is None
+    clock.advance(1)
+    assert (
+        coordinator.timeout_code(clock.monotonic())
+        == "autostart_timeline_active_timeout"
+    )
+
+
+def test_t1_requires_registered_live_owner() -> None:
+    clock = FakeClock()
+    coordinator = _coordinator(clock)
+
+    with pytest.raises(probe.TimelineCoordinationError) as captured:
+        coordinator.accept_control(
+            _control("T1", 1, "T0"),
+            clock.monotonic(),
+            current_process_identity=None,
+        )
+
+    assert captured.value.safe_code == "autostart_timeline_owner_missing"
+
+
+@pytest.mark.parametrize(
+    ("message", "expected_code"),
+    [
+        (
+            _control("T1", 0, "T0"),
+            "autostart_timeline_control_revision_invalid",
+        ),
+        (
+            _control("T1", 2, "T0"),
+            "autostart_timeline_control_revision_invalid",
+        ),
+        (
+            _control("T2", 1, "T0"),
+            "autostart_timeline_control_sequence_invalid",
+        ),
+        (
+            _control("T1", 1, "T0", nonce=OTHER_NONCE),
+            "autostart_timeline_nonce_mismatch",
+        ),
+    ],
+)
+def test_revision_phase_and_nonce_controls_fail_closed(
+    message: probe.ControlMessage,
+    expected_code: str,
+) -> None:
+    clock = FakeClock()
+    coordinator = _coordinator(clock)
+    coordinator.register_owner(_registration())
+
+    with pytest.raises(probe.TimelineCoordinationError) as captured:
+        coordinator.accept_control(
+            message,
+            clock.monotonic(),
+            current_process_identity=OWNER_IDENTITY,
+        )
+
+    assert captured.value.safe_code == expected_code
+
+
+def test_duplicate_and_stale_revision_are_rejected_after_t1() -> None:
+    clock = FakeClock()
+    coordinator = _coordinator(clock)
+    coordinator.register_owner(_registration())
+    first = _control("T1", 1, "T0")
+    coordinator.accept_control(
+        first,
+        clock.monotonic(),
+        current_process_identity=OWNER_IDENTITY,
+    )
+    coordinator.begin_observing()
+
+    with pytest.raises(probe.TimelineCoordinationError) as duplicate:
+        coordinator.accept_control(
+            first,
+            clock.monotonic(),
+            current_process_identity=OWNER_IDENTITY,
+        )
+    with pytest.raises(probe.TimelineCoordinationError) as stale:
+        coordinator.accept_control(
+            _control("T1", 0, "T0"),
+            clock.monotonic(),
+            current_process_identity=OWNER_IDENTITY,
+        )
+
+    assert (
+        duplicate.value.safe_code
+        == "autostart_timeline_control_revision_invalid"
+    )
+    assert stale.value.safe_code == "autostart_timeline_control_revision_invalid"
+
+
+def test_normal_t1_through_t9_flow_and_owner_post_exit_observation() -> None:
+    clock = FakeClock()
+    coordinator = _coordinator(clock)
+    coordinator.register_owner(_registration())
+    previous = "T0"
+    for revision, phase in enumerate(probe.PHASES[1:], start=1):
+        coordinator.accept_control(
+            _control(
+                phase,
+                revision,
+                previous,
+                stop=phase == "T9",
+            ),
+            clock.monotonic(),
+            current_process_identity=(
+                OWNER_IDENTITY if phase == "T1" else None
+            ),
+        )
+        if phase == "T1":
+            coordinator.begin_observing()
+        if phase == "T7-before-shutdown":
+            assert coordinator.observe_owner_identity(None) is None
+        clock.advance(1)
+        previous = phase
+
+    coordinator.complete()
+    checkpoint = coordinator.checkpoint()
+
+    assert coordinator.lifecycle_state is probe.ProbeLifecycleState.COMPLETED
+    assert checkpoint.observer_terminal_state == "completed"
+    assert checkpoint.owner_terminal_state == probe.OwnerTerminalState.EXITED
+    assert checkpoint.revision == 9
+
+
+def test_each_phase_refreshes_lease_without_resetting_active_budget() -> None:
+    clock = FakeClock()
+    coordinator = _coordinator(
+        clock,
+        active_timeout_seconds=100.0,
+        stage_lease_seconds=10.0,
+    )
+    coordinator.register_owner(_registration())
+    coordinator.accept_control(
+        _control("T1", 1, "T0"),
+        clock.monotonic(),
+        current_process_identity=OWNER_IDENTITY,
+    )
+    coordinator.begin_observing()
+    active_started = coordinator.active_started_at
+    clock.advance(9)
+    coordinator.accept_control(
+        _control("T2", 2, "T1"),
+        clock.monotonic(),
+        current_process_identity=OWNER_IDENTITY,
+    )
+
+    assert coordinator.active_started_at == active_started
+    clock.advance(9)
+    assert coordinator.timeout_code(clock.monotonic()) is None
+    clock.advance(1)
+    assert (
+        coordinator.timeout_code(clock.monotonic())
+        == "autostart_timeline_stage_timeout"
+    )
+
+
+def test_ready_active_and_total_timeouts_are_independent() -> None:
+    ready_clock = FakeClock()
+    ready = _coordinator(
+        ready_clock,
+        ready_timeout_seconds=10.0,
+        total_timeout_seconds=100.0,
+    )
+    ready_clock.advance(10)
+    assert (
+        ready.timeout_code(ready_clock.monotonic())
+        == "autostart_timeline_ready_timeout"
+    )
+
+    active_clock = FakeClock()
+    active = _coordinator(
+        active_clock,
+        active_timeout_seconds=10.0,
+        stage_lease_seconds=20.0,
+        total_timeout_seconds=100.0,
+    )
+    active.register_owner(_registration())
+    active.accept_control(
+        _control("T1", 1, "T0"),
+        active_clock.monotonic(),
+        current_process_identity=OWNER_IDENTITY,
+    )
+    active.begin_observing()
+    active_clock.advance(10)
+    assert (
+        active.timeout_code(active_clock.monotonic())
+        == "autostart_timeline_active_timeout"
+    )
+
+    total_clock = FakeClock()
+    total = _coordinator(
+        total_clock,
+        ready_timeout_seconds=100.0,
+        total_timeout_seconds=10.0,
+    )
+    total_clock.advance(10)
+    assert (
+        total.timeout_code(total_clock.monotonic())
+        == "autostart_timeline_total_timeout"
+    )
+
+
+def test_failed_observer_preserves_running_owner_for_supervisor() -> None:
+    clock = FakeClock()
+    coordinator = _coordinator(clock)
+    coordinator.register_owner(_registration())
+    coordinator.fail("autostart_timeline_active_timeout")
+
+    checkpoint = coordinator.checkpoint()
+
+    assert checkpoint.observer_terminal_state == "failed"
+    assert checkpoint.owner_terminal_state == probe.OwnerTerminalState.RUNNING
+    assert checkpoint.supervisor_terminal_state == "awaiting_owner_safe_exit"
+    assert checkpoint.owner_safe_exit_required
+
+
+def test_owner_early_exit_and_pid_reuse_are_distinct() -> None:
+    clock = FakeClock()
+    early_exit = _coordinator(clock)
+    early_exit.register_owner(_registration())
+    assert (
+        early_exit.observe_owner_identity(None)
+        == "autostart_timeline_owner_exited_early"
+    )
+
+    reused = _coordinator(clock)
+    reused.register_owner(_registration())
+    assert (
+        reused.observe_owner_identity("fedcba9876543210")
+        == "autostart_timeline_owner_identity_lost"
+    )
+    assert reused.owner_terminal_state is probe.OwnerTerminalState.IDENTITY_LOST
+
+
+def test_abort_is_explicit_and_stop_is_t9_only() -> None:
+    clock = FakeClock()
+    coordinator = _coordinator(clock)
+    abort = _control("T0", 1, "T0", abort=True)
+    coordinator.accept_control(
+        abort,
+        clock.monotonic(),
+        current_process_identity=None,
+    )
+    assert coordinator.lifecycle_state is probe.ProbeLifecycleState.FINALIZING
+    assert coordinator.safe_code == "autostart_timeline_probe_aborted"
+
+    invalid_stop = _coordinator(clock)
+    invalid_stop.register_owner(_registration())
+    with pytest.raises(probe.TimelineCoordinationError) as captured:
+        invalid_stop.accept_control(
+            _control("T1", 1, "T0", stop=True),
+            clock.monotonic(),
+            current_process_identity=OWNER_IDENTITY,
+        )
+    assert captured.value.safe_code == "autostart_timeline_stop_invalid"
+
+
+def test_checkpoint_and_summary_writes_are_atomic(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    clock = FakeClock()
+    coordinator = _coordinator(clock)
+    tracker = probe.TimelineTracker()
+    tracker.observe("T0", False, probe.SafeValueObservation.absent())
+    probe._persist_checkpoint(tmp_path, coordinator)
+    coordinator.fail("autostart_timeline_ready_timeout")
+    probe._persist_terminal_summary(tmp_path, tracker, coordinator)
+
+    checkpoint = json.loads(
+        (tmp_path / "observer-checkpoint.json").read_text(encoding="utf-8")
+    )
+    summary = json.loads(
+        (tmp_path / "terminal-summary.json").read_text(encoding="utf-8")
+    )
+    assert checkpoint["lifecycle_state"] == "ready_unarmed"
+    assert summary["safe_code"] == "autostart_timeline_ready_timeout"
+
+    def fail_replace(source: Path, target: Path) -> None:
+        del source, target
+        raise OSError(TEST_SECRET)
+
+    monkeypatch.setattr(probe.os, "replace", fail_replace)
+    with pytest.raises(probe.TimelineProbeError) as checkpoint_failure:
+        probe._persist_checkpoint(tmp_path, coordinator)
+    with pytest.raises(probe.TimelineProbeError) as summary_failure:
+        probe._persist_terminal_summary(tmp_path, tracker, coordinator)
+
+    assert TEST_SECRET not in str(checkpoint_failure.value)
+    assert TEST_SECRET not in repr(checkpoint_failure.value)
+    assert TEST_SECRET not in str(summary_failure.value)
+    assert TEST_SECRET not in repr(summary_failure.value)
+    assert TEST_SECRET not in "".join(
+        traceback.format_exception(checkpoint_failure.value)
+    )
+    assert TEST_SECRET not in "".join(
+        traceback.format_exception(summary_failure.value)
+    )
+    assert not list(tmp_path.glob("*.part"))
+
+
+def test_control_and_checkpoint_documents_do_not_leak_sensitive_text() -> None:
+    clock = FakeClock()
+    coordinator = _coordinator(clock)
+    coordinator.register_owner(_registration())
+    visible = json.dumps(
+        {
+            "control": probe._control_document(_control("T1", 1, "T0")),
+            "checkpoint": probe.asdict(coordinator.checkpoint()),
+        },
+        sort_keys=True,
+    )
+
+    assert TEST_SECRET not in visible
+    assert EXPECTED not in visible
+    assert "value_text_recorded" in visible
+
+
+def test_terminal_observer_rejects_late_control_writes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "timeline"
+    root.mkdir()
+    clock = FakeClock()
+    coordinator = _coordinator(clock)
+    coordinator.fail("autostart_timeline_ready_timeout")
+    probe._write_json_atomically(
+        root / "ready.json",
+        {
+            "schema_version": probe.SCHEMA_VERSION,
+            "observer_ready": True,
+            "lifecycle_state": probe.ProbeLifecycleState.READY_UNARMED,
+            "session_nonce": NONCE,
+            "safe_code": "autostart_timeline_observer_ready",
+            "value_text_recorded": False,
+        },
+    )
+    probe._persist_checkpoint(root, coordinator)
+    probe._write_json_atomically(
+        root / "control.json",
+        probe._control_document(
+            probe.ControlMessage(
+                schema_version=probe.SCHEMA_VERSION,
+                session_nonce=NONCE,
+                revision=0,
+                expected_previous_phase=None,
+                phase="T0",
+                stop=False,
+                abort=False,
+            )
+        ),
+    )
+    monkeypatch.setattr(probe, "_evidence_root", lambda: root)
+
+    with pytest.raises(probe.TimelineProbeError):
+        probe._set_phase(
+            "T1",
+            expected_previous_phase="T0",
+            revision=1,
+            session_nonce=NONCE,
+            stop=False,
+        )
+
+    assert probe._read_control(root / "control.json").revision == 0
+
+
+def test_fake_clock_full_observer_flow_waits_then_completes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "timeline"
+    clock = FakeClock()
+    identity_running = True
+    next_phase_index = 1
+
+    monkeypatch.setattr(
+        probe,
+        "_authoritative_executable",
+        lambda expected_sha256: (tmp_path / "SJTUClaw.exe", EXPECTED),
+    )
+
+    def reader(expected_command: str) -> probe.SafeValueObservation:
+        assert expected_command == EXPECTED
+        if not (root / "control.json").exists():
+            return probe.SafeValueObservation.absent()
+        control = probe._read_control(root / "control.json")
+        if probe.PHASE_INDEX[control.phase] >= probe.PHASE_INDEX["T3"]:
+            return _owned()
+        return probe.SafeValueObservation.absent()
+
+    def identity_probe(process_id: int) -> str | None:
+        assert process_id == 1234
+        return OWNER_IDENTITY if identity_running else None
+
+    def sleeper(seconds: float) -> None:
+        nonlocal identity_running, next_phase_index
+        assert seconds == probe.POLL_INTERVAL_SECONDS
+        if next_phase_index == 1:
+            clock.advance(15 * 60 + 1)
+            ready = json.loads(
+                (root / "ready.json").read_text(encoding="utf-8")
+            )
+            nonce = ready["session_nonce"]
+            probe._write_json_atomically(
+                root / "owner-pid.json",
+                probe.asdict(_registration(nonce=nonce)),
+            )
+        else:
+            clock.advance(1)
+            nonce = NONCE
+        previous = probe.PHASES[next_phase_index - 1]
+        phase = probe.PHASES[next_phase_index]
+        if phase == "T8":
+            identity_running = False
+        probe._write_json_atomically(
+            root / "control.json",
+            probe._control_document(
+                _control(
+                    phase,
+                    next_phase_index,
+                    previous,
+                    nonce=nonce,
+                    stop=phase == "T9",
+                )
+            ),
+        )
+        next_phase_index += 1
+
+    result = probe._run_real_observer(
+        "0" * 64,
+        reader=reader,
+        identity_probe=identity_probe,
+        monotonic=clock.monotonic,
+        sleeper=sleeper,
+        nonce_factory=lambda: NONCE,
+        evidence_root=root,
+    )
+
+    summary = json.loads(
+        (root / "terminal-summary.json").read_text(encoding="utf-8")
+    )
+    assert result == 0
+    assert summary["safe_code"] == "autostart_run_value_timeline_verified"
+    assert summary["observer_terminal_state"] == "completed"
+    assert summary["owner_terminal_state"] == "exited"
+    assert not list(root.rglob("*.part"))
