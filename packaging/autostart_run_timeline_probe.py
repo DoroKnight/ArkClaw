@@ -11,7 +11,6 @@ import argparse
 import hashlib
 import json
 import os
-import secrets
 import stat
 import sys
 import time
@@ -33,18 +32,19 @@ ACTIVE_TIMEOUT_SECONDS = 90 * 60
 STAGE_LEASE_SECONDS = 30 * 60
 TOTAL_RUNTIME_SECONDS = 3 * 60 * 60
 EXPECTED_EXECUTABLE_RELATIVE_PATH = Path("dist/SJTUClaw.dist/SJTUClaw.exe")
-EVIDENCE_RELATIVE_PATH = Path("build/autostart-run-timeline-probe")
+EVIDENCE_PARENT_RELATIVE_PATH = Path("build/autostart-run-timeline-probes")
+MAX_EVIDENCE_PATH_LENGTH = 240
 PHASES = (
     "T0",
     "T1",
-    "T2",
-    "T3",
+    "T2-before-enable",
+    "T3-after-enable",
     "T4",
     "T5",
     "T6",
     "T7-before-shutdown",
-    "T8",
-    "T9",
+    "T8-after-process-exit",
+    "T9-final",
 )
 PHASE_INDEX = {phase: index for index, phase in enumerate(PHASES)}
 
@@ -129,6 +129,16 @@ class CoordinationCheckpoint:
     owner_safe_exit_required: bool
     safe_code: str
     value_text_recorded: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class EvidenceTreeManifest:
+    """Deterministic archive manifest without file contents."""
+
+    entries: tuple[tuple[str, int, str], ...]
+    file_count: int
+    total_size: int
+    manifest_sha256: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -227,7 +237,10 @@ class TimelineSummary:
     first_present_sequence: int | None
     first_owned_sequence: int | None
     first_absent_after_owned_sequence: int | None
+    first_absent_after_owned_phase: str | None
     process_exit_sequence: int | None
+    owner_exit_observed_sequence: int | None
+    accepted_phase: str
     disappearance_interval: str | None
     phase_states: Mapping[str, str]
     lifecycle_state: str = ProbeLifecycleState.FAILED
@@ -367,7 +380,7 @@ class ProbeCoordinator:
                 "autostart_timeline_control_sequence_invalid",
                 "The timeline control sequence is invalid.",
             )
-        if message.stop != (message.phase == "T9"):
+        if message.stop != (message.phase == "T9-final"):
             raise TimelineCoordinationError(
                 "autostart_timeline_stop_invalid",
                 "The timeline stop request is invalid.",
@@ -396,7 +409,7 @@ class ProbeCoordinator:
         self.current_phase = message.phase
         self.revision = message.revision
         self.stage_lease_started_at = now
-        if message.phase == "T9":
+        if message.phase == "T9-final":
             self.lifecycle_state = ProbeLifecycleState.FINALIZING
         elif message.phase == "T1":
             self.lifecycle_state = ProbeLifecycleState.ARMED
@@ -592,11 +605,7 @@ class TimelineTracker:
         elif self.first_owned_sequence is None:
             safe_code = "autostart_value_never_persisted"
         elif self.first_absent_after_owned_sequence is not None:
-            safe_code = (
-                "autostart_value_removed_during_runtime"
-                if self._absent_after_owned_while_running()
-                else "autostart_value_removed_after_process_exit"
-            )
+            safe_code = self._removal_safe_code()
         elif self._required_terminal_phases_owned():
             safe_code = "autostart_run_value_timeline_verified"
         else:
@@ -613,6 +622,7 @@ class TimelineTracker:
             owner_safe_exit_required=False,
             safe_code=safe_code,
         )
+        absence_record = self._first_absent_after_owned_record()
         return TimelineSummary(
             schema_version=SCHEMA_VERSION,
             autostart_run_timeline_probe=True,
@@ -624,7 +634,12 @@ class TimelineTracker:
             first_absent_after_owned_sequence=(
                 self.first_absent_after_owned_sequence
             ),
+            first_absent_after_owned_phase=(
+                absence_record.phase if absence_record is not None else None
+            ),
             process_exit_sequence=self.process_exit_sequence,
+            owner_exit_observed_sequence=self.process_exit_sequence,
+            accepted_phase=self._last_phase or "T0",
             disappearance_interval=self._disappearance_interval(),
             phase_states={
                 phase: state.value
@@ -658,11 +673,32 @@ class TimelineTracker:
             return "phase_snapshot"
         return "value_metadata_changed"
 
-    def _absent_after_owned_while_running(self) -> bool:
+    def _first_absent_after_owned_record(self) -> TimelineRecord | None:
         sequence = self.first_absent_after_owned_sequence
-        if sequence is None:
-            return False
-        return self.records[sequence - 1].process_running
+        return None if sequence is None else self.records[sequence - 1]
+
+    def _removal_safe_code(self) -> str:
+        record = self._first_absent_after_owned_record()
+        if record is None:
+            raise TimelineProbeError("The timeline removal state is invalid.")
+        if (
+            self.process_exit_sequence is not None
+            and self.process_exit_sequence <= record.sequence
+        ):
+            return "autostart_value_removed_after_process_exit"
+        if (
+            record.phase == "T7-before-shutdown"
+            and record.process_running
+        ):
+            return "autostart_value_removed_during_shutdown"
+        if record.phase in {
+            "T3-after-enable",
+            "T4",
+            "T5",
+            "T6",
+        } and record.process_running:
+            return "autostart_value_removed_during_runtime"
+        return "autostart_timeline_probe_incomplete"
 
     def _disappearance_interval(self) -> str | None:
         sequence = self.first_absent_after_owned_sequence
@@ -674,13 +710,23 @@ class TimelineTracker:
         previous_phases = [
             item.phase for item in self.records[: sequence - 1] if item.owned
         ]
-        last_owned_phase = previous_phases[-1] if previous_phases else "T2"
+        last_owned_phase = (
+            previous_phases[-1] if previous_phases else "T2-before-enable"
+        )
         return f"{last_owned_phase}_to_{record.phase}"
 
     def _required_terminal_phases_owned(self) -> bool:
         return all(
             self._phase_states.get(phase) is FixedValueState.OWNED
-            for phase in ("T3", "T4", "T5", "T6", "T7-before-shutdown", "T8", "T9")
+            for phase in (
+                "T3-after-enable",
+                "T4",
+                "T5",
+                "T6",
+                "T7-before-shutdown",
+                "T8-after-process-exit",
+                "T9-final",
+            )
         )
 
 
@@ -906,8 +952,176 @@ def _repository_root() -> Path:
     return Path(__file__).resolve(strict=True).parents[1]
 
 
-def _evidence_root() -> Path:
-    return _repository_root() / EVIDENCE_RELATIVE_PATH
+def _is_reparse_point(path: Path) -> bool:
+    metadata = path.lstat()
+    return bool(int(getattr(metadata, "st_file_attributes", 0)) & 0x400)
+
+
+def _allowed_evidence_parent() -> Path:
+    return (
+        _repository_root() / EVIDENCE_PARENT_RELATIVE_PATH
+    ).resolve(strict=False)
+
+
+def _validated_evidence_root(
+    raw_path: str,
+    *,
+    must_exist: bool,
+) -> Path:
+    if (
+        not raw_path
+        or len(raw_path) > MAX_EVIDENCE_PATH_LENGTH
+        or raw_path.startswith(("\\\\", "//"))
+        or any(ord(character) < 32 for character in raw_path)
+        or ".." in raw_path.replace("\\", "/").split("/")
+    ):
+        raise TimelineProbeError("The timeline evidence path is invalid.")
+    candidate = Path(raw_path)
+    if not candidate.is_absolute():
+        raise TimelineProbeError("The timeline evidence path is invalid.")
+    try:
+        resolved = candidate.resolve(strict=must_exist)
+    except OSError:
+        raise TimelineProbeError(
+            "The timeline evidence path is invalid."
+        ) from None
+    allowed_parent = _allowed_evidence_parent()
+    if (
+        resolved.parent != allowed_parent
+        or resolved.drive.casefold() != allowed_parent.drive.casefold()
+        or not resolved.name
+        or len(resolved.name) > 96
+        or any(
+            character not in "abcdefghijklmnopqrstuvwxyz"
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_"
+            for character in resolved.name
+        )
+    ):
+        raise TimelineProbeError("The timeline evidence path is invalid.")
+    build_root = allowed_parent.parent
+    if (
+        not build_root.is_dir()
+        or _is_reparse_point(build_root)
+        or (allowed_parent.exists() and _is_reparse_point(allowed_parent))
+    ):
+        raise TimelineProbeError("The timeline evidence path is invalid.")
+    if must_exist:
+        if not resolved.is_dir() or _is_reparse_point(resolved):
+            raise TimelineProbeError("The timeline evidence path is invalid.")
+    elif resolved.exists():
+        raise TimelineProbeError("The timeline evidence directory is occupied.")
+    return resolved
+
+
+def _prepare_new_evidence_root(raw_path: str) -> Path:
+    root = _validated_evidence_root(raw_path, must_exist=False)
+    parent = root.parent
+    if not parent.exists():
+        parent.mkdir(parents=False)
+    if _is_reparse_point(parent):
+        raise TimelineProbeError("The timeline evidence path is invalid.")
+    try:
+        root.mkdir(parents=False)
+    except OSError:
+        raise TimelineProbeError(
+            "The timeline evidence directory could not be created."
+        ) from None
+    return root
+
+
+def _evidence_tree_manifest(root: Path) -> EvidenceTreeManifest:
+    if not root.is_dir() or _is_reparse_point(root):
+        raise TimelineProbeError("The timeline evidence archive is invalid.")
+    entries: list[tuple[str, int, str]] = []
+    for entry in sorted(root.rglob("*"), key=lambda item: item.as_posix()):
+        if _is_reparse_point(entry):
+            raise TimelineProbeError("The timeline evidence archive is invalid.")
+        if entry.name.endswith(".part"):
+            raise TimelineProbeError("The timeline evidence archive is invalid.")
+        if entry.is_dir():
+            continue
+        metadata = entry.stat()
+        if (
+            not entry.is_file()
+            or metadata.st_nlink != 1
+            or metadata.st_size < 0
+        ):
+            raise TimelineProbeError("The timeline evidence archive is invalid.")
+        entries.append(
+            (
+                entry.relative_to(root).as_posix(),
+                metadata.st_size,
+                _hash_file(entry),
+            )
+        )
+    canonical = "".join(
+        f"{relative_path}\t{size}\t{digest}\n"
+        for relative_path, size, digest in entries
+    ).encode("utf-8")
+    return EvidenceTreeManifest(
+        entries=tuple(entries),
+        file_count=len(entries),
+        total_size=sum(size for _, size, _ in entries),
+        manifest_sha256=hashlib.sha256(canonical).hexdigest(),
+    )
+
+
+def _archive_evidence_directory(
+    source: Path,
+    archive_root: Path,
+    archive_name: str,
+    transaction_name: str,
+    *,
+    mover: Callable[[Path, Path], None] = os.replace,
+) -> tuple[Path, EvidenceTreeManifest]:
+    if (
+        not archive_name
+        or not transaction_name
+        or any(
+            character not in "abcdefghijklmnopqrstuvwxyz"
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_"
+            for character in archive_name + transaction_name
+        )
+    ):
+        raise TimelineProbeError("The timeline evidence archive is invalid.")
+    if not source.is_dir() or _is_reparse_point(source):
+        raise TimelineProbeError("The timeline evidence archive is invalid.")
+    source = source.resolve(strict=True)
+    archive_root = archive_root.resolve(strict=False)
+    target = archive_root / archive_name
+    transaction = archive_root.parent / transaction_name
+    if (
+        source.drive.casefold() != archive_root.drive.casefold()
+        or target.exists()
+        or transaction.exists()
+        or _is_reparse_point(source)
+    ):
+        raise TimelineProbeError("The timeline evidence archive is invalid.")
+    before = _evidence_tree_manifest(source)
+    archive_root.mkdir(parents=False, exist_ok=True)
+    if _is_reparse_point(archive_root):
+        raise TimelineProbeError("The timeline evidence archive is invalid.")
+    try:
+        mover(source, transaction)
+        if _evidence_tree_manifest(transaction) != before:
+            raise TimelineProbeError("The timeline evidence archive is invalid.")
+        mover(transaction, target)
+        if _evidence_tree_manifest(target) != before:
+            raise TimelineProbeError("The timeline evidence archive is invalid.")
+    except Exception:
+        try:
+            if target.exists() and not source.exists():
+                mover(target, source)
+            elif transaction.exists() and not source.exists():
+                mover(transaction, source)
+        except Exception:
+            raise TimelineProbeError(
+                "The timeline evidence archive rollback failed."
+            ) from None
+        raise TimelineProbeError(
+            "The timeline evidence archive failed safely."
+        ) from None
+    return target, before
 
 
 def _authoritative_executable(expected_sha256: str) -> tuple[Path, str]:
@@ -1007,21 +1221,19 @@ def _read_ready_session_nonce(path: Path) -> str:
 
 def _run_real_observer(
     expected_sha256: str,
+    evidence_root: str,
+    session_nonce: str,
     *,
     reader: ValueReader = query_fixed_run_value,
     identity_probe: ProcessIdentityProbe = _process_identity,
     monotonic: Callable[[], float] = time.monotonic,
     sleeper: Callable[[float], None] = time.sleep,
-    nonce_factory: Callable[[], str] = lambda: secrets.token_hex(16),
-    evidence_root: Path | None = None,
 ) -> int:
-    root = evidence_root or _evidence_root()
-    if root.exists():
-        raise TimelineProbeError("The timeline evidence directory is occupied.")
-    root.mkdir(parents=False)
+    root = _validated_evidence_root(evidence_root, must_exist=False)
     _, expected_command = _authoritative_executable(expected_sha256)
+    root = _prepare_new_evidence_root(str(root))
     started_at = monotonic()
-    coordinator = ProbeCoordinator(nonce_factory(), started_at)
+    coordinator = ProbeCoordinator(session_nonce, started_at)
     control_path = root / "control.json"
     owner_path = root / "owner-pid.json"
     initial_control = ControlMessage(
@@ -1157,7 +1369,7 @@ def _run_real_observer(
             return 2
         if (
             coordinator.lifecycle_state is ProbeLifecycleState.FINALIZING
-            and coordinator.current_phase == "T9"
+            and coordinator.current_phase == "T9-final"
         ):
             candidate = tracker.summarize()
             if candidate.safe_code == "autostart_run_value_timeline_verified":
@@ -1178,6 +1390,7 @@ def _run_real_observer(
 def _set_phase(
     phase: str,
     *,
+    evidence_root: str,
     expected_previous_phase: str,
     revision: int,
     session_nonce: str,
@@ -1185,7 +1398,7 @@ def _set_phase(
 ) -> int:
     if phase not in PHASES or expected_previous_phase not in PHASES:
         raise TimelineProbeError("The timeline phase is invalid.")
-    root = _evidence_root()
+    root = _validated_evidence_root(evidence_root, must_exist=True)
     ready_nonce = _read_ready_session_nonce(root / "ready.json")
     if session_nonce != ready_nonce:
         raise TimelineProbeError("The timeline session nonce is invalid.")
@@ -1195,7 +1408,7 @@ def _set_phase(
         or revision != current.revision + 1
         or expected_previous_phase != current.phase
         or PHASE_INDEX[phase] != PHASE_INDEX[current.phase] + 1
-        or stop != (phase == "T9")
+        or stop != (phase == "T9-final")
     ):
         raise TimelineProbeError("The timeline control sequence is invalid.")
     _write_json_atomically(
@@ -1217,13 +1430,14 @@ def _set_phase(
 
 def _abort_probe(
     *,
+    evidence_root: str,
     expected_previous_phase: str,
     revision: int,
     session_nonce: str,
 ) -> int:
     if expected_previous_phase not in PHASES:
         raise TimelineProbeError("The timeline phase is invalid.")
-    root = _evidence_root()
+    root = _validated_evidence_root(evidence_root, must_exist=True)
     ready_nonce = _read_ready_session_nonce(root / "ready.json")
     current = _read_control(root / "control.json")
     if (
@@ -1253,12 +1467,13 @@ def _abort_probe(
 def _set_owner_pid(
     process_id: int,
     *,
+    evidence_root: str,
     session_nonce: str,
     identity_probe: ProcessIdentityProbe = _process_identity,
 ) -> int:
     if process_id <= 0:
         raise TimelineProbeError("Owner process data is invalid.")
-    root = _evidence_root()
+    root = _validated_evidence_root(evidence_root, must_exist=True)
     ready_nonce = _read_ready_session_nonce(root / "ready.json")
     current = _read_control(root / "control.json")
     if (
@@ -1294,6 +1509,7 @@ def _parser() -> argparse.ArgumentParser:
     modes.add_argument("--set-owner-pid", type=int)
     modes.add_argument("--abort", action="store_true")
     parser.add_argument("--stop", action="store_true")
+    parser.add_argument("--evidence-root", default="")
     parser.add_argument("--session-nonce", default="")
     parser.add_argument("--revision", type=int)
     parser.add_argument("--expected-previous-phase", choices=PHASES)
@@ -1307,21 +1523,24 @@ def main(argv: list[str] | None = None) -> int:
         if arguments.confirm_real_registry:
             if (
                 arguments.stop
-                or arguments.session_nonce
                 or arguments.revision is not None
                 or arguments.expected_previous_phase is not None
             ):
                 raise TimelineProbeError("Timeline control data is invalid.")
             expected = str(arguments.expected_executable_sha256)
+            nonce = str(arguments.session_nonce)
+            evidence_root = str(arguments.evidence_root)
             if (
                 len(expected) != 64
                 or expected != expected.casefold()
                 or any(character not in "0123456789abcdef" for character in expected)
+                or not _valid_session_nonce(nonce)
+                or not evidence_root
             ):
                 raise TimelineProbeError(
                     "The expected executable digest is invalid."
                 )
-            return _run_real_observer(expected)
+            return _run_real_observer(expected, evidence_root, nonce)
         if arguments.set_phase is not None:
             nonce = str(arguments.session_nonce)
             revision = arguments.revision
@@ -1335,6 +1554,7 @@ def main(argv: list[str] | None = None) -> int:
                 raise TimelineProbeError("Timeline control data is invalid.")
             return _set_phase(
                 str(arguments.set_phase),
+                evidence_root=str(arguments.evidence_root),
                 expected_previous_phase=str(previous),
                 revision=revision,
                 session_nonce=nonce,
@@ -1346,6 +1566,7 @@ def main(argv: list[str] | None = None) -> int:
                 raise TimelineProbeError("Owner process data is invalid.")
             return _set_owner_pid(
                 int(arguments.set_owner_pid),
+                evidence_root=str(arguments.evidence_root),
                 session_nonce=nonce,
             )
         if arguments.abort:
@@ -1361,12 +1582,14 @@ def main(argv: list[str] | None = None) -> int:
             ):
                 raise TimelineProbeError("The timeline abort request is invalid.")
             return _abort_probe(
+                evidence_root=str(arguments.evidence_root),
                 expected_previous_phase=str(previous),
                 revision=revision,
                 session_nonce=nonce,
             )
         if (
             arguments.stop
+            or arguments.evidence_root
             or arguments.session_nonce
             or arguments.revision is not None
             or arguments.expected_previous_phase is not None

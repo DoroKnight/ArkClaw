@@ -117,11 +117,21 @@ def _complete_owned_timeline() -> probe.TimelineTracker:
     tracker = probe.TimelineTracker()
     tracker.observe("T0", False, probe.SafeValueObservation.absent())
     tracker.observe("T1", True, probe.SafeValueObservation.absent())
-    tracker.observe("T2", True, probe.SafeValueObservation.absent())
-    for phase in ("T3", "T4", "T5", "T6", "T7-before-shutdown"):
+    tracker.observe(
+        "T2-before-enable",
+        True,
+        probe.SafeValueObservation.absent(),
+    )
+    for phase in (
+        "T3-after-enable",
+        "T4",
+        "T5",
+        "T6",
+        "T7-before-shutdown",
+    ):
         tracker.observe(phase, True, _owned())
-    tracker.observe("T8", False, _owned())
-    tracker.observe("T9", False, _owned())
+    tracker.observe("T8-after-process-exit", False, _owned())
+    tracker.observe("T9-final", False, _owned())
     return tracker
 
 
@@ -139,6 +149,32 @@ def test_default_entry_is_inert(
     assert capsys.readouterr().out.strip() == (
         "autostart_run_timeline_probe=false "
         "safe_code=autostart_timeline_probe_disabled"
+    )
+
+
+def test_real_mode_requires_explicit_evidence_root_and_nonce(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    def fail_observer(*args: object, **kwargs: object) -> int:
+        del args, kwargs
+        raise AssertionError("The observer must not start without coordination.")
+
+    monkeypatch.setattr(probe, "_run_real_observer", fail_observer)
+
+    assert (
+        probe.main(
+            [
+                "--confirm-real-registry",
+                "--expected-executable-sha256",
+                "0" * 64,
+            ]
+        )
+        == 2
+    )
+    assert capsys.readouterr().out.strip() == (
+        "autostart_run_timeline_probe=false "
+        "safe_code=autostart_timeline_probe_failed"
     )
 
 
@@ -168,10 +204,10 @@ def test_always_absent_is_never_persisted() -> None:
     for phase, running in (
         ("T0", False),
         ("T1", True),
-        ("T2", True),
-        ("T3", True),
-        ("T8", False),
-        ("T9", False),
+        ("T2-before-enable", True),
+        ("T3-after-enable", True),
+        ("T8-after-process-exit", False),
+        ("T9-final", False),
     ):
         tracker.observe(phase, running, probe.SafeValueObservation.absent())
 
@@ -197,10 +233,24 @@ def test_value_appears_once_and_remains_owned() -> None:
 @pytest.mark.parametrize(
     ("absent_phase", "running", "expected_code"),
     [
-        ("T3", True, "autostart_value_removed_during_runtime"),
+        (
+            "T3-after-enable",
+            True,
+            "autostart_value_removed_during_runtime",
+        ),
+        ("T4", True, "autostart_value_removed_during_runtime"),
         ("T5", True, "autostart_value_removed_during_runtime"),
-        ("T8", False, "autostart_value_removed_after_process_exit"),
-        ("T9", False, "autostart_value_removed_after_process_exit"),
+        ("T6", True, "autostart_value_removed_during_runtime"),
+        (
+            "T8-after-process-exit",
+            False,
+            "autostart_value_removed_after_process_exit",
+        ),
+        (
+            "T9-final",
+            False,
+            "autostart_value_removed_after_process_exit",
+        ),
     ],
 )
 def test_value_disappearance_is_classified_by_process_lifetime(
@@ -211,21 +261,82 @@ def test_value_disappearance_is_classified_by_process_lifetime(
     tracker = probe.TimelineTracker()
     tracker.observe("T0", False, probe.SafeValueObservation.absent())
     tracker.observe("T1", True, probe.SafeValueObservation.absent())
-    tracker.observe("T2", True, _owned())
+    tracker.observe("T2-before-enable", True, _owned())
     tracker.observe(absent_phase, running, probe.SafeValueObservation.absent())
 
     summary = tracker.summarize()
 
     assert summary.safe_code == expected_code
     assert summary.first_absent_after_owned_sequence is not None
+    assert summary.first_absent_after_owned_phase == absent_phase
+
+
+def test_t7_removal_before_owner_exit_is_shutdown_removal() -> None:
+    tracker = probe.TimelineTracker()
+    tracker.observe("T0", False, probe.SafeValueObservation.absent())
+    tracker.observe("T1", True, probe.SafeValueObservation.absent())
+    tracker.observe("T2-before-enable", True, _owned())
+    tracker.observe("T7-before-shutdown", True, _owned())
+    tracker.observe(
+        "T7-before-shutdown",
+        True,
+        probe.SafeValueObservation.absent(),
+    )
+
+    summary = tracker.summarize()
+
+    assert (
+        summary.safe_code == "autostart_value_removed_during_shutdown"
+    )
+    assert summary.first_absent_after_owned_phase == "T7-before-shutdown"
+    assert summary.owner_exit_observed_sequence is None
+
+
+def test_adjacent_absence_and_owner_exit_uses_persisted_event_order() -> None:
+    tracker = probe.TimelineTracker()
+    tracker.observe("T0", False, probe.SafeValueObservation.absent())
+    tracker.observe("T1", True, probe.SafeValueObservation.absent())
+    tracker.observe("T3-after-enable", True, _owned())
+    tracker.observe(
+        "T7-before-shutdown",
+        False,
+        probe.SafeValueObservation.absent(),
+    )
+
+    summary = tracker.summarize()
+
+    assert (
+        summary.safe_code
+        == "autostart_value_removed_after_process_exit"
+    )
+    assert (
+        summary.owner_exit_observed_sequence
+        == summary.first_absent_after_owned_sequence
+    )
+
+
+def test_backend_error_has_priority_over_ownership_loss() -> None:
+    tracker = probe.TimelineTracker()
+    tracker.observe("T0", False, probe.SafeValueObservation.absent())
+    tracker.observe("T3-after-enable", True, _occupied())
+    tracker.observe(
+        "T4",
+        True,
+        probe.SafeValueObservation.read_error(),
+    )
+
+    assert (
+        tracker.summarize().safe_code
+        == "autostart_timeline_probe_read_failed"
+    )
 
 
 def test_external_replacement_and_wrong_type_are_ownership_loss() -> None:
     for observation in (_occupied(), _occupied(EXPECTED, 7)):
         tracker = probe.TimelineTracker()
         tracker.observe("T0", False, probe.SafeValueObservation.absent())
-        tracker.observe("T2", True, _owned())
-        tracker.observe("T3", True, observation)
+        tracker.observe("T2-before-enable", True, _owned())
+        tracker.observe("T3-after-enable", True, observation)
 
         summary = tracker.summarize()
 
@@ -302,7 +413,7 @@ def test_atomic_writer_failure_is_safe_and_cleans_part(
 def test_records_and_summary_never_store_value_text() -> None:
     tracker = probe.TimelineTracker()
     tracker.observe("T0", False, probe.SafeValueObservation.absent())
-    tracker.observe("T2", True, _occupied())
+    tracker.observe("T2-before-enable", True, _occupied())
 
     visible = json.dumps(
         {
@@ -351,6 +462,7 @@ def test_ready_unarmed_wait_does_not_consume_old_or_active_budget() -> None:
     assert coordinator.lifecycle_state is probe.ProbeLifecycleState.READY_UNARMED
     assert coordinator.active_started_at is None
     assert coordinator.timeout_code(clock.monotonic()) is None
+    assert not hasattr(probe, "MAX_RUNTIME_SECONDS")
 
 
 def test_t1_starts_active_budget_only_after_owner_registration() -> None:
@@ -405,7 +517,7 @@ def test_t1_requires_registered_live_owner() -> None:
             "autostart_timeline_control_revision_invalid",
         ),
         (
-            _control("T2", 1, "T0"),
+            _control("T2-before-enable", 1, "T0"),
             "autostart_timeline_control_sequence_invalid",
         ),
         (
@@ -475,7 +587,7 @@ def test_normal_t1_through_t9_flow_and_owner_post_exit_observation() -> None:
                 phase,
                 revision,
                 previous,
-                stop=phase == "T9",
+                stop=phase == "T9-final",
             ),
             clock.monotonic(),
             current_process_identity=(
@@ -515,7 +627,7 @@ def test_each_phase_refreshes_lease_without_resetting_active_budget() -> None:
     active_started = coordinator.active_started_at
     clock.advance(9)
     coordinator.accept_control(
-        _control("T2", 2, "T1"),
+        _control("T2-before-enable", 2, "T1"),
         clock.monotonic(),
         current_process_identity=OWNER_IDENTITY,
     )
@@ -696,8 +808,13 @@ def test_terminal_observer_rejects_late_control_writes(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    root = tmp_path / "timeline"
-    root.mkdir()
+    root = (
+        tmp_path
+        / "build"
+        / "autostart-run-timeline-probes"
+        / "session-01"
+    )
+    root.mkdir(parents=True)
     clock = FakeClock()
     coordinator = _coordinator(clock)
     coordinator.fail("autostart_timeline_ready_timeout")
@@ -727,11 +844,12 @@ def test_terminal_observer_rejects_late_control_writes(
             )
         ),
     )
-    monkeypatch.setattr(probe, "_evidence_root", lambda: root)
+    monkeypatch.setattr(probe, "_repository_root", lambda: tmp_path)
 
     with pytest.raises(probe.TimelineProbeError):
         probe._set_phase(
             "T1",
+            evidence_root=str(root),
             expected_previous_phase="T0",
             revision=1,
             session_nonce=NONCE,
@@ -741,11 +859,170 @@ def test_terminal_observer_rejects_late_control_writes(
     assert probe._read_control(root / "control.json").revision == 0
 
 
+def test_evidence_root_requires_unique_direct_child_of_allowed_parent(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (tmp_path / "build").mkdir()
+    monkeypatch.setattr(probe, "_repository_root", lambda: tmp_path)
+    valid = (
+        tmp_path
+        / "build"
+        / "autostart-run-timeline-probes"
+        / "session-01"
+    )
+
+    assert probe._validated_evidence_root(
+        str(valid),
+        must_exist=False,
+    ) == valid
+    valid.parent.mkdir()
+    valid.mkdir()
+    with pytest.raises(probe.TimelineProbeError):
+        probe._validated_evidence_root(str(valid), must_exist=False)
+    assert probe._validated_evidence_root(
+        str(valid),
+        must_exist=True,
+    ) == valid
+
+
+@pytest.mark.parametrize(
+    "invalid_path",
+    [
+        r"\\server\share\session",
+        "relative-session",
+        "D:\\SJTUClaw\\build\\autostart-run-timeline-probes\\..\\escape",
+        "D:\\SJTUClaw\\build\\autostart-run-timeline-probe",
+        "D:\\SJTUClaw\\build\\autostart-run-timeline-probes\\bad.name",
+        "D:\\SJTUClaw\\build\\autostart-run-timeline-probes\\"
+        + ("x" * 200),
+    ],
+)
+def test_evidence_root_rejects_escape_unc_legacy_and_long_paths(
+    invalid_path: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (tmp_path / "build").mkdir()
+    monkeypatch.setattr(probe, "_repository_root", lambda: tmp_path)
+
+    with pytest.raises(probe.TimelineProbeError):
+        probe._validated_evidence_root(invalid_path, must_exist=False)
+
+
+def test_evidence_root_rejects_reparse_parent(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    build = tmp_path / "build"
+    parent = build / "autostart-run-timeline-probes"
+    build.mkdir()
+    parent.mkdir()
+    monkeypatch.setattr(probe, "_repository_root", lambda: tmp_path)
+    monkeypatch.setattr(
+        probe,
+        "_is_reparse_point",
+        lambda path: path == parent,
+    )
+
+    with pytest.raises(probe.TimelineProbeError):
+        probe._validated_evidence_root(
+            str(parent / "session-01"),
+            must_exist=False,
+        )
+
+
+def test_archive_rejects_existing_target_and_preserves_source(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "legacy"
+    source.mkdir()
+    (source / "record.json").write_text("{}", encoding="utf-8")
+    archive = tmp_path / "archive"
+    target = archive / "attempt-01"
+    target.mkdir(parents=True)
+
+    with pytest.raises(probe.TimelineProbeError):
+        probe._archive_evidence_directory(
+            source,
+            archive,
+            "attempt-01",
+            "txn-01",
+        )
+
+    assert source.is_dir()
+    assert (source / "record.json").is_file()
+
+
+def test_archive_success_preserves_manifest_without_part_files(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "legacy"
+    source.mkdir()
+    (source / "record.json").write_text("{}", encoding="utf-8")
+    before = probe._evidence_tree_manifest(source)
+
+    target, archived = probe._archive_evidence_directory(
+        source,
+        tmp_path / "archive",
+        "attempt-01",
+        "txn-01",
+    )
+
+    assert archived == before
+    assert probe._evidence_tree_manifest(target) == before
+    assert not source.exists()
+    assert not list(tmp_path.rglob("*.part"))
+
+
+def test_archive_rolls_back_after_partial_move(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "legacy"
+    source.mkdir()
+    (source / "record.json").write_text("{}", encoding="utf-8")
+    archive = tmp_path / "archive"
+    calls = 0
+
+    def fail_commit_then_allow_rollback(
+        current: Path,
+        destination: Path,
+    ) -> None:
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise OSError(TEST_SECRET)
+        probe.os.replace(current, destination)
+
+    with pytest.raises(probe.TimelineProbeError) as captured:
+        probe._archive_evidence_directory(
+            source,
+            archive,
+            "attempt-01",
+            "txn-01",
+            mover=fail_commit_then_allow_rollback,
+        )
+
+    assert calls == 3
+    assert source.is_dir()
+    assert (source / "record.json").is_file()
+    assert not (archive / "attempt-01").exists()
+    assert not (tmp_path / "txn-01").exists()
+    assert TEST_SECRET not in str(captured.value)
+    assert TEST_SECRET not in repr(captured.value)
+
+
 def test_fake_clock_full_observer_flow_waits_then_completes(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    root = tmp_path / "timeline"
+    (tmp_path / "build").mkdir()
+    root = (
+        tmp_path
+        / "build"
+        / "autostart-run-timeline-probes"
+        / "session-01"
+    )
     clock = FakeClock()
     identity_running = True
     next_phase_index = 1
@@ -755,13 +1032,17 @@ def test_fake_clock_full_observer_flow_waits_then_completes(
         "_authoritative_executable",
         lambda expected_sha256: (tmp_path / "SJTUClaw.exe", EXPECTED),
     )
+    monkeypatch.setattr(probe, "_repository_root", lambda: tmp_path)
 
     def reader(expected_command: str) -> probe.SafeValueObservation:
         assert expected_command == EXPECTED
         if not (root / "control.json").exists():
             return probe.SafeValueObservation.absent()
         control = probe._read_control(root / "control.json")
-        if probe.PHASE_INDEX[control.phase] >= probe.PHASE_INDEX["T3"]:
+        if (
+            probe.PHASE_INDEX[control.phase]
+            >= probe.PHASE_INDEX["T3-after-enable"]
+        ):
             return _owned()
         return probe.SafeValueObservation.absent()
 
@@ -787,7 +1068,7 @@ def test_fake_clock_full_observer_flow_waits_then_completes(
             nonce = NONCE
         previous = probe.PHASES[next_phase_index - 1]
         phase = probe.PHASES[next_phase_index]
-        if phase == "T8":
+        if phase == "T8-after-process-exit":
             identity_running = False
         probe._write_json_atomically(
             root / "control.json",
@@ -797,7 +1078,7 @@ def test_fake_clock_full_observer_flow_waits_then_completes(
                     next_phase_index,
                     previous,
                     nonce=nonce,
-                    stop=phase == "T9",
+                    stop=phase == "T9-final",
                 )
             ),
         )
@@ -805,12 +1086,12 @@ def test_fake_clock_full_observer_flow_waits_then_completes(
 
     result = probe._run_real_observer(
         "0" * 64,
+        str(root),
+        NONCE,
         reader=reader,
         identity_probe=identity_probe,
         monotonic=clock.monotonic,
         sleeper=sleeper,
-        nonce_factory=lambda: NONCE,
-        evidence_root=root,
     )
 
     summary = json.loads(
