@@ -1476,3 +1476,63 @@ entry point exits before constructing the ordinary Qt runtime, single-instance
 IPC, Provider, SecretStore, or Windows Run-key backend. It does not verify
 checkbox operability, three-entry UI synchronization, real HKCU Run ownership,
 `--startup`, or Windows login-startup behavior.
+
+### Packaged Owner UI readiness attribution checkpoint
+
+The next normal-mode Owner was created exactly once. T1 was not accepted,
+the autostart checkbox was not clicked, and the fixed Run value remained
+absent. The process stayed alive but the operator observed no desktop pet,
+system tray icon, or Agent window. The registry timeline observer was
+explicitly aborted at T0, so this failure is not classified as a Run-value
+lifecycle result. Exact-PID cleanup verified the Owner and supervisor image,
+creation identity, creation time, session, command, and checkpoint
+relationship before terminating the Owner. The supervisor observed the child
+exit and then exited by itself. External and unattributed TCP counts remained
+zero, and the 70-file distribution manifest remained unchanged.
+
+The retained evidence supports the following bounded startup attribution:
+
+| Startup stage | Result | Evidence |
+| --- | --- | --- |
+| `process_created` | reached | Supervisor created and continuously polled the one Owner PID. |
+| `entrypoint_entered` | reached, indirect | A fresh single-instance lock artifact appeared in the redirected runtime data. |
+| `argument_parsed` | reached, indirect | The normal entry point progressed far enough to create the lock artifact. |
+| `diagnostic_mode_checked` | reached, indirect | The normal entry point performs this check before single-instance startup. |
+| `single_instance_started` | reached, indirect | The fresh lock artifact is created only by the single-instance boundary. |
+| `instance_owner_acquired` | unknown | The failed artifact emitted no owner-role checkpoint. |
+| `settings_loaded` | unknown | No product-side startup checkpoint existed. |
+| `composition_root_started` | unknown | Process liveness does not prove construction completed. |
+| `runtime_thread_started` | unknown | No RuntimeThread checkpoint existed. |
+| `runtime_ready` | unknown | No READY signal evidence existed. |
+| `pet_window_constructed` | unknown | Win32 top-level enumeration is insufficient proof. |
+| `tray_constructed` | unknown | A `QSystemTrayIcon` is not a top-level window. |
+| `pet_window_shown` | unknown | No Qt `isVisible()` evidence existed. |
+| `tray_shown` | unknown | No `QSystemTrayIcon.isVisible()` evidence existed. |
+| `application_ready` | unknown | The application published no explicit ready edge. |
+| `t1_observable` | not reached | The operator reported that both pet and tray were unavailable. |
+
+The source now has an explicitly enabled
+`--diagnose-owner-ui-readiness <session-nonce>` mode for a future rebuilt
+artifact. It preserves normal startup behavior while atomically writing a
+bounded, path-free timeline containing only schema version, nonce, monotonic
+sequence, elapsed milliseconds, fixed stages, and fixed failure categories.
+The mode derives an isolated repository-local evidence directory from the
+validated standalone layout. It records no environment value, registry value,
+command line, exception text, credential, Provider data, or conversation
+content. A write failure disables further evidence writes but does not weaken
+the product boundary.
+
+T1 control now fails closed unless the same nonce has a strict product
+checkpoint proving single-instance ownership, Runtime READY, PetWindow
+construction and Qt visibility, tray construction and Qt visibility, and the
+application-ready edge. It separately performs one fixed-value query and
+requires the Run value to remain absent. This avoids treating an invisible
+`QSystemTrayIcon` in Win32 window enumeration as proof that no tray exists,
+while also preventing a manual T1 submission from bypassing missing Qt
+readiness evidence.
+
+No standalone was rebuilt or executed for this checkpoint. Consequently, the
+existing artifact's last internal startup stage remains unknown; one new
+standalone build, static audit, and one separately authorized diagnostic Owner
+run are required before choosing between a product startup fix and a probe-only
+rerun.

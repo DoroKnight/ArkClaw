@@ -94,6 +94,9 @@ class _FakeTrayView:
     def show(self) -> None:
         pass
 
+    def is_visible(self) -> bool:
+        return not self.closed
+
     def update_state(self, state: PetTrayState) -> None:
         self.states.append(state)
         blocker = QSignalBlocker(self.autostart_action)

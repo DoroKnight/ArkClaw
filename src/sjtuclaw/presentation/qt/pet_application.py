@@ -31,6 +31,15 @@ from sjtuclaw.presentation.qt.autostart_controller import (
     AutostartUiController,
 )
 from sjtuclaw.presentation.qt.main_window import MainWindow
+from sjtuclaw.presentation.qt.owner_ui_readiness import (
+    OwnerStartupFailure,
+    OwnerStartupStage,
+    OwnerUiCheckpointRecorder,
+    OwnerUiDiagnosticArgumentError,
+    OwnerUiReadinessSnapshot,
+    classify_owner_ui_readiness,
+    prepare_owner_ui_diagnostic_launch,
+)
 from sjtuclaw.presentation.qt.pet_settings_controller import (
     PetSettingsController,
     create_production_pet_settings_controller,
@@ -48,6 +57,7 @@ class PetApplicationCoordinator(QObject):
     """Coordinate windows while leaving runtime ownership in the bridge."""
 
     quit_requested = Signal()
+    application_ready = Signal()
 
     def __init__(
         self,
@@ -63,6 +73,7 @@ class PetApplicationCoordinator(QObject):
         self._pet_window = pet_window
         self._settings_controller = settings_controller
         self._system_tray: SystemTrayController | None = None
+        self._application_ready_published = False
         self._pet_window.open_agent_requested.connect(self.open_agent_window)
         self._pet_window.safe_exit_requested.connect(
             self._begin_runtime_shutdown
@@ -71,6 +82,14 @@ class PetApplicationCoordinator(QObject):
             self._refresh_system_tray
         )
         self._bridge.shutdown_finished.connect(self._on_shutdown_finished)
+
+    def publish_application_ready(self) -> None:
+        """Publish the process-wide ready edge exactly once."""
+
+        if self._application_ready_published:
+            return
+        self._application_ready_published = True
+        self.application_ready.emit()
 
     @property
     def pet_visible(self) -> bool:
@@ -236,6 +255,115 @@ def _create_optional_pet_settings_controller() -> PetSettingsController:
     return controller
 
 
+class _OwnerUiStartupObserver(QObject):
+    """Bridge Qt readiness facts into the opt-in redacted checkpoint."""
+
+    def __init__(
+        self,
+        recorder: OwnerUiCheckpointRecorder,
+        bridge: QtRuntimeBridge,
+        pet_window: PetWindow,
+        system_tray: SystemTrayController,
+        coordinator: PetApplicationCoordinator,
+    ) -> None:
+        super().__init__(coordinator)
+        self._recorder = recorder
+        self._bridge = bridge
+        self._pet_window = pet_window
+        self._system_tray = system_tray
+        self._coordinator = coordinator
+        self._runtime_ready = False
+        self._application_ready = False
+        self._closing = False
+        self._bridge.runtime_ready.connect(self._on_runtime_ready)
+        self._coordinator.application_ready.connect(
+            self._on_application_ready
+        )
+        if self._pet_window.isVisible():
+            self._recorder.record(OwnerStartupStage.PET_WINDOW_VISIBLE)
+        self._recorder.record(OwnerStartupStage.TRAY_CREATED)
+        if self._system_tray.visible:
+            self._recorder.record(OwnerStartupStage.TRAY_VISIBLE)
+        QTimer.singleShot(0, self._observe_after_event_loop_start)
+
+    @Slot()
+    def _observe_after_event_loop_start(self) -> None:
+        if self._bridge.accepting_commands and not self._runtime_ready:
+            self._on_runtime_ready()
+
+    @Slot()
+    def _on_runtime_ready(self) -> None:
+        if self._runtime_ready or self._closing:
+            return
+        self._runtime_ready = True
+        self._recorder.record(OwnerStartupStage.RUNTIME_READY)
+        anticipated = self._snapshot(application_ready=True)
+        failure = classify_owner_ui_readiness(anticipated)
+        if failure is not OwnerStartupFailure.NONE:
+            self._recorder.record(OwnerStartupStage.FAILED_SAFE, failure)
+            return
+        self._coordinator.publish_application_ready()
+
+    @Slot()
+    def _on_application_ready(self) -> None:
+        if self._application_ready or self._closing:
+            return
+        self._application_ready = True
+        snapshot = self._snapshot(application_ready=True)
+        failure = classify_owner_ui_readiness(snapshot)
+        if failure is OwnerStartupFailure.NONE:
+            self._recorder.record(OwnerStartupStage.APPLICATION_READY)
+        else:
+            self._recorder.record(OwnerStartupStage.FAILED_SAFE, failure)
+
+    @Slot()
+    def begin_closing(self) -> None:
+        if self._closing:
+            return
+        self._closing = True
+        if self._application_ready:
+            self._recorder.record(OwnerStartupStage.CLOSING)
+        elif self._recorder.last_stage is not OwnerStartupStage.FAILED_SAFE:
+            failure = classify_owner_ui_readiness(
+                self._snapshot(application_ready=False)
+            )
+            self._recorder.record(
+                OwnerStartupStage.FAILED_SAFE,
+                failure,
+            )
+
+    def complete_close(self) -> None:
+        if self._recorder.last_stage is OwnerStartupStage.CLOSING:
+            self._recorder.record(OwnerStartupStage.CLOSED)
+
+    def _snapshot(
+        self,
+        *,
+        application_ready: bool,
+    ) -> OwnerUiReadinessSnapshot:
+        return OwnerUiReadinessSnapshot(
+            instance_owner=True,
+            runtime_ready=self._runtime_ready,
+            pet_window_constructed=True,
+            pet_window_visible=self._pet_window.isVisible(),
+            pet_window_in_workspace=_pet_window_in_available_workspace(
+                self._pet_window
+            ),
+            tray_constructed=True,
+            tray_available=self._system_tray.available,
+            tray_visible=self._system_tray.visible,
+            application_ready=application_ready,
+        )
+
+
+def _pet_window_in_available_workspace(pet_window: PetWindow) -> bool:
+    geometry = pet_window.frameGeometry()
+    return any(
+        geometry.intersects(screen.availableGeometry())
+        for screen in QApplication.screens()
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     """Run the placeholder pet without activating a cloud Provider."""
 
@@ -246,9 +374,24 @@ def main(argv: list[str] | None = None) -> int:
     if diagnostic_exit_code is not None:
         return diagnostic_exit_code
     try:
+        diagnostic_launch = prepare_owner_ui_diagnostic_launch(arguments)
+    except OwnerUiDiagnosticArgumentError:
+        return 2
+    arguments = list(diagnostic_launch.arguments)
+    recorder = diagnostic_launch.recorder
+    if recorder is not None:
+        recorder.record(OwnerStartupStage.STARTED)
+    try:
         parse_startup_mode(arguments)
     except StartupModeArgumentError:
+        if recorder is not None:
+            recorder.record(
+                OwnerStartupStage.FAILED_SAFE,
+                OwnerStartupFailure.ARGUMENTS_INVALID,
+            )
         return 2
+    if recorder is not None:
+        recorder.record(OwnerStartupStage.ARGUMENTS_VALIDATED)
     app = QApplication(arguments)
     app.setApplicationName("SJTUClaw")
     app.setOrganizationName("SJTU")
@@ -256,7 +399,16 @@ def main(argv: list[str] | None = None) -> int:
     single_instance = create_production_single_instance(app)
     instance_result = single_instance.start()
     if instance_result.role is not SingleInstanceRole.OWNER:
+        if recorder is not None:
+            failure = (
+                OwnerStartupFailure.SINGLE_INSTANCE_SECONDARY
+                if instance_result.role is SingleInstanceRole.SECONDARY
+                else OwnerStartupFailure.SINGLE_INSTANCE_FAILED
+            )
+            recorder.record(OwnerStartupStage.FAILED_SAFE, failure)
         return instance_result.exit_code
+    if recorder is not None:
+        recorder.record(OwnerStartupStage.SINGLE_INSTANCE_OWNER)
     settings_controller = _create_optional_pet_settings_controller()
     bridge = QtRuntimeBridge(
         ProductionQtRuntimeCompositionRoot(
@@ -264,7 +416,11 @@ def main(argv: list[str] | None = None) -> int:
         ),
         autostart_service_factory=create_production_autostart_service,
     )
+    if recorder is not None:
+        recorder.record(OwnerStartupStage.COMPOSITION_ROOT_CREATED)
     autostart_controller = AutostartUiController(bridge, bridge)
+    if recorder is not None:
+        recorder.record(OwnerStartupStage.RUNTIME_STARTING)
     main_window = MainWindow(
         bridge,
         hide_on_close=True,
@@ -273,6 +429,8 @@ def main(argv: list[str] | None = None) -> int:
     pet_window = PetWindow(
         autostart_controller=autostart_controller,
     )
+    if recorder is not None:
+        recorder.record(OwnerStartupStage.PET_WINDOW_CREATED)
     coordinator = PetApplicationCoordinator(
         bridge,
         main_window,
@@ -280,6 +438,8 @@ def main(argv: list[str] | None = None) -> int:
         settings_controller=settings_controller,
     )
     coordinator.restore_pet_settings()
+    if recorder is not None:
+        recorder.record(OwnerStartupStage.SETTINGS_LOADED)
     pet_window.show()
     system_tray = SystemTrayController(
         coordinator,
@@ -287,11 +447,24 @@ def main(argv: list[str] | None = None) -> int:
         parent=coordinator,
     )
     coordinator.attach_system_tray(system_tray)
+    startup_observer: _OwnerUiStartupObserver | None = None
+    if recorder is not None:
+        startup_observer = _OwnerUiStartupObserver(
+            recorder,
+            bridge,
+            pet_window,
+            system_tray,
+            coordinator,
+        )
+        app.aboutToQuit.connect(startup_observer.begin_closing)
     single_instance.set_closing_probe(lambda: coordinator.pet_closing)
     single_instance.activation_requested.connect(coordinator.show_pet)
     coordinator.quit_requested.connect(single_instance.close)
     coordinator.quit_requested.connect(app.quit)
-    return app.exec()
+    exit_code = app.exec()
+    if startup_observer is not None:
+        startup_observer.complete_close()
+    return exit_code
 
 
 def run() -> NoReturn:

@@ -51,6 +51,9 @@ class _FakeTrayView:
     def show(self) -> None:
         self.show_count += 1
 
+    def is_visible(self) -> bool:
+        return self.show_count > 0 and self.close_count == 0
+
     def update_state(self, state: PetTrayState) -> None:
         self.states.append(state)
 

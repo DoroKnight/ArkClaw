@@ -139,6 +139,9 @@ class _FakeTrayView:
         if self._fail_show:
             raise self._failure
 
+    def is_visible(self) -> bool:
+        return self.show_count > 0 and self.close_count == 0
+
     def update_state(self, state: PetTrayState) -> None:
         if (
             self._fail_update_after is not None
@@ -987,6 +990,7 @@ def test_fake_tray_commands_share_pet_state_and_reclaim_workspace(
 
     assert factory.call_count == 1
     assert view.show_count == 1
+    assert tray.visible
     pet.complete_safe_close()
 
 

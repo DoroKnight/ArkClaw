@@ -113,6 +113,91 @@ def _occupied(
     )
 
 
+def _write_owner_ui_checkpoint(
+    repository: Path,
+    *,
+    nonce: str = NONCE,
+    stages: tuple[str, ...] | None = None,
+) -> Path:
+    selected = stages or (
+        "started",
+        "arguments_validated",
+        "single_instance_owner",
+        "composition_root_created",
+        "runtime_starting",
+        "pet_window_created",
+        "settings_loaded",
+        "pet_window_visible",
+        "tray_created",
+        "tray_visible",
+        "runtime_ready",
+        "application_ready",
+    )
+    root = (
+        repository
+        / "build"
+        / "autostart-owner-ui-readiness"
+        / nonce
+    )
+    root.mkdir(parents=True)
+    probe._write_json_atomically(
+        root / "checkpoint.json",
+        {
+            "events": [
+                {
+                    "elapsed_milliseconds": index,
+                    "failure_category": "none",
+                    "sequence": index,
+                    "stage": stage,
+                }
+                for index, stage in enumerate(selected, start=1)
+            ],
+            "owner_ui_readiness_checkpoint": True,
+            "schema_version": 1,
+            "session_nonce": nonce,
+            "value_text_recorded": False,
+        },
+    )
+    return root
+
+
+def _write_control_root(repository: Path) -> Path:
+    root = (
+        repository
+        / "build"
+        / "autostart-run-timeline-probes"
+        / "session-01"
+    )
+    root.mkdir(parents=True)
+    probe._write_json_atomically(
+        root / "ready.json",
+        {
+            "schema_version": probe.SCHEMA_VERSION,
+            "observer_ready": True,
+            "lifecycle_state": probe.ProbeLifecycleState.READY_UNARMED,
+            "session_nonce": NONCE,
+            "safe_code": "autostart_timeline_observer_ready",
+            "value_text_recorded": False,
+        },
+    )
+    probe._persist_checkpoint(root, _coordinator(FakeClock()))
+    probe._write_json_atomically(
+        root / "control.json",
+        probe._control_document(
+            probe.ControlMessage(
+                schema_version=probe.SCHEMA_VERSION,
+                session_nonce=NONCE,
+                revision=0,
+                expected_previous_phase=None,
+                phase="T0",
+                stop=False,
+                abort=False,
+            )
+        ),
+    )
+    return root
+
+
 def _complete_owned_timeline() -> probe.TimelineTracker:
     tracker = probe.TimelineTracker()
     tracker.observe("T0", False, probe.SafeValueObservation.absent())
@@ -884,6 +969,129 @@ def test_evidence_root_requires_unique_direct_child_of_allowed_parent(
         str(valid),
         must_exist=True,
     ) == valid
+
+
+def test_owner_ui_checkpoint_requires_all_qt_readiness_stages(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(probe, "_repository_root", lambda: tmp_path)
+    _write_owner_ui_checkpoint(tmp_path)
+
+    assert probe._owner_ui_checkpoint_ready(NONCE)
+
+    checkpoint = (
+        tmp_path
+        / "build"
+        / "autostart-owner-ui-readiness"
+        / NONCE
+        / "checkpoint.json"
+    )
+    document = json.loads(checkpoint.read_text(encoding="utf-8"))
+    document["events"] = [
+        event
+        for event in document["events"]
+        if event["stage"] != "tray_visible"
+    ]
+    for sequence, event in enumerate(document["events"], start=1):
+        event["sequence"] = sequence
+    probe._write_json_atomically(checkpoint, document)
+
+    assert not probe._owner_ui_checkpoint_ready(NONCE)
+
+
+def test_owner_ui_checkpoint_rejects_stale_nonce_part_and_sequence(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(probe, "_repository_root", lambda: tmp_path)
+    root = _write_owner_ui_checkpoint(tmp_path)
+    checkpoint = root / "checkpoint.json"
+    document = json.loads(checkpoint.read_text(encoding="utf-8"))
+    document["events"][1]["sequence"] = 1
+    probe._write_json_atomically(checkpoint, document)
+
+    assert not probe._owner_ui_checkpoint_ready(NONCE)
+    assert not probe._owner_ui_checkpoint_ready(OTHER_NONCE)
+
+    document["events"][1]["sequence"] = 2
+    probe._write_json_atomically(checkpoint, document)
+    (root / "checkpoint.json.part").write_bytes(b"partial")
+    assert not probe._owner_ui_checkpoint_ready(NONCE)
+
+
+def test_t1_requires_product_readiness_and_absent_fixed_value(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(probe, "_repository_root", lambda: tmp_path)
+    root = _write_control_root(tmp_path)
+    _write_owner_ui_checkpoint(tmp_path)
+    monkeypatch.setattr(
+        probe,
+        "query_fixed_run_value",
+        lambda expected: probe.SafeValueObservation.absent(),
+    )
+
+    assert (
+        probe._set_phase(
+            "T1",
+            evidence_root=str(root),
+            expected_previous_phase="T0",
+            revision=1,
+            session_nonce=NONCE,
+            stop=False,
+        )
+        == 0
+    )
+    assert probe._read_control(root / "control.json").phase == "T1"
+
+
+def test_t1_rejects_ui_probe_false_positive_and_registry_presence(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(probe, "_repository_root", lambda: tmp_path)
+    root = _write_control_root(tmp_path)
+    monkeypatch.setattr(
+        probe,
+        "query_fixed_run_value",
+        lambda expected: probe.SafeValueObservation.absent(),
+    )
+
+    with pytest.raises(
+        probe.TimelineCoordinationError,
+        match="readiness checkpoint",
+    ):
+        probe._set_phase(
+            "T1",
+            evidence_root=str(root),
+            expected_previous_phase="T0",
+            revision=1,
+            session_nonce=NONCE,
+            stop=False,
+        )
+    assert probe._read_control(root / "control.json").revision == 0
+
+    _write_owner_ui_checkpoint(tmp_path)
+    monkeypatch.setattr(
+        probe,
+        "query_fixed_run_value",
+        lambda expected: _occupied(),
+    )
+    with pytest.raises(
+        probe.TimelineCoordinationError,
+        match="not absent",
+    ):
+        probe._set_phase(
+            "T1",
+            evidence_root=str(root),
+            expected_previous_phase="T0",
+            revision=1,
+            session_nonce=NONCE,
+            stop=False,
+        )
+    assert probe._read_control(root / "control.json").revision == 0
 
 
 @pytest.mark.parametrize(

@@ -33,6 +33,10 @@ STAGE_LEASE_SECONDS = 30 * 60
 TOTAL_RUNTIME_SECONDS = 3 * 60 * 60
 EXPECTED_EXECUTABLE_RELATIVE_PATH = Path("dist/SJTUClaw.dist/SJTUClaw.exe")
 EVIDENCE_PARENT_RELATIVE_PATH = Path("build/autostart-run-timeline-probes")
+OWNER_UI_EVIDENCE_PARENT_RELATIVE_PATH = Path(
+    "build/autostart-owner-ui-readiness"
+)
+OWNER_UI_CHECKPOINT_MAX_BYTES = 64 * 1024
 MAX_EVIDENCE_PATH_LENGTH = 240
 PHASES = (
     "T0",
@@ -1387,6 +1391,130 @@ def _run_real_observer(
         sleeper(POLL_INTERVAL_SECONDS)
 
 
+def _owner_ui_checkpoint_ready(session_nonce: str) -> bool:
+    """Validate the product-side Qt readiness checkpoint for the T1 gate."""
+
+    if not _valid_session_nonce(session_nonce):
+        return False
+    parent = (
+        _repository_root() / OWNER_UI_EVIDENCE_PARENT_RELATIVE_PATH
+    ).resolve(strict=False)
+    root = parent / session_nonce
+    checkpoint = root / "checkpoint.json"
+    try:
+        parent_metadata = parent.lstat()
+        root_metadata = root.lstat()
+        checkpoint_metadata = checkpoint.lstat()
+    except OSError:
+        return False
+    if (
+        _is_reparse_point(parent)
+        or _is_reparse_point(root)
+        or _is_reparse_point(checkpoint)
+        or not stat.S_ISDIR(parent_metadata.st_mode)
+        or not stat.S_ISDIR(root_metadata.st_mode)
+        or not stat.S_ISREG(checkpoint_metadata.st_mode)
+        or checkpoint_metadata.st_nlink != 1
+        or checkpoint_metadata.st_size <= 0
+        or checkpoint_metadata.st_size > OWNER_UI_CHECKPOINT_MAX_BYTES
+        or root.parent != parent
+        or root.name != session_nonce
+        or (root / "checkpoint.json.part").exists()
+    ):
+        return False
+    try:
+        document = json.loads(checkpoint.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return False
+    if (
+        not isinstance(document, dict)
+        or set(document)
+        != {
+            "events",
+            "owner_ui_readiness_checkpoint",
+            "schema_version",
+            "session_nonce",
+            "value_text_recorded",
+        }
+        or document.get("schema_version") != 1
+        or document.get("owner_ui_readiness_checkpoint") is not True
+        or document.get("session_nonce") != session_nonce
+        or document.get("value_text_recorded") is not False
+    ):
+        return False
+    events = document.get("events")
+    if not isinstance(events, list) or not 1 <= len(events) <= 20:
+        return False
+    ordered_stages = (
+        "started",
+        "arguments_validated",
+        "single_instance_owner",
+        "composition_root_created",
+        "runtime_starting",
+        "pet_window_created",
+        "settings_loaded",
+        "pet_window_visible",
+        "tray_created",
+        "tray_visible",
+        "runtime_ready",
+        "application_ready",
+        "closing",
+        "closed",
+    )
+    stage_order = {
+        stage: index for index, stage in enumerate(ordered_stages, start=1)
+    }
+    required_stages = {
+        "single_instance_owner",
+        "runtime_ready",
+        "pet_window_created",
+        "pet_window_visible",
+        "tray_created",
+        "tray_visible",
+        "application_ready",
+    }
+    seen: set[str] = set()
+    last_order = 0
+    last_elapsed = -1
+    for expected_sequence, event in enumerate(events, start=1):
+        if (
+            not isinstance(event, dict)
+            or set(event)
+            != {
+                "elapsed_milliseconds",
+                "failure_category",
+                "sequence",
+                "stage",
+            }
+        ):
+            return False
+        sequence = event.get("sequence")
+        elapsed = event.get("elapsed_milliseconds")
+        stage = event.get("stage")
+        failure = event.get("failure_category")
+        if (
+            not isinstance(sequence, int)
+            or isinstance(sequence, bool)
+            or sequence != expected_sequence
+            or not isinstance(elapsed, int)
+            or isinstance(elapsed, bool)
+            or elapsed < last_elapsed
+            or not isinstance(stage, str)
+            or stage not in stage_order
+            or stage in seen
+            or stage_order[stage] <= last_order
+            or failure != "none"
+        ):
+            return False
+        seen.add(stage)
+        last_order = stage_order[stage]
+        last_elapsed = elapsed
+    return (
+        events[-1].get("stage") == "application_ready"
+        and required_stages <= seen
+    )
+
+
 def _set_phase(
     phase: str,
     *,
@@ -1411,6 +1539,17 @@ def _set_phase(
         or stop != (phase == "T9-final")
     ):
         raise TimelineProbeError("The timeline control sequence is invalid.")
+    if phase == "T1":
+        if not _owner_ui_checkpoint_ready(session_nonce):
+            raise TimelineCoordinationError(
+                "autostart_owner_ui_not_ready",
+                "The Owner UI readiness checkpoint is incomplete.",
+            )
+        if query_fixed_run_value("").state is not FixedValueState.ABSENT:
+            raise TimelineCoordinationError(
+                "autostart_t1_registry_state_invalid",
+                "The fixed Run value is not absent at T1.",
+            )
     _write_json_atomically(
         root / "control.json",
         _control_document(
@@ -1601,6 +1740,12 @@ def main(argv: list[str] | None = None) -> int:
             "safe_code=autostart_timeline_probe_disabled"
         )
         return 0
+    except TimelineCoordinationError as error:
+        print(
+            "autostart_run_timeline_probe=false "
+            f"safe_code={error.safe_code}"
+        )
+        return 2
     except TimelineProbeError:
         print(
             "autostart_run_timeline_probe=false "

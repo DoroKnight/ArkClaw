@@ -72,6 +72,8 @@ class TrayCallbacks:
 class TrayView(Protocol):
     def show(self) -> None: ...
 
+    def is_visible(self) -> bool: ...
+
     def update_state(self, state: PetTrayState) -> None: ...
 
     def close(self) -> None: ...
@@ -154,6 +156,9 @@ class _QtSystemTrayView:
     def show(self) -> None:
         if not self._closed:
             self._tray.show()
+
+    def is_visible(self) -> bool:
+        return not self._closed and self._tray.isVisible()
 
     def update_state(self, state: PetTrayState) -> None:
         if self._closed:
@@ -260,6 +265,16 @@ class SystemTrayController(QObject):
     @property
     def available(self) -> bool:
         return self._view is not None
+
+    @property
+    def visible(self) -> bool:
+        view = self._view
+        if view is None:
+            return False
+        try:
+            return view.is_visible()
+        except Exception:
+            return False
 
     @property
     def safe_code(self) -> str:
