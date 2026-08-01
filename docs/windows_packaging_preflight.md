@@ -1625,3 +1625,21 @@ This runtime checkpoint does not cover real Windows login, logoff or restart,
 `StartupApproved`, Authenticode, an installer, uninstall cleanup, or explicit
 `--startup` focus and secondary-instance behavior. It does not authorize an
 automatic operating-system lifecycle action.
+
+### Persistent external exit-code observation
+
+The prior login experiment observed the startup Owner terminate after a
+tray-driven exit but did not retain a native process handle long enough to
+obtain its exit code. That evidence is intentionally recorded as unavailable,
+not rewritten as exit code zero.
+
+The replacement packaging observer acquires one handle while the verified
+Owner is running, using only `SYNCHRONIZE` and
+`PROCESS_QUERY_LIMITED_INFORMATION`. It freezes the creation FILETIME, waits on
+that same handle, confirms the immutable creation identity and nonzero exit
+FILETIME, then calls `GetExitCodeProcess` before closing the handle. Fixed safe
+states cover access, wait, process-time, PID-reuse and exit-code failures; no
+Win32 error text is persisted. Deterministic tests prove that a disappeared PID
+remains queryable through the retained handle and that no failure path invents
+an exit code. A new user-driven login lifecycle is still required to exercise
+this observer against the immutable standalone artifact.

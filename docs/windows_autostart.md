@@ -187,3 +187,21 @@ user-driven disable lifecycle. It also does not yet verify that the explicit
 `--startup` mode preserves focus, keeps the Agent window hidden, or follows the
 secondary-instance contract. Those checks require separate controlled runtime
 authorization; no automatic logoff or restart is permitted.
+
+## Retained startup Owner exit handle
+
+The external Windows lifecycle observer now opens the startup Owner while it
+is still running with only `SYNCHRONIZE` and
+`PROCESS_QUERY_LIMITED_INFORMATION`. It freezes the creation FILETIME and
+retains the same kernel process handle across the user interaction. After that
+handle becomes signaled, it rechecks the creation FILETIME, requires a nonzero
+exit FILETIME, and queries the exit code before closing the handle.
+
+The fixed result model distinguishes running, an observed exit code, an
+unavailable exit code, PID reuse, process absence, access denial, wait failure,
+process-time failure, and exit-code query failure. It never reopens a vanished
+PID to infer an exit code, treats `STILL_ACTIVE` as terminal, or converts an
+unavailable result into zero. Tests use an injected Win32 backend and verify
+that the retained handle is closed exactly once on every terminal or failure
+path. This observer is packaging-test infrastructure only and does not change
+the packaged application or its shutdown implementation.
