@@ -1605,3 +1605,23 @@ standalone build, a complete fresh static audit, and one controlled Owner run
 are still required. A complete journal with no delete event would prove only
 that the audited application backend did not perform the deletion; it would
 not identify an external writer.
+
+### Packaged autostart T0-T9 runtime checkpoint
+
+The freshly audited standalone completed the controlled Run-value timeline
+with `safe_code=autostart_packaged_timeline_verified`. T0-T9 passed with one
+checkbox click, one mutation command, one backend write, zero backend deletes,
+and zero tray or pet autostart action activations. The Run value remained
+strictly owned after the Owner's normal tray-driven exit, whose exit code was
+0. PID-scoped observation found zero external and zero unattributed endpoints.
+
+The tested distribution contained 70 files totaling 139,884,776 bytes and was
+unchanged after execution. The main executable SHA-256 was
+`06ef8e02d5e98cab8405502808558d3ef697d68b51436c89c0f12e3df867caf1`,
+and the artifact-audit SHA-256 was
+`e27875eb215fb7926b551ba30ab428532ceda46938e4e80462855f654d17b8f7`.
+
+This runtime checkpoint does not cover real Windows login, logoff or restart,
+`StartupApproved`, Authenticode, an installer, uninstall cleanup, or explicit
+`--startup` focus and secondary-instance behavior. It does not authorize an
+automatic operating-system lifecycle action.

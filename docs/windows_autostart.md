@@ -163,3 +163,27 @@ tray and pet actions synchronize, that an HKCU Run value can be written or
 deleted, that `--startup` behaves correctly, or that Windows login startup
 works. Those behaviors still require a separately authorized packaged UI
 runtime validation.
+
+## Packaged Run-value timeline verification
+
+The controlled packaged T0-T9 timeline completed successfully with
+`safe_code=autostart_packaged_timeline_verified`. The run used one Owner, one
+settings-checkbox click, one mutation command and one backend write. The
+causal journal remained continuous and nonce-bound, and it recorded zero
+backend delete operations and zero tray or pet autostart action activations.
+
+The fixed Run value transitioned from absent to strictly owned and remained
+owned through the Owner's ordinary tray-driven shutdown. The Owner exited with
+code 0. The PID-scoped network observer reported zero external and zero
+unattributed endpoints, and the distribution manifest was unchanged after the
+run. The verified executable SHA-256 was
+`06ef8e02d5e98cab8405502808558d3ef697d68b51436c89c0f12e3df867caf1`;
+the corresponding artifact-audit SHA-256 was
+`e27875eb215fb7926b551ba30ab428532ceda46938e4e80462855f654d17b8f7`.
+
+This checkpoint does not verify actual Windows sign-in execution, restart or
+logoff behavior, `StartupApproved`, installer or uninstall behavior, or the
+user-driven disable lifecycle. It also does not yet verify that the explicit
+`--startup` mode preserves focus, keeps the Agent window hidden, or follows the
+secondary-instance contract. Those checks require separate controlled runtime
+authorization; no automatic logoff or restart is permitted.
