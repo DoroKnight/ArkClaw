@@ -7,6 +7,14 @@ from uuid import uuid4
 
 from PySide6.QtCore import QObject, Qt, Signal, Slot
 
+from sjtuclaw.application.autostart_operation_journal import (
+    AutostartOperationContext,
+    AutostartOperationEvent,
+    AutostartOperationJournal,
+    AutostartOperationJournalError,
+    AutostartOperationOrigin,
+    AutostartOperationRuntimeState,
+)
 from sjtuclaw.application.autostart_service import AutostartSnapshot
 from sjtuclaw.application.provider_profile_service import (
     ActiveTurnHandling,
@@ -54,6 +62,7 @@ class QtRuntimeBridge(QObject):
     command_failed = Signal(str, str, str)
     provider_settings_changed = Signal(str, object)
     autostart_state_changed = Signal(str, object)
+    runtime_closing = Signal()
     shutdown_finished = Signal(bool, str)
 
     def __init__(
@@ -61,12 +70,16 @@ class QtRuntimeBridge(QObject):
         controller_factory: RuntimeControllerFactory,
         *,
         autostart_service_factory: AutostartServiceFactory | None = None,
+        operation_journal: AutostartOperationJournal | None = None,
     ) -> None:
         super().__init__()
         self._thread = RuntimeThread(
             controller_factory,
             autostart_service_factory,
+            operation_journal,
         )
+        self._operation_journal = operation_journal
+        self._autostart_contexts: dict[str, AutostartOperationContext] = {}
         self._state = _BridgeState.NEW
         self._start_command_id: str | None = None
         self._shutdown_command_id: str | None = None
@@ -209,20 +222,57 @@ class QtRuntimeBridge(QObject):
             )
         )
 
-    def request_autostart(self) -> str:
+    def request_autostart(
+        self,
+        *,
+        operation_id: str = "",
+        origin: AutostartOperationOrigin = AutostartOperationOrigin.UNKNOWN,
+        controller_revision: int = 0,
+    ) -> str:
+        command_id = self._new_command_id()
+        context = AutostartOperationContext(
+            operation_id=operation_id,
+            command_id=command_id,
+            origin=origin,
+            requested_enabled=None,
+            controller_revision=controller_revision,
+        )
+        self._autostart_contexts[command_id] = context
         return self._submit(
             RuntimeThreadCommand(
-                command_id=self._new_command_id(),
+                command_id=command_id,
                 type=RuntimeThreadCommandType.REQUEST_AUTOSTART,
+                operation_id=operation_id,
+                autostart_origin=origin,
+                controller_revision=controller_revision,
             )
         )
 
-    def set_autostart_enabled(self, enabled: bool) -> str:
+    def set_autostart_enabled(
+        self,
+        enabled: bool,
+        *,
+        operation_id: str = "",
+        origin: AutostartOperationOrigin = AutostartOperationOrigin.UNKNOWN,
+        controller_revision: int = 0,
+    ) -> str:
+        command_id = self._new_command_id()
+        context = AutostartOperationContext(
+            operation_id=operation_id,
+            command_id=command_id,
+            origin=origin,
+            requested_enabled=enabled,
+            controller_revision=controller_revision,
+        )
+        self._autostart_contexts[command_id] = context
         return self._submit(
             RuntimeThreadCommand(
-                command_id=self._new_command_id(),
+                command_id=command_id,
                 type=RuntimeThreadCommandType.SET_AUTOSTART,
                 enabled=enabled,
+                operation_id=operation_id,
+                autostart_origin=origin,
+                controller_revision=controller_revision,
             )
         )
 
@@ -374,6 +424,7 @@ class QtRuntimeBridge(QObject):
             )
             return command_id
         self._state = _BridgeState.CLOSING
+        self.runtime_closing.emit()
         self._shutdown_command_id = command_id
         command = RuntimeThreadCommand(
             command_id=command_id,
@@ -410,6 +461,17 @@ class QtRuntimeBridge(QObject):
                 command.command_id,
                 "runtime_not_ready",
                 "The runtime is not ready.",
+            )
+            return command.command_id
+        context = self._autostart_contexts.get(command.command_id)
+        if context is not None and not self._record_autostart(
+            AutostartOperationEvent.COMMAND_SUBMITTED,
+            context,
+        ):
+            self._fail_command(
+                command.command_id,
+                "autostart_diagnostic_journal_failed",
+                "The autostart diagnostic journal failed safely.",
             )
             return command.command_id
         if not self._thread.submit(command):
@@ -624,7 +686,21 @@ class QtRuntimeBridge(QObject):
     def _complete_command(self, command_id: str) -> bool:
         if command_id not in self._pending_command_ids:
             return False
+        context = self._autostart_contexts.get(command_id)
+        if context is not None and not self._record_autostart(
+            AutostartOperationEvent.COMMAND_COMPLETED,
+            context,
+        ):
+            self._pending_command_ids.remove(command_id)
+            self._autostart_contexts.pop(command_id, None)
+            self.command_failed.emit(
+                command_id,
+                "autostart_diagnostic_journal_failed",
+                "The autostart diagnostic journal failed safely.",
+            )
+            return False
         self._pending_command_ids.remove(command_id)
+        self._autostart_contexts.pop(command_id, None)
         self.command_completed.emit(command_id)
         return True
 
@@ -636,8 +712,42 @@ class QtRuntimeBridge(QObject):
     ) -> bool:
         if command_id not in self._pending_command_ids:
             return False
+        context = self._autostart_contexts.get(command_id)
+        if context is not None:
+            self._record_autostart(
+                AutostartOperationEvent.COMMAND_FAILED,
+                context,
+                result_code=safe_code,
+            )
         self._pending_command_ids.remove(command_id)
+        self._autostart_contexts.pop(command_id, None)
         self.command_failed.emit(command_id, safe_code, safe_message)
+        return True
+
+    def _record_autostart(
+        self,
+        event: AutostartOperationEvent,
+        context: AutostartOperationContext,
+        *,
+        result_code: str = "none",
+    ) -> bool:
+        journal = self._operation_journal
+        if journal is None:
+            return True
+        state = (
+            AutostartOperationRuntimeState.RUNTIME_CLOSING
+            if self._state is _BridgeState.CLOSING
+            else AutostartOperationRuntimeState.RUNTIME_READY
+        )
+        try:
+            journal.record(
+                event,
+                context,
+                runtime_state=state,
+                result_code=result_code,
+            )
+        except AutostartOperationJournalError:
+            return False
         return True
 
     def _fail_all_pending(

@@ -1567,3 +1567,41 @@ the fixed Run value at T9 and still requires exact ownership. These changes are
 probe-only; the immutable 70-file standalone artifact was not rebuilt or
 modified. A new separately controlled T0-T9 execution is still required to
 verify the corrected observer against the retained process-object behavior.
+
+### Packaged Run mutation causal-journal checkpoint
+
+The strict packaged timeline later observed one explicit settings-checkbox
+enable operation, zero tray and pet autostart action activations, and an
+`absent -> exact_current_owner -> absent` registry timeline while the Owner
+was still running. The retained observer evidence proves the value changed,
+but a registry change notification cannot identify which process caused that
+change. Static source review found one production delete boundary only:
+`AutostartService._disable()` verifies exact ownership before calling the
+fixed-value backend. Shutdown, controller destruction, dialog destruction,
+and snapshot rendering do not call that boundary. All three UI render paths
+use `QSignalBlocker`, and production composition shares one controller.
+
+The remaining static gap was asynchronous result ordering. The controller did
+not associate snapshots with a monotonic revision, so an old query could
+overwrite a newer displayed state. The controller now gives every query and
+explicit mutation a unique operation identifier and increasing revision,
+ignores stale snapshots, serializes mutation intent, and rejects new mutation
+after runtime closing begins. Display synchronization remains render-only and
+cannot create a mutation intent.
+
+An explicitly enabled `--diagnose-autostart-operations <nonce>` mode now
+continues ordinary Owner startup while writing a repository-local, redacted
+JSON-lines causal journal. Normal startup creates no journal. Each record has
+only schema version, sequence, nonce, fixed event and origin enums, operation
+and command identifiers, requested boolean, controller revision, fixed runtime
+state, and fixed result code. It contains no registry text, executable path,
+command line, environment value, exception text, credential, Provider, or
+conversation data. Every backend mutation is preceded by an atomically
+replaced, flushed and fsynced `backend_*_entered` record. In particular, a
+failed `backend_delete_entered` write prevents the backend delete call.
+
+This source checkpoint does not attribute the prior deletion. One diagnostic
+standalone build, a complete fresh static audit, and one controlled Owner run
+are still required. A complete journal with no delete event would prove only
+that the audited application backend did not perform the deletion; it would
+not identify an external writer.

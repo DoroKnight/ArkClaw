@@ -10,6 +10,9 @@ from PySide6.QtCore import QObject, QPoint, QSignalBlocker, Qt
 from PySide6.QtGui import QAction, QColor, QIcon, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import QMenu, QSystemTrayIcon
 
+from sjtuclaw.application.autostart_operation_journal import (
+    AutostartOperationOrigin,
+)
 from sjtuclaw.application.autostart_service import (
     AutostartSnapshot,
     AutostartStatus,
@@ -383,7 +386,10 @@ class SystemTrayController(QObject):
         controller = self._autostart_controller
         if controller is None:
             return
-        controller.set_enabled(enabled)
+        controller.set_enabled(
+            enabled,
+            origin=AutostartOperationOrigin.TRAY_ACTION,
+        )
         self.refresh()
 
     def _toggle_pet_visibility(self) -> None:

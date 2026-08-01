@@ -1389,8 +1389,9 @@ def test_startup_owner_keeps_agent_hidden_and_starts_pet_and_tray(
         root: object,
         *,
         autostart_service_factory: object,
+        operation_journal: object,
     ) -> object:
-        del root, autostart_service_factory
+        del root, autostart_service_factory, operation_journal
         events.append("bridge")
         return object()
 
@@ -1407,8 +1408,10 @@ def test_startup_owner_keeps_agent_hidden_and_starts_pet_and_tray(
     def create_autostart_controller(
         bridge: object,
         parent: object,
+        *,
+        operation_journal: object,
     ) -> object:
-        del bridge, parent
+        del bridge, parent, operation_journal
         events.append("autostart_controller")
         return object()
 

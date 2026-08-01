@@ -22,6 +22,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from sjtuclaw.application.autostart_operation_journal import (
+    AutostartOperationOrigin,
+)
 from sjtuclaw.application.provider_profile_service import (
     ActiveTurnHandling,
     ProviderActivationOptions,
@@ -278,7 +281,10 @@ class ProviderSettingsDialog(QDialog):
             self._render_autostart()
             return
         self.autostart_error_label.clear()
-        if controller.set_enabled(enabled) is None:
+        if controller.set_enabled(
+            enabled,
+            origin=AutostartOperationOrigin.SETTINGS_CHECKBOX,
+        ) is None:
             self._render_autostart()
 
     @Slot(object)

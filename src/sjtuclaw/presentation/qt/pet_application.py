@@ -4,11 +4,19 @@ from __future__ import annotations
 
 import sys
 from contextlib import suppress
+from functools import partial
 from typing import NoReturn
 
 from PySide6.QtCore import QObject, QTimer, Signal, Slot
 from PySide6.QtWidgets import QApplication
 
+from sjtuclaw.application.autostart_operation_journal import (
+    AutostartOperationContext,
+    AutostartOperationEvent,
+    AutostartOperationJournalError,
+    AutostartOperationOrigin,
+    AutostartOperationRuntimeState,
+)
 from sjtuclaw.application.pet_settings import PetSettings
 from sjtuclaw.application.pet_state import PetLifecycleState
 from sjtuclaw.application.startup_mode import (
@@ -29,6 +37,10 @@ from sjtuclaw.presentation.qt.application import (
 )
 from sjtuclaw.presentation.qt.autostart_controller import (
     AutostartUiController,
+)
+from sjtuclaw.presentation.qt.autostart_operation_diagnostics import (
+    AutostartOperationDiagnosticArgumentError,
+    prepare_autostart_operation_diagnostic_launch,
 )
 from sjtuclaw.presentation.qt.main_window import MainWindow
 from sjtuclaw.presentation.qt.owner_ui_readiness import (
@@ -374,6 +386,14 @@ def main(argv: list[str] | None = None) -> int:
     if diagnostic_exit_code is not None:
         return diagnostic_exit_code
     try:
+        operation_launch = prepare_autostart_operation_diagnostic_launch(
+            arguments
+        )
+    except AutostartOperationDiagnosticArgumentError:
+        return 2
+    arguments = list(operation_launch.arguments)
+    operation_journal = operation_launch.journal
+    try:
         diagnostic_launch = prepare_owner_ui_diagnostic_launch(arguments)
     except OwnerUiDiagnosticArgumentError:
         return 2
@@ -414,11 +434,19 @@ def main(argv: list[str] | None = None) -> int:
         ProductionQtRuntimeCompositionRoot(
             default_provider_metadata_path()
         ),
-        autostart_service_factory=create_production_autostart_service,
+        autostart_service_factory=partial(
+            create_production_autostart_service,
+            operation_journal=operation_journal,
+        ),
+        operation_journal=operation_journal,
     )
     if recorder is not None:
         recorder.record(OwnerStartupStage.COMPOSITION_ROOT_CREATED)
-    autostart_controller = AutostartUiController(bridge, bridge)
+    autostart_controller = AutostartUiController(
+        bridge,
+        bridge,
+        operation_journal=operation_journal,
+    )
     if recorder is not None:
         recorder.record(OwnerStartupStage.RUNTIME_STARTING)
     main_window = MainWindow(
@@ -461,6 +489,23 @@ def main(argv: list[str] | None = None) -> int:
     single_instance.activation_requested.connect(coordinator.show_pet)
     coordinator.quit_requested.connect(single_instance.close)
     coordinator.quit_requested.connect(app.quit)
+    if operation_journal is not None:
+        closing_context = AutostartOperationContext(
+            operation_id="application-closing",
+            origin=AutostartOperationOrigin.SHUTDOWN,
+        )
+
+        def record_application_closing() -> None:
+            with suppress(AutostartOperationJournalError):
+                operation_journal.record(
+                    AutostartOperationEvent.APPLICATION_CLOSING,
+                    closing_context,
+                    runtime_state=(
+                        AutostartOperationRuntimeState.APPLICATION
+                    ),
+                )
+
+        app.aboutToQuit.connect(record_application_closing)
     exit_code = app.exec()
     if startup_observer is not None:
         startup_observer.complete_close()

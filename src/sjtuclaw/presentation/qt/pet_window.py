@@ -16,6 +16,9 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import QApplication, QMenu, QWidget
 
+from sjtuclaw.application.autostart_operation_journal import (
+    AutostartOperationOrigin,
+)
 from sjtuclaw.application.autostart_service import (
     AutostartSnapshot,
     AutostartStatus,
@@ -392,7 +395,10 @@ class PetWindow(QWidget):
         ):
             self._sync_autostart_action()
             return
-        controller.set_enabled(enabled)
+        controller.set_enabled(
+            enabled,
+            origin=AutostartOperationOrigin.PET_MENU_ACTION,
+        )
         self._sync_autostart_action()
 
     def _on_autostart_state_changed(self, value: object) -> None:

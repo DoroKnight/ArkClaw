@@ -12,6 +12,14 @@ from pathlib import Path
 
 from PySide6.QtCore import QThread, Signal
 
+from sjtuclaw.application.autostart_operation_journal import (
+    AutostartOperationContext,
+    AutostartOperationEvent,
+    AutostartOperationJournal,
+    AutostartOperationJournalError,
+    AutostartOperationOrigin,
+    AutostartOperationRuntimeState,
+)
 from sjtuclaw.application.autostart_service import AutostartService
 from sjtuclaw.application.provider_profile_service import (
     ActiveTurnHandling,
@@ -62,6 +70,11 @@ class RuntimeThreadCommand:
     model: str = ""
     credential_id: str = ""
     enabled: bool = False
+    operation_id: str = ""
+    autostart_origin: AutostartOperationOrigin = (
+        AutostartOperationOrigin.UNKNOWN
+    )
+    controller_revision: int = 0
     secret: str = field(default="", repr=False, compare=False)
 
     def clear_sensitive(self) -> None:
@@ -108,6 +121,7 @@ class RuntimeThread(QThread):
         self,
         controller_factory: RuntimeControllerFactory,
         autostart_service_factory: AutostartServiceFactory | None = None,
+        operation_journal: AutostartOperationJournal | None = None,
     ) -> None:
         super().__init__()
         self._controller_factory = controller_factory
@@ -116,6 +130,7 @@ class RuntimeThread(QThread):
             or _create_unavailable_autostart_service
         )
         self._autostart_service: AutostartService | None = None
+        self._operation_journal = operation_journal
         self._guard = threading.Lock()
         self._loop: asyncio.AbstractEventLoop | None = None
         self._queue: asyncio.Queue[RuntimeThreadCommand] | None = None
@@ -393,6 +408,11 @@ class RuntimeThread(QThread):
                 error.safe_code,
                 error.safe_message,
             )
+        except AutostartOperationJournalError:
+            return RuntimeCommandResult.failure(
+                "autostart_diagnostic_journal_failed",
+                "The autostart diagnostic journal failed safely.",
+            )
         except Exception:
             return RuntimeCommandResult.failure(
                 "runtime_command_failed",
@@ -479,15 +499,34 @@ class RuntimeThread(QThread):
             return self._publish_provider_settings(command, controller)
         if command.type is RuntimeThreadCommandType.REQUEST_AUTOSTART:
             service = self._require_autostart_service()
-            snapshot = service.query()
+            context = self._autostart_context(command)
+            self._record_autostart(
+                AutostartOperationEvent.RUNTIME_COMMAND_ACCEPTED,
+                context,
+            )
+            snapshot = service.query(context)
             self.autostart_state_emitted.emit(command.command_id, snapshot)
+            self._record_autostart(
+                AutostartOperationEvent.SNAPSHOT_PUBLISHED,
+                context,
+            )
             return RuntimeCommandResult.ok()
         if command.type is RuntimeThreadCommandType.SET_AUTOSTART:
             service = self._require_autostart_service()
-            result = service.set_enabled(command.enabled)
+            context = self._autostart_context(command)
+            self._record_autostart(
+                AutostartOperationEvent.RUNTIME_COMMAND_ACCEPTED,
+                context,
+            )
+            result = service.set_enabled(command.enabled, context)
             self.autostart_state_emitted.emit(
                 command.command_id,
                 result.snapshot,
+            )
+            self._record_autostart(
+                AutostartOperationEvent.SNAPSHOT_PUBLISHED,
+                context,
+                result_code=result.safe_code,
             )
             if result.success:
                 return RuntimeCommandResult.ok()
@@ -502,6 +541,39 @@ class RuntimeThread(QThread):
         return RuntimeCommandResult.failure(
             "invalid_command",
             "The runtime command is not supported.",
+        )
+
+    @staticmethod
+    def _autostart_context(
+        command: RuntimeThreadCommand,
+    ) -> AutostartOperationContext:
+        return AutostartOperationContext(
+            operation_id=command.operation_id,
+            command_id=command.command_id,
+            origin=command.autostart_origin,
+            requested_enabled=(
+                command.enabled
+                if command.type is RuntimeThreadCommandType.SET_AUTOSTART
+                else None
+            ),
+            controller_revision=command.controller_revision,
+        )
+
+    def _record_autostart(
+        self,
+        event: AutostartOperationEvent,
+        context: AutostartOperationContext,
+        *,
+        result_code: str = "none",
+    ) -> None:
+        journal = self._operation_journal
+        if journal is None:
+            return
+        journal.record(
+            event,
+            context,
+            runtime_state=AutostartOperationRuntimeState.RUNTIME_THREAD,
+            result_code=result_code,
         )
 
     def _require_autostart_service(self) -> AutostartService:

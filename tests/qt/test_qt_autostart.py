@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import socket
 import subprocess
@@ -17,6 +18,11 @@ from PySide6.QtGui import QAction, QContextMenuEvent
 from PySide6.QtTest import QSignalSpy, QTest
 from PySide6.QtWidgets import QApplication
 
+from sjtuclaw.application.autostart_operation_journal import (
+    AutostartOperationEvent,
+    AutostartOperationJournal,
+    AutostartOperationOrigin,
+)
 from sjtuclaw.application.autostart_service import (
     REGISTRY_STRING_VALUE_TYPE,
     AutostartService,
@@ -218,6 +224,7 @@ def _create_bridge(
     expected_status: AutostartStatus = AutostartStatus.DISABLED,
     platform_supported: bool = True,
     packaged_runtime: bool = True,
+    operation_journal: AutostartOperationJournal | None = None,
 ) -> tuple[QtRuntimeBridge, AutostartUiController]:
     executable = tmp_path / "SJTUClaw.exe"
     executable.write_bytes(b"offline-placeholder")
@@ -231,9 +238,15 @@ def _create_bridge(
             lambda: executable,
             platform_supported=platform_supported,
             packaged_runtime_probe=lambda: packaged_runtime,
+            operation_journal=operation_journal,
         ),
+        operation_journal=operation_journal,
     )
-    controller = AutostartUiController(bridge, bridge)
+    controller = AutostartUiController(
+        bridge,
+        bridge,
+        operation_journal=operation_journal,
+    )
     ready_spy = QSignalSpy(bridge.runtime_ready)
     bridge.start_runtime()
     assert _run_until(lambda: ready_spy.count() == 1)
@@ -241,6 +254,77 @@ def _create_bridge(
         lambda: controller.snapshot.status is expected_status
     )
     return bridge, controller
+
+
+def test_settings_click_has_one_correlated_enable_and_no_delete_event(
+    qt_application: QApplication,
+    tmp_path: Path,
+) -> None:
+    backend = _FakeBackend()
+    journal_path = tmp_path / "operations.jsonl"
+    journal = AutostartOperationJournal(journal_path, "f" * 32)
+    bridge, controller = _create_bridge(
+        tmp_path,
+        backend,
+        operation_journal=journal,
+    )
+    dialog = ProviderSettingsDialog(
+        bridge,
+        autostart_controller=controller,
+    )
+    dialog.show()
+    dialog.settings_tabs.setCurrentWidget(dialog.general_page)
+    qt_application.processEvents()
+
+    QTest.mouseClick(
+        dialog.autostart_checkbox,
+        Qt.MouseButton.LeftButton,
+        pos=dialog.autostart_checkbox.rect().center(),
+    )
+    assert _run_until(
+        lambda: controller.snapshot.status is AutostartStatus.ENABLED
+        and not controller.busy
+    )
+
+    events = [
+        json.loads(line)
+        for line in journal_path.read_text("utf-8").splitlines()
+    ]
+    mutation_events = [
+        event for event in events if event["requested_enabled"] is True
+    ]
+    assert mutation_events
+    assert {
+        event["origin"] for event in mutation_events
+    } == {AutostartOperationOrigin.SETTINGS_CHECKBOX.value}
+    assert len(
+        {
+            event["operation_id"]
+            for event in mutation_events
+            if event["operation_id"]
+        }
+    ) == 1
+    assert len(
+        {
+            event["command_id"]
+            for event in mutation_events
+            if event["command_id"]
+        }
+    ) == 1
+    assert sum(
+        event["event"]
+        == AutostartOperationEvent.BACKEND_WRITE_ENTERED.value
+        for event in events
+    ) == 1
+    assert all(
+        event["event"]
+        != AutostartOperationEvent.BACKEND_DELETE_ENTERED.value
+        for event in events
+    )
+    assert backend.write_count == 1
+    assert backend.delete_count == 0
+    dialog.close()
+    _shutdown(bridge)
 
 
 def _shutdown(bridge: QtRuntimeBridge) -> None:

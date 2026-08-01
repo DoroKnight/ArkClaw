@@ -17,6 +17,13 @@ from sjtuclaw.application.autostart_eligibility import (
 from sjtuclaw.application.autostart_eligibility import (
     _path_text_is_safe as _eligibility_path_text_is_safe,
 )
+from sjtuclaw.application.autostart_operation_journal import (
+    AutostartOperationContext,
+    AutostartOperationEvent,
+    AutostartOperationJournal,
+    AutostartOperationJournalError,
+    AutostartOperationRuntimeState,
+)
 
 AUTOSTART_VALUE_NAME = "SJTUClaw"
 AUTOSTART_ARGUMENT = "--startup"
@@ -159,6 +166,7 @@ class AutostartService:
         platform_supported: bool,
         packaged_runtime_probe: PackagedRuntimeProbe | None = None,
         eligibility_probe: AutostartEligibilityProbe | None = None,
+        operation_journal: AutostartOperationJournal | None = None,
     ) -> None:
         self._backend = backend
         self._executable_resolver = executable_resolver
@@ -167,6 +175,7 @@ class AutostartService:
             packaged_runtime_probe or (lambda: False)
         )
         self._eligibility_probe = eligibility_probe
+        self._operation_journal = operation_journal
         self._ownership_confirmed = False
         self._ownership_lost = False
         self._snapshot = AutostartSnapshot.for_status(
@@ -177,21 +186,39 @@ class AutostartService:
     def snapshot(self) -> AutostartSnapshot:
         return self._snapshot
 
-    def query(self) -> AutostartSnapshot:
+    def query(
+        self,
+        context: AutostartOperationContext | None = None,
+    ) -> AutostartSnapshot:
         """Read and classify the fixed value without writing anything."""
 
+        actual_context = context or AutostartOperationContext()
         expected = self._expected_command()
         if expected is None:
             return self._snapshot
-        stored = self._read_value()
-        if isinstance(stored, _BackendFailure):
+        stored = self._read_value(actual_context)
+        if isinstance(stored, (_BackendFailure, _JournalFailure)):
             return self._snapshot
         return self._classify(stored, expected)
 
-    def set_enabled(self, enabled: bool) -> AutostartOperationResult:
+    def set_enabled(
+        self,
+        enabled: bool,
+        context: AutostartOperationContext | None = None,
+    ) -> AutostartOperationResult:
         """Apply one explicit user choice and verify the resulting value."""
 
         previous = self._snapshot
+        actual_context = context or AutostartOperationContext()
+        if not self._record(
+            (
+                AutostartOperationEvent.SERVICE_ENABLE_ENTERED
+                if enabled
+                else AutostartOperationEvent.SERVICE_DISABLE_ENTERED
+            ),
+            actual_context,
+        ):
+            return self._journal_failure(previous)
         expected = self._expected_command()
         if expected is None:
             return AutostartOperationResult.failed(
@@ -208,7 +235,9 @@ class AutostartService:
                 self._snapshot.safe_code,
                 self._snapshot.safe_message,
             )
-        stored = self._read_value()
+        stored = self._read_value(actual_context)
+        if isinstance(stored, _JournalFailure):
+            return self._journal_failure(previous)
         if isinstance(stored, _BackendFailure):
             self._snapshot = previous
             return AutostartOperationResult.failed(
@@ -217,8 +246,8 @@ class AutostartService:
                 "The autostart setting could not be accessed safely.",
             )
         if enabled:
-            return self._enable(previous, stored, expected)
-        return self._disable(previous, stored, expected)
+            return self._enable(previous, stored, expected, actual_context)
+        return self._disable(previous, stored, expected, actual_context)
 
     def _expected_command(self) -> str | None:
         if not self._platform_supported or self._backend is None:
@@ -265,8 +294,14 @@ class AutostartService:
 
     def _read_value(
         self,
-    ) -> AutostartStoredValue | _BackendFailure | None:
+        context: AutostartOperationContext,
+    ) -> AutostartStoredValue | _BackendFailure | _JournalFailure | None:
         assert self._backend is not None
+        if not self._record(
+            AutostartOperationEvent.BACKEND_READ_ENTERED,
+            context,
+        ):
+            return _JOURNAL_FAILURE
         try:
             return self._backend.read_value()
         except Exception:
@@ -309,6 +344,7 @@ class AutostartService:
         previous: AutostartSnapshot,
         stored: AutostartStoredValue | None,
         expected: str,
+        context: AutostartOperationContext,
     ) -> AutostartOperationResult:
         if stored is not None:
             snapshot = self._classify(stored, expected)
@@ -320,6 +356,11 @@ class AutostartService:
                 snapshot.safe_message,
             )
         assert self._backend is not None
+        if not self._record(
+            AutostartOperationEvent.BACKEND_WRITE_ENTERED,
+            context,
+        ):
+            return self._journal_failure(previous)
         try:
             self._backend.write_value(expected)
         except Exception:
@@ -329,8 +370,15 @@ class AutostartService:
                 "autostart_write_failed",
                 "The autostart setting could not be enabled safely.",
             )
+        if not self._record(
+            AutostartOperationEvent.BACKEND_WRITE_COMPLETED,
+            context,
+        ):
+            return self._journal_failure(previous)
         self._ownership_confirmed = True
-        verified = self._read_value()
+        verified = self._read_value(context)
+        if isinstance(verified, _JournalFailure):
+            return self._journal_failure(previous)
         if isinstance(verified, _BackendFailure):
             self._snapshot = previous
             return AutostartOperationResult.failed(
@@ -338,6 +386,11 @@ class AutostartService:
                 "autostart_write_verification_failed",
                 "The autostart setting could not be verified safely.",
             )
+        if not self._record(
+            AutostartOperationEvent.READBACK_COMPLETED,
+            context,
+        ):
+            return self._journal_failure(previous)
         snapshot = self._classify(verified, expected)
         if snapshot.status is not AutostartStatus.ENABLED:
             return AutostartOperationResult.failed(
@@ -352,6 +405,7 @@ class AutostartService:
         previous: AutostartSnapshot,
         stored: AutostartStoredValue | None,
         expected: str,
+        context: AutostartOperationContext,
     ) -> AutostartOperationResult:
         if stored is None:
             snapshot = self._classify(None, expected)
@@ -376,6 +430,11 @@ class AutostartService:
                 self._snapshot.safe_message,
             )
         assert self._backend is not None
+        if not self._record(
+            AutostartOperationEvent.BACKEND_DELETE_ENTERED,
+            context,
+        ):
+            return self._journal_failure(previous)
         try:
             self._backend.delete_value()
         except Exception:
@@ -385,7 +444,14 @@ class AutostartService:
                 "autostart_delete_failed",
                 "The autostart setting could not be disabled safely.",
             )
-        verified = self._read_value()
+        if not self._record(
+            AutostartOperationEvent.BACKEND_DELETE_COMPLETED,
+            context,
+        ):
+            return self._journal_failure(previous)
+        verified = self._read_value(context)
+        if isinstance(verified, _JournalFailure):
+            return self._journal_failure(previous)
         if isinstance(verified, _BackendFailure):
             self._snapshot = previous
             return AutostartOperationResult.failed(
@@ -393,6 +459,11 @@ class AutostartService:
                 "autostart_delete_verification_failed",
                 "The autostart setting could not be verified safely.",
             )
+        if not self._record(
+            AutostartOperationEvent.READBACK_COMPLETED,
+            context,
+        ):
+            return self._journal_failure(previous)
         if verified is not None:
             self._ownership_lost = True
             self._snapshot = AutostartSnapshot.for_status(
@@ -408,6 +479,37 @@ class AutostartService:
         snapshot = self._classify(None, expected)
         return AutostartOperationResult.completed(snapshot)
 
+    def _record(
+        self,
+        event: AutostartOperationEvent,
+        context: AutostartOperationContext,
+    ) -> bool:
+        journal = self._operation_journal
+        if journal is None:
+            return True
+        try:
+            journal.record(
+                event,
+                context,
+                runtime_state=AutostartOperationRuntimeState.SERVICE,
+            )
+        except AutostartOperationJournalError:
+            self._snapshot = AutostartSnapshot.for_status(
+                AutostartStatus.ERROR
+            )
+            return False
+        return True
+
+    @staticmethod
+    def _journal_failure(
+        previous: AutostartSnapshot,
+    ) -> AutostartOperationResult:
+        return AutostartOperationResult.failed(
+            previous,
+            "autostart_diagnostic_journal_failed",
+            "The autostart diagnostic journal failed safely.",
+        )
+
 
 @dataclass(frozen=True, slots=True)
 class _BackendFailure:
@@ -415,3 +517,11 @@ class _BackendFailure:
 
 
 _BACKEND_FAILURE = _BackendFailure()
+
+
+@dataclass(frozen=True, slots=True)
+class _JournalFailure:
+    pass
+
+
+_JOURNAL_FAILURE = _JournalFailure()

@@ -144,6 +144,7 @@ def _run_probe(root: Path) -> int:
         lambda: controller.snapshot.status is AutostartStatus.ENABLED
         and not controller.busy
     )
+    checkbox_enabled_before_shutdown = checkbox.isEnabled()
     one_write = backend.write_count == writes_before + 1
     bridge.shutdown(cancel_active=True)
     shutdown = (
@@ -155,7 +156,7 @@ def _run_probe(root: Path) -> int:
     success = (
         ready
         and visible
-        and checkbox.isEnabled()
+        and checkbox_enabled_before_shutdown
         and focus_reachable
         and enabled
         and one_write

@@ -11,6 +11,9 @@ from sjtuclaw.application.autostart_eligibility import (
     inspect_autostart_executable,
     inspect_nuitka_runtime,
 )
+from sjtuclaw.application.autostart_operation_journal import (
+    AutostartOperationJournal,
+)
 from sjtuclaw.application.autostart_service import (
     AUTOSTART_ARGUMENT,
     AutostartService,
@@ -41,7 +44,10 @@ def _is_supported_nuitka_standalone_runtime() -> bool:
     return diagnose_production_autostart_eligibility().supported
 
 
-def create_production_autostart_service() -> AutostartService:
+def create_production_autostart_service(
+    *,
+    operation_journal: AutostartOperationJournal | None = None,
+) -> AutostartService:
     """Construct without reading or writing the Windows registry."""
 
     if sys.platform != "win32":
@@ -50,6 +56,7 @@ def create_production_autostart_service() -> AutostartService:
             lambda: Path(sys.executable),
             platform_supported=False,
             packaged_runtime_probe=lambda: False,
+            operation_journal=operation_journal,
         )
     from sjtuclaw.infrastructure.autostart.windows_run_key import (
         WindowsRunKeyAutostartBackend,
@@ -62,4 +69,5 @@ def create_production_autostart_service() -> AutostartService:
         eligibility_probe=lambda executable: (
             diagnose_production_autostart_eligibility(executable)
         ),
+        operation_journal=operation_journal,
     )
