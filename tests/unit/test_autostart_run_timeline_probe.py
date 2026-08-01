@@ -82,6 +82,7 @@ def _control(
     nonce: str = NONCE,
     stop: bool = False,
     abort: bool = False,
+    terminal_conditions: probe.OwnerTerminalConditions | None = None,
 ) -> probe.ControlMessage:
     return probe.ControlMessage(
         schema_version=probe.SCHEMA_VERSION,
@@ -91,6 +92,26 @@ def _control(
         phase=phase,
         stop=stop,
         abort=abort,
+        terminal_conditions=(
+            terminal_conditions
+            if terminal_conditions is not None
+            else (
+                probe.OwnerTerminalConditions(
+                    supervisor_completed=True,
+                    supervisor_identity_matched=True,
+                    owner_exit_code=0,
+                    owner_checkpoint_closed=True,
+                    pid_tcp_endpoint_count=0,
+                    forced_termination=False,
+                    toggle_command_count=1,
+                    tray_menu_activation_count=0,
+                    pet_menu_activation_count=0,
+                    secondary_creation_count=0,
+                )
+                if phase == "T9-final"
+                else None
+            )
+        ),
     )
 
 
@@ -110,6 +131,29 @@ def _occupied(
         value,
         value_type,
         EXPECTED,
+    )
+
+
+def _process_status(
+    state: probe.WindowsProcessState = probe.WindowsProcessState.RUNNING,
+    *,
+    identity: str = OWNER_IDENTITY,
+    exit_code: int | None = 259,
+    exit_filetime_recorded: bool = False,
+) -> probe.WindowsProcessStatus:
+    creation_matches = identity == OWNER_IDENTITY
+    return probe.WindowsProcessStatus(
+        state=state,
+        creation_identity=identity,
+        creation_matches=creation_matches,
+        exit_filetime_recorded=exit_filetime_recorded,
+        exit_code=exit_code,
+        terminal_source=(
+            probe.ProcessTerminalSource.EXIT_FILETIME
+            if exit_filetime_recorded
+            else probe.ProcessTerminalSource.NONE
+        ),
+        consistency=probe.ProcessQueryConsistency.CONSISTENT,
     )
 
 
@@ -139,7 +183,7 @@ def _write_owner_ui_checkpoint(
         / "autostart-owner-ui-readiness"
         / nonce
     )
-    root.mkdir(parents=True)
+    root.mkdir(parents=True, exist_ok=True)
     probe._write_json_atomically(
         root / "checkpoint.json",
         {
@@ -562,7 +606,7 @@ def test_t1_starts_active_budget_only_after_owner_registration() -> None:
     coordinator.accept_control(
         _control("T1", 1, "T0"),
         clock.monotonic(),
-        current_process_identity=OWNER_IDENTITY,
+        current_process_status=_process_status(),
     )
 
     assert coordinator.lifecycle_state is probe.ProbeLifecycleState.ARMED
@@ -584,7 +628,7 @@ def test_t1_requires_registered_live_owner() -> None:
         coordinator.accept_control(
             _control("T1", 1, "T0"),
             clock.monotonic(),
-            current_process_identity=None,
+            current_process_status=None,
         )
 
     assert captured.value.safe_code == "autostart_timeline_owner_missing"
@@ -623,7 +667,7 @@ def test_revision_phase_and_nonce_controls_fail_closed(
         coordinator.accept_control(
             message,
             clock.monotonic(),
-            current_process_identity=OWNER_IDENTITY,
+            current_process_status=_process_status(),
         )
 
     assert captured.value.safe_code == expected_code
@@ -637,7 +681,7 @@ def test_duplicate_and_stale_revision_are_rejected_after_t1() -> None:
     coordinator.accept_control(
         first,
         clock.monotonic(),
-        current_process_identity=OWNER_IDENTITY,
+        current_process_status=_process_status(),
     )
     coordinator.begin_observing()
 
@@ -645,13 +689,13 @@ def test_duplicate_and_stale_revision_are_rejected_after_t1() -> None:
         coordinator.accept_control(
             first,
             clock.monotonic(),
-            current_process_identity=OWNER_IDENTITY,
+            current_process_status=_process_status(),
         )
     with pytest.raises(probe.TimelineCoordinationError) as stale:
         coordinator.accept_control(
             _control("T1", 0, "T0"),
             clock.monotonic(),
-            current_process_identity=OWNER_IDENTITY,
+            current_process_status=_process_status(),
         )
 
     assert (
@@ -675,14 +719,26 @@ def test_normal_t1_through_t9_flow_and_owner_post_exit_observation() -> None:
                 stop=phase == "T9-final",
             ),
             clock.monotonic(),
-            current_process_identity=(
-                OWNER_IDENTITY if phase == "T1" else None
+            current_process_status=(
+                _process_status(
+                    probe.WindowsProcessState.EXITED,
+                    exit_code=0,
+                    exit_filetime_recorded=True,
+                )
+                if phase == "T9-final"
+                else _process_status()
             ),
         )
         if phase == "T1":
             coordinator.begin_observing()
         if phase == "T7-before-shutdown":
-            assert coordinator.observe_owner_identity(None) is None
+            assert coordinator.observe_owner_status(
+                _process_status(
+                    probe.WindowsProcessState.EXITED,
+                    exit_code=0,
+                    exit_filetime_recorded=True,
+                )
+            ) is None
         clock.advance(1)
         previous = phase
 
@@ -706,7 +762,7 @@ def test_each_phase_refreshes_lease_without_resetting_active_budget() -> None:
     coordinator.accept_control(
         _control("T1", 1, "T0"),
         clock.monotonic(),
-        current_process_identity=OWNER_IDENTITY,
+        current_process_status=_process_status(),
     )
     coordinator.begin_observing()
     active_started = coordinator.active_started_at
@@ -714,7 +770,7 @@ def test_each_phase_refreshes_lease_without_resetting_active_budget() -> None:
     coordinator.accept_control(
         _control("T2-before-enable", 2, "T1"),
         clock.monotonic(),
-        current_process_identity=OWNER_IDENTITY,
+        current_process_status=_process_status(),
     )
 
     assert coordinator.active_started_at == active_started
@@ -751,7 +807,7 @@ def test_ready_active_and_total_timeouts_are_independent() -> None:
     active.accept_control(
         _control("T1", 1, "T0"),
         active_clock.monotonic(),
-        current_process_identity=OWNER_IDENTITY,
+        current_process_status=_process_status(),
     )
     active.begin_observing()
     active_clock.advance(10)
@@ -792,14 +848,25 @@ def test_owner_early_exit_and_pid_reuse_are_distinct() -> None:
     early_exit = _coordinator(clock)
     early_exit.register_owner(_registration())
     assert (
-        early_exit.observe_owner_identity(None)
+        early_exit.observe_owner_status(
+            _process_status(
+                probe.WindowsProcessState.EXITED,
+                exit_code=0,
+                exit_filetime_recorded=True,
+            )
+        )
         == "autostart_timeline_owner_exited_early"
     )
 
     reused = _coordinator(clock)
     reused.register_owner(_registration())
     assert (
-        reused.observe_owner_identity("fedcba9876543210")
+        reused.observe_owner_status(
+            _process_status(
+                probe.WindowsProcessState.PID_REUSED,
+                identity="fedcba9876543210",
+            )
+        )
         == "autostart_timeline_owner_identity_lost"
     )
     assert reused.owner_terminal_state is probe.OwnerTerminalState.IDENTITY_LOST
@@ -812,7 +879,7 @@ def test_abort_is_explicit_and_stop_is_t9_only() -> None:
     coordinator.accept_control(
         abort,
         clock.monotonic(),
-        current_process_identity=None,
+        current_process_status=None,
     )
     assert coordinator.lifecycle_state is probe.ProbeLifecycleState.FINALIZING
     assert coordinator.safe_code == "autostart_timeline_probe_aborted"
@@ -823,7 +890,7 @@ def test_abort_is_explicit_and_stop_is_t9_only() -> None:
         invalid_stop.accept_control(
             _control("T1", 1, "T0", stop=True),
             clock.monotonic(),
-            current_process_identity=OWNER_IDENTITY,
+            current_process_status=_process_status(),
         )
     assert captured.value.safe_code == "autostart_timeline_stop_invalid"
 
@@ -998,6 +1065,105 @@ def test_owner_ui_checkpoint_requires_all_qt_readiness_stages(
     probe._write_json_atomically(checkpoint, document)
 
     assert not probe._owner_ui_checkpoint_ready(NONCE)
+
+
+def test_owner_ui_checkpoint_closed_requires_terminal_closed_stage(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(probe, "_repository_root", lambda: tmp_path)
+    _write_owner_ui_checkpoint(tmp_path)
+
+    assert not probe._owner_ui_checkpoint_closed(NONCE)
+
+    _write_owner_ui_checkpoint(
+        tmp_path,
+        stages=(
+            "started",
+            "arguments_validated",
+            "single_instance_owner",
+            "composition_root_created",
+            "runtime_starting",
+            "pet_window_created",
+            "settings_loaded",
+            "pet_window_visible",
+            "tray_created",
+            "tray_visible",
+            "runtime_ready",
+            "application_ready",
+            "closing",
+            "closed",
+        ),
+    )
+
+    assert probe._owner_ui_checkpoint_closed(NONCE)
+
+
+def test_t9_control_requires_all_terminal_conditions(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(probe, "_repository_root", lambda: tmp_path)
+    root = _write_control_root(tmp_path)
+    probe._write_json_atomically(
+        root / "control.json",
+        probe._control_document(
+            _control("T8-after-process-exit", 8, "T7-before-shutdown")
+        ),
+    )
+    _write_owner_ui_checkpoint(
+        tmp_path,
+        stages=(
+            "started",
+            "arguments_validated",
+            "single_instance_owner",
+            "composition_root_created",
+            "runtime_starting",
+            "pet_window_created",
+            "settings_loaded",
+            "pet_window_visible",
+            "tray_created",
+            "tray_visible",
+            "runtime_ready",
+            "application_ready",
+            "closing",
+            "closed",
+        ),
+    )
+
+    with pytest.raises(probe.TimelineCoordinationError) as captured:
+        probe._set_phase(
+            "T9-final",
+            evidence_root=str(root),
+            expected_previous_phase="T8-after-process-exit",
+            revision=9,
+            session_nonce=NONCE,
+            stop=True,
+        )
+    assert captured.value.safe_code == (
+        "autostart_timeline_terminal_conditions_invalid"
+    )
+
+    assert probe._set_phase(
+        "T9-final",
+        evidence_root=str(root),
+        expected_previous_phase="T8-after-process-exit",
+        revision=9,
+        session_nonce=NONCE,
+        stop=True,
+        supervisor_completed=True,
+        supervisor_identity_matched=True,
+        owner_exit_code=0,
+        pid_tcp_endpoint_count=0,
+        forced_termination=False,
+        toggle_command_count=1,
+        tray_menu_activation_count=0,
+        pet_menu_activation_count=0,
+        secondary_creation_count=0,
+    ) == 0
+    control = probe._read_control(root / "control.json")
+    assert control.terminal_conditions is not None
+    assert control.terminal_conditions.verified()
 
 
 def test_owner_ui_checkpoint_rejects_stale_nonce_part_and_sequence(
@@ -1254,9 +1420,19 @@ def test_fake_clock_full_observer_flow_waits_then_completes(
             return _owned()
         return probe.SafeValueObservation.absent()
 
-    def identity_probe(process_id: int) -> str | None:
+    def process_status_probe(
+        process_id: int,
+        expected_identity: str,
+    ) -> probe.WindowsProcessStatus:
         assert process_id == 1234
-        return OWNER_IDENTITY if identity_running else None
+        assert expected_identity == OWNER_IDENTITY
+        if identity_running:
+            return _process_status()
+        return _process_status(
+            probe.WindowsProcessState.EXITED,
+            exit_code=0,
+            exit_filetime_recorded=True,
+        )
 
     def sleeper(seconds: float) -> None:
         nonlocal identity_running, next_phase_index
@@ -1297,7 +1473,7 @@ def test_fake_clock_full_observer_flow_waits_then_completes(
         str(root),
         NONCE,
         reader=reader,
-        identity_probe=identity_probe,
+        process_status_probe=process_status_probe,
         monotonic=clock.monotonic,
         sleeper=sleeper,
     )

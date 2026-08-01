@@ -1536,3 +1536,34 @@ existing artifact's last internal startup stage remains unknown; one new
 standalone build, static audit, and one separately authorized diagnostic Owner
 run are required before choosing between a product startup fix and a probe-only
 rerun.
+
+### Packaged autostart timeline Owner terminal-state correction
+
+The later packaged Owner readiness run reached `application_ready`, and the
+strict Run-value timeline reached T8 with the fixed value still exactly owned.
+The Owner then completed ordinary tray shutdown with exit code 0 and a final
+product checkpoint of `closed`. The timeline observer nevertheless continued
+to report the Owner as running because it treated a matching creation FILETIME
+as liveness. On Windows, a supervisor can retain a process handle after the
+process has exited; `OpenProcess` and `GetProcessTimes` can therefore still
+return the original creation FILETIME while the exit FILETIME is already
+nonzero. This was a probe defect, not a product Run-value lifecycle failure.
+
+The observer now classifies a frozen PID using a fixed, non-sensitive state
+model: `running`, `exited`, `pid_reused`, `not_found`, `inaccessible`, or
+`query_failed`. A matching creation FILETIME plus a nonzero exit FILETIME is
+authoritative evidence of exit even if `GetExitCodeProcess` reports
+`STILL_ACTIVE`. A zero exit FILETIME plus a terminal exit code is accepted only
+as the explicit `exit_code_terminal_fallback`. A creation FILETIME mismatch is
+always PID reuse. Access denial and query failure are never guessed to mean
+exit, and every successfully opened process handle is closed exactly once.
+
+T9 now fails closed unless the matching process is classified as exited with
+exit code 0 and the control message carries the fixed terminal assertions:
+supervisor complete, product checkpoint closed, zero PID TCP endpoints, no
+forced termination, one UI toggle, zero tray or pet autostart action
+activations, and zero secondary instances. The observer independently queries
+the fixed Run value at T9 and still requires exact ownership. These changes are
+probe-only; the immutable 70-file standalone artifact was not rebuilt or
+modified. A new separately controlled T0-T9 execution is still required to
+verify the corrected observer against the retained process-object behavior.

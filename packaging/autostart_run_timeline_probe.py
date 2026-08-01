@@ -93,6 +93,98 @@ class OwnerTerminalState(StrEnum):
     RUNNING = "running"
     EXITED = "exited"
     IDENTITY_LOST = "identity_lost"
+    TERMINAL_UNVERIFIED = "terminal_unverified"
+
+
+class WindowsProcessState(StrEnum):
+    """Fixed process classification without Win32 error text."""
+
+    RUNNING = "running"
+    EXITED = "exited"
+    PID_REUSED = "pid_reused"
+    NOT_FOUND = "not_found"
+    INACCESSIBLE = "inaccessible"
+    QUERY_FAILED = "query_failed"
+
+
+class ProcessTerminalSource(StrEnum):
+    """Fixed source used to justify a terminal process classification."""
+
+    NONE = "none"
+    EXIT_FILETIME = "exit_filetime"
+    EXIT_CODE_TERMINAL_FALLBACK = "exit_code_terminal_fallback"
+
+
+class ProcessQueryConsistency(StrEnum):
+    """Safe consistency classification for redundant Win32 evidence."""
+
+    CONSISTENT = "consistent"
+    EXIT_FILETIME_WITH_STILL_ACTIVE = "exit_filetime_with_still_active"
+    EXIT_CODE_WITHOUT_EXIT_FILETIME = "exit_code_without_exit_filetime"
+    NOT_APPLICABLE = "not_applicable"
+
+
+@dataclass(frozen=True, slots=True)
+class WindowsProcessStatus:
+    """Non-sensitive result of querying one frozen Windows process identity."""
+
+    state: WindowsProcessState
+    creation_identity: str | None
+    creation_matches: bool
+    exit_filetime_recorded: bool
+    exit_code: int | None
+    terminal_source: ProcessTerminalSource
+    consistency: ProcessQueryConsistency
+
+
+@dataclass(frozen=True, slots=True)
+class WindowsProcessTimes:
+    """Raw FILETIME integers returned by ``GetProcessTimes``."""
+
+    creation_filetime: int
+    exit_filetime: int
+
+
+class WindowsProcessApi(Protocol):
+    """Minimal injectable Win32 surface used by the process classifier."""
+
+    def open_process(self, process_id: int) -> tuple[int | None, int]: ...
+
+    def get_process_times(self, handle: int) -> WindowsProcessTimes | None: ...
+
+    def get_exit_code(self, handle: int) -> int | None: ...
+
+    def close_handle(self, handle: int) -> None: ...
+
+
+@dataclass(frozen=True, slots=True)
+class OwnerTerminalConditions:
+    """Fixed, non-sensitive T9 assertions supplied by the supervisor."""
+
+    supervisor_completed: bool
+    supervisor_identity_matched: bool
+    owner_exit_code: int
+    owner_checkpoint_closed: bool
+    pid_tcp_endpoint_count: int
+    forced_termination: bool
+    toggle_command_count: int
+    tray_menu_activation_count: int
+    pet_menu_activation_count: int
+    secondary_creation_count: int
+
+    def verified(self) -> bool:
+        return (
+            self.supervisor_completed
+            and self.supervisor_identity_matched
+            and self.owner_exit_code == 0
+            and self.owner_checkpoint_closed
+            and self.pid_tcp_endpoint_count == 0
+            and not self.forced_termination
+            and self.toggle_command_count == 1
+            and self.tray_menu_activation_count == 0
+            and self.pet_menu_activation_count == 0
+            and self.secondary_creation_count == 0
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -106,6 +198,7 @@ class ControlMessage:
     phase: str
     stop: bool
     abort: bool
+    terminal_conditions: OwnerTerminalConditions | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -132,6 +225,12 @@ class CoordinationCheckpoint:
     supervisor_terminal_state: str
     owner_safe_exit_required: bool
     safe_code: str
+    process_state: str = WindowsProcessState.QUERY_FAILED
+    creation_filetime_matches: bool = False
+    exit_filetime_recorded: bool = False
+    owner_exit_code: int | None = None
+    process_terminal_source: str = ProcessTerminalSource.NONE
+    process_query_consistency: str = ProcessQueryConsistency.NOT_APPLICABLE
     value_text_recorded: bool = False
 
 
@@ -255,6 +354,12 @@ class TimelineSummary:
     final_revision: int = 0
     observer_registry_write_count: int = 0
     observer_registry_delete_count: int = 0
+    process_state: str = WindowsProcessState.QUERY_FAILED
+    creation_filetime_matches: bool = False
+    exit_filetime_recorded: bool = False
+    owner_exit_code: int | None = None
+    process_terminal_source: str = ProcessTerminalSource.NONE
+    process_query_consistency: str = ProcessQueryConsistency.NOT_APPLICABLE
     value_text_recorded: bool = False
     other_value_enumeration_count: int = 0
     startup_approved_access_count: int = 0
@@ -264,12 +369,16 @@ class ValueReader(Protocol):
     def __call__(self, expected_command: str) -> SafeValueObservation: ...
 
 
-class ProcessProbe(Protocol):
-    def __call__(self, process_id: int) -> bool: ...
-
-
 class ProcessIdentityProbe(Protocol):
     def __call__(self, process_id: int) -> str | None: ...
+
+
+class ProcessStatusProbe(Protocol):
+    def __call__(
+        self,
+        process_id: int,
+        expected_creation_identity: str,
+    ) -> WindowsProcessStatus: ...
 
 
 class ProbeCoordinator:
@@ -304,6 +413,8 @@ class ProbeCoordinator:
         self.stage_lease_started_at: float | None = None
         self.owner_registration: OwnerRegistration | None = None
         self.owner_terminal_state = OwnerTerminalState.NOT_REGISTERED
+        self.owner_process_status: WindowsProcessStatus | None = None
+        self.owner_terminal_fallback_verified = False
         self.safe_code = "none"
 
     def mark_ready(self, now: float) -> None:
@@ -341,7 +452,7 @@ class ProbeCoordinator:
         message: ControlMessage,
         now: float,
         *,
-        current_process_identity: str | None,
+        current_process_status: WindowsProcessStatus | None,
     ) -> None:
         if self.lifecycle_state in {
             ProbeLifecycleState.COMPLETED,
@@ -368,7 +479,11 @@ class ProbeCoordinator:
                 "The timeline control sequence is invalid.",
             )
         if message.abort:
-            if message.phase != self.current_phase or message.stop:
+            if (
+                message.phase != self.current_phase
+                or message.stop
+                or message.terminal_conditions is not None
+            ):
                 raise TimelineCoordinationError(
                     "autostart_timeline_abort_invalid",
                     "The timeline abort request is invalid.",
@@ -389,6 +504,11 @@ class ProbeCoordinator:
                 "autostart_timeline_stop_invalid",
                 "The timeline stop request is invalid.",
             )
+        if message.phase != "T9-final" and message.terminal_conditions is not None:
+            raise TimelineCoordinationError(
+                "autostart_timeline_terminal_conditions_invalid",
+                "The timeline terminal conditions are invalid.",
+            )
         if message.phase == "T1":
             registration = self.owner_registration
             if registration is None:
@@ -396,20 +516,54 @@ class ProbeCoordinator:
                     "autostart_timeline_owner_missing",
                     "The timeline Owner is not registered.",
                 )
-            if current_process_identity is None:
+            if (
+                current_process_status is None
+                or current_process_status.state is WindowsProcessState.NOT_FOUND
+            ):
                 self.owner_terminal_state = OwnerTerminalState.EXITED
                 raise TimelineCoordinationError(
                     "autostart_timeline_owner_exited_early",
                     "The timeline Owner exited too early.",
                 )
-            if current_process_identity != registration.process_identity:
+            if current_process_status.state is WindowsProcessState.PID_REUSED:
                 self.owner_terminal_state = OwnerTerminalState.IDENTITY_LOST
                 raise TimelineCoordinationError(
                     "autostart_timeline_owner_identity_lost",
                     "The timeline Owner identity changed.",
                 )
+            if current_process_status.state is not WindowsProcessState.RUNNING:
+                raise TimelineCoordinationError(
+                    "autostart_timeline_owner_status_invalid",
+                    "The timeline Owner process state is invalid.",
+                )
             self.lifecycle_state = ProbeLifecycleState.ARMED
             self.active_started_at = now
+        if message.phase == "T9-final":
+            terminal_conditions = message.terminal_conditions
+            direct_terminal = (
+                current_process_status is not None
+                and current_process_status.state is WindowsProcessState.EXITED
+                and current_process_status.creation_matches
+                and current_process_status.exit_code == 0
+            )
+            supervisor_terminal = (
+                current_process_status is not None
+                and current_process_status.state is WindowsProcessState.NOT_FOUND
+                and terminal_conditions is not None
+                and terminal_conditions.supervisor_identity_matched
+                and terminal_conditions.owner_exit_code == 0
+            )
+            if (
+                not (direct_terminal or supervisor_terminal)
+                or terminal_conditions is None
+                or not terminal_conditions.verified()
+            ):
+                raise TimelineCoordinationError(
+                    "autostart_timeline_owner_terminal_unverified",
+                    "The timeline Owner terminal state is not verified.",
+                )
+            self.owner_terminal_fallback_verified = supervisor_terminal
+            self.owner_terminal_state = OwnerTerminalState.EXITED
         self.current_phase = message.phase
         self.revision = message.revision
         self.stage_lease_started_at = now
@@ -428,20 +582,39 @@ class ProbeCoordinator:
             )
         self.lifecycle_state = ProbeLifecycleState.OBSERVING
 
-    def observe_owner_identity(self, identity: str | None) -> str | None:
+    def observe_owner_status(
+        self,
+        status: WindowsProcessStatus | None,
+    ) -> str | None:
         registration = self.owner_registration
         if registration is None:
             return None
-        if identity == registration.process_identity:
+        self.owner_process_status = status
+        if status is None:
+            return "autostart_timeline_owner_process_query_failed"
+        if status.state is WindowsProcessState.RUNNING:
             self.owner_terminal_state = OwnerTerminalState.RUNNING
             return None
-        if identity is not None:
+        if status.state is WindowsProcessState.PID_REUSED:
             self.owner_terminal_state = OwnerTerminalState.IDENTITY_LOST
             return "autostart_timeline_owner_identity_lost"
-        self.owner_terminal_state = OwnerTerminalState.EXITED
-        if PHASE_INDEX[self.current_phase] < PHASE_INDEX["T7-before-shutdown"]:
-            return "autostart_timeline_owner_exited_early"
-        return None
+        if status.state is WindowsProcessState.EXITED:
+            self.owner_terminal_state = OwnerTerminalState.EXITED
+            if PHASE_INDEX[self.current_phase] < PHASE_INDEX["T7-before-shutdown"]:
+                return "autostart_timeline_owner_exited_early"
+            return None
+        if status.state is WindowsProcessState.NOT_FOUND:
+            if PHASE_INDEX[self.current_phase] < PHASE_INDEX["T7-before-shutdown"]:
+                return "autostart_timeline_owner_exited_early"
+            self.owner_terminal_state = (
+                OwnerTerminalState.EXITED
+                if self.owner_terminal_fallback_verified
+                else OwnerTerminalState.TERMINAL_UNVERIFIED
+            )
+            return None
+        if status.state is WindowsProcessState.INACCESSIBLE:
+            return "autostart_timeline_owner_inaccessible"
+        return "autostart_timeline_owner_process_query_failed"
 
     def timeout_code(self, now: float) -> str | None:
         if now - self.started_at >= self.total_timeout_seconds:
@@ -483,6 +656,7 @@ class ProbeCoordinator:
 
     def checkpoint(self) -> CoordinationCheckpoint:
         owner_running = self.owner_terminal_state is OwnerTerminalState.RUNNING
+        status = self.owner_process_status
         if self.lifecycle_state is ProbeLifecycleState.COMPLETED:
             observer_terminal = "completed"
         elif self.lifecycle_state is ProbeLifecycleState.FAILED:
@@ -507,6 +681,28 @@ class ProbeCoordinator:
                 self.lifecycle_state is ProbeLifecycleState.FAILED and owner_running
             ),
             safe_code=self.safe_code,
+            process_state=(
+                status.state
+                if status is not None
+                else WindowsProcessState.QUERY_FAILED
+            ),
+            creation_filetime_matches=(
+                status.creation_matches if status is not None else False
+            ),
+            exit_filetime_recorded=(
+                status.exit_filetime_recorded if status is not None else False
+            ),
+            owner_exit_code=(status.exit_code if status is not None else None),
+            process_terminal_source=(
+                status.terminal_source
+                if status is not None
+                else ProcessTerminalSource.NONE
+            ),
+            process_query_consistency=(
+                status.consistency
+                if status is not None
+                else ProcessQueryConsistency.NOT_APPLICABLE
+            ),
         )
 
 
@@ -655,6 +851,12 @@ class TimelineTracker:
             supervisor_terminal_state=coordination.supervisor_terminal_state,
             owner_safe_exit_required=coordination.owner_safe_exit_required,
             final_revision=coordination.revision,
+            process_state=coordination.process_state,
+            creation_filetime_matches=coordination.creation_filetime_matches,
+            exit_filetime_recorded=coordination.exit_filetime_recorded,
+            owner_exit_code=coordination.owner_exit_code,
+            process_terminal_source=coordination.process_terminal_source,
+            process_query_consistency=coordination.process_query_consistency,
         )
 
     def _transition(
@@ -802,6 +1004,60 @@ def _control_document(message: ControlMessage) -> dict[str, object]:
     return asdict(message)
 
 
+def _parse_terminal_conditions(value: object) -> OwnerTerminalConditions | None:
+    if value is None:
+        return None
+    expected_fields = {
+        "supervisor_completed",
+        "supervisor_identity_matched",
+        "owner_exit_code",
+        "owner_checkpoint_closed",
+        "pid_tcp_endpoint_count",
+        "forced_termination",
+        "toggle_command_count",
+        "tray_menu_activation_count",
+        "pet_menu_activation_count",
+        "secondary_creation_count",
+    }
+    if not isinstance(value, dict) or set(value) != expected_fields:
+        raise TimelineProbeError("Timeline control data is invalid.")
+    boolean_fields = (
+        "supervisor_completed",
+        "supervisor_identity_matched",
+        "owner_checkpoint_closed",
+        "forced_termination",
+    )
+    count_fields = (
+        "pid_tcp_endpoint_count",
+        "owner_exit_code",
+        "toggle_command_count",
+        "tray_menu_activation_count",
+        "pet_menu_activation_count",
+        "secondary_creation_count",
+    )
+    if any(not isinstance(value.get(field), bool) for field in boolean_fields):
+        raise TimelineProbeError("Timeline control data is invalid.")
+    if any(
+        not isinstance(value.get(field), int)
+        or isinstance(value.get(field), bool)
+        or int(value[field]) < 0
+        for field in count_fields
+    ):
+        raise TimelineProbeError("Timeline control data is invalid.")
+    return OwnerTerminalConditions(
+        supervisor_completed=bool(value["supervisor_completed"]),
+        supervisor_identity_matched=bool(value["supervisor_identity_matched"]),
+        owner_exit_code=int(value["owner_exit_code"]),
+        owner_checkpoint_closed=bool(value["owner_checkpoint_closed"]),
+        pid_tcp_endpoint_count=int(value["pid_tcp_endpoint_count"]),
+        forced_termination=bool(value["forced_termination"]),
+        toggle_command_count=int(value["toggle_command_count"]),
+        tray_menu_activation_count=int(value["tray_menu_activation_count"]),
+        pet_menu_activation_count=int(value["pet_menu_activation_count"]),
+        secondary_creation_count=int(value["secondary_creation_count"]),
+    )
+
+
 def _read_control(path: Path) -> ControlMessage:
     try:
         document = json.loads(path.read_text(encoding="utf-8"))
@@ -815,6 +1071,7 @@ def _read_control(path: Path) -> ControlMessage:
         "phase",
         "stop",
         "abort",
+        "terminal_conditions",
     }:
         raise TimelineProbeError("Timeline control data is invalid.")
     nonce = document.get("session_nonce")
@@ -823,6 +1080,9 @@ def _read_control(path: Path) -> ControlMessage:
     phase = document.get("phase")
     stop = document.get("stop")
     abort = document.get("abort")
+    terminal_conditions = _parse_terminal_conditions(
+        document.get("terminal_conditions")
+    )
     if (
         document.get("schema_version") != SCHEMA_VERSION
         or not _valid_session_nonce(nonce)
@@ -844,6 +1104,7 @@ def _read_control(path: Path) -> ControlMessage:
         phase=phase,
         stop=stop,
         abort=abort,
+        terminal_conditions=terminal_conditions,
     )
 
 
@@ -887,69 +1148,205 @@ def _read_owner_registration(path: Path) -> OwnerRegistration | None:
     )
 
 
-def _process_is_running(process_id: int) -> bool:
+class _CtypesWindowsProcessApi:
+    """Small ctypes adapter; it never reads image paths or command lines."""
+
+    def __init__(self) -> None:
+        import ctypes
+        from ctypes import wintypes
+
+        class FileTime(ctypes.Structure):
+            _fields_ = [
+                ("low", wintypes.DWORD),
+                ("high", wintypes.DWORD),
+            ]
+
+        self._ctypes = ctypes
+        self._file_time_type = FileTime
+        self._kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        self._open_process = self._kernel32.OpenProcess
+        self._open_process.argtypes = [
+            wintypes.DWORD,
+            wintypes.BOOL,
+            wintypes.DWORD,
+        ]
+        self._open_process.restype = wintypes.HANDLE
+        self._get_process_times = self._kernel32.GetProcessTimes
+        self._get_process_times.argtypes = [
+            wintypes.HANDLE,
+            ctypes.POINTER(FileTime),
+            ctypes.POINTER(FileTime),
+            ctypes.POINTER(FileTime),
+            ctypes.POINTER(FileTime),
+        ]
+        self._get_process_times.restype = wintypes.BOOL
+        self._get_exit_code_process = self._kernel32.GetExitCodeProcess
+        self._get_exit_code_process.argtypes = [
+            wintypes.HANDLE,
+            ctypes.POINTER(wintypes.DWORD),
+        ]
+        self._get_exit_code_process.restype = wintypes.BOOL
+        self._close_handle = self._kernel32.CloseHandle
+        self._close_handle.argtypes = [wintypes.HANDLE]
+        self._close_handle.restype = wintypes.BOOL
+
+    def open_process(self, process_id: int) -> tuple[int | None, int]:
+        process_query_limited_information = 0x1000
+        handle = self._open_process(
+            process_query_limited_information,
+            False,
+            process_id,
+        )
+        if not handle:
+            return None, int(self._ctypes.get_last_error())
+        return int(handle), 0
+
+    def get_process_times(self, handle: int) -> WindowsProcessTimes | None:
+        created = self._file_time_type()
+        exited = self._file_time_type()
+        kernel = self._file_time_type()
+        user = self._file_time_type()
+        if not self._get_process_times(
+            handle,
+            self._ctypes.byref(created),
+            self._ctypes.byref(exited),
+            self._ctypes.byref(kernel),
+            self._ctypes.byref(user),
+        ):
+            return None
+        return WindowsProcessTimes(
+            creation_filetime=(int(created.high) << 32) | int(created.low),
+            exit_filetime=(int(exited.high) << 32) | int(exited.low),
+        )
+
+    def get_exit_code(self, handle: int) -> int | None:
+        from ctypes import wintypes
+
+        exit_code = wintypes.DWORD()
+        if not self._get_exit_code_process(handle, self._ctypes.byref(exit_code)):
+            return None
+        return int(exit_code.value)
+
+    def close_handle(self, handle: int) -> None:
+        self._close_handle(handle)
+
+
+def _unavailable_process_status(state: WindowsProcessState) -> WindowsProcessStatus:
+    return WindowsProcessStatus(
+        state=state,
+        creation_identity=None,
+        creation_matches=False,
+        exit_filetime_recorded=False,
+        exit_code=None,
+        terminal_source=ProcessTerminalSource.NONE,
+        consistency=ProcessQueryConsistency.NOT_APPLICABLE,
+    )
+
+
+def _query_windows_process_state(
+    process_id: int,
+    expected_creation_identity: str,
+    *,
+    api: WindowsProcessApi | None = None,
+) -> WindowsProcessStatus:
+    """Classify a frozen PID from creation/exit FILETIME and exit code."""
+
+    if sys.platform != "win32" and api is None:
+        return _unavailable_process_status(WindowsProcessState.QUERY_FAILED)
+    selected_api = api or _CtypesWindowsProcessApi()
+    handle, open_error = selected_api.open_process(process_id)
+    if handle is None:
+        if open_error in {87, 1168}:
+            return _unavailable_process_status(WindowsProcessState.NOT_FOUND)
+        if open_error == 5:
+            return _unavailable_process_status(WindowsProcessState.INACCESSIBLE)
+        return _unavailable_process_status(WindowsProcessState.QUERY_FAILED)
     try:
-        os.kill(process_id, 0)
-    except OSError:
-        return False
-    return True
+        times = selected_api.get_process_times(handle)
+        if times is None:
+            return _unavailable_process_status(WindowsProcessState.QUERY_FAILED)
+        identity = f"{times.creation_filetime:016x}"
+        creation_matches = identity == expected_creation_identity
+        if not creation_matches:
+            return WindowsProcessStatus(
+                state=WindowsProcessState.PID_REUSED,
+                creation_identity=identity,
+                creation_matches=False,
+                exit_filetime_recorded=times.exit_filetime != 0,
+                exit_code=None,
+                terminal_source=ProcessTerminalSource.NONE,
+                consistency=ProcessQueryConsistency.NOT_APPLICABLE,
+            )
+        exit_code = selected_api.get_exit_code(handle)
+        if times.exit_filetime != 0:
+            consistency = (
+                ProcessQueryConsistency.EXIT_FILETIME_WITH_STILL_ACTIVE
+                if exit_code == 259
+                else ProcessQueryConsistency.CONSISTENT
+            )
+            return WindowsProcessStatus(
+                state=WindowsProcessState.EXITED,
+                creation_identity=identity,
+                creation_matches=True,
+                exit_filetime_recorded=True,
+                exit_code=exit_code,
+                terminal_source=ProcessTerminalSource.EXIT_FILETIME,
+                consistency=consistency,
+            )
+        if exit_code is None:
+            return WindowsProcessStatus(
+                state=WindowsProcessState.QUERY_FAILED,
+                creation_identity=identity,
+                creation_matches=True,
+                exit_filetime_recorded=False,
+                exit_code=None,
+                terminal_source=ProcessTerminalSource.NONE,
+                consistency=ProcessQueryConsistency.NOT_APPLICABLE,
+            )
+        if exit_code != 259:
+            return WindowsProcessStatus(
+                state=WindowsProcessState.EXITED,
+                creation_identity=identity,
+                creation_matches=True,
+                exit_filetime_recorded=False,
+                exit_code=exit_code,
+                terminal_source=(
+                    ProcessTerminalSource.EXIT_CODE_TERMINAL_FALLBACK
+                ),
+                consistency=(
+                    ProcessQueryConsistency.EXIT_CODE_WITHOUT_EXIT_FILETIME
+                ),
+            )
+        return WindowsProcessStatus(
+            state=WindowsProcessState.RUNNING,
+            creation_identity=identity,
+            creation_matches=True,
+            exit_filetime_recorded=False,
+            exit_code=exit_code,
+            terminal_source=ProcessTerminalSource.NONE,
+            consistency=ProcessQueryConsistency.CONSISTENT,
+        )
+    finally:
+        selected_api.close_handle(handle)
 
 
 def _process_identity(process_id: int) -> str | None:
-    """Return the Windows process creation FILETIME without opening its image."""
+    """Freeze creation FILETIME only when the target is currently running."""
 
     if sys.platform != "win32":
         return None
-    import ctypes
-    from ctypes import wintypes
-
-    class FileTime(ctypes.Structure):
-        _fields_ = [
-            ("low", wintypes.DWORD),
-            ("high", wintypes.DWORD),
-        ]
-
-    process_query_limited_information = 0x1000
-    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-    open_process = kernel32.OpenProcess
-    open_process.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
-    open_process.restype = wintypes.HANDLE
-    get_process_times = kernel32.GetProcessTimes
-    get_process_times.argtypes = [
-        wintypes.HANDLE,
-        ctypes.POINTER(FileTime),
-        ctypes.POINTER(FileTime),
-        ctypes.POINTER(FileTime),
-        ctypes.POINTER(FileTime),
-    ]
-    get_process_times.restype = wintypes.BOOL
-    close_handle = kernel32.CloseHandle
-    close_handle.argtypes = [wintypes.HANDLE]
-    close_handle.restype = wintypes.BOOL
-    handle = open_process(
-        process_query_limited_information,
-        False,
-        process_id,
-    )
-    if not handle:
+    api = _CtypesWindowsProcessApi()
+    handle, _ = api.open_process(process_id)
+    if handle is None:
         return None
     try:
-        created = FileTime()
-        exited = FileTime()
-        kernel = FileTime()
-        user = FileTime()
-        if not get_process_times(
-            handle,
-            ctypes.byref(created),
-            ctypes.byref(exited),
-            ctypes.byref(kernel),
-            ctypes.byref(user),
-        ):
+        times = api.get_process_times(handle)
+        exit_code = api.get_exit_code(handle)
+        if times is None or times.exit_filetime != 0 or exit_code != 259:
             return None
-        creation_value = (int(created.high) << 32) | int(created.low)
-        return f"{creation_value:016x}"
+        return f"{times.creation_filetime:016x}"
     finally:
-        close_handle(handle)
+        api.close_handle(handle)
 
 
 def _repository_root() -> Path:
@@ -1229,7 +1626,7 @@ def _run_real_observer(
     session_nonce: str,
     *,
     reader: ValueReader = query_fixed_run_value,
-    identity_probe: ProcessIdentityProbe = _process_identity,
+    process_status_probe: ProcessStatusProbe = _query_windows_process_state,
     monotonic: Callable[[], float] = time.monotonic,
     sleeper: Callable[[float], None] = time.sleep,
 ) -> int:
@@ -1309,15 +1706,18 @@ def _run_real_observer(
                     "The timeline control revision is invalid.",
                 )
             if control.revision > coordinator.revision:
-                current_identity = (
-                    identity_probe(registration.process_id)
+                current_status = (
+                    process_status_probe(
+                        registration.process_id,
+                        registration.process_identity,
+                    )
                     if registration is not None
                     else None
                 )
                 coordinator.accept_control(
                     control,
                     now,
-                    current_process_identity=current_identity,
+                    current_process_status=current_status,
                 )
                 _persist_checkpoint(root, coordinator)
                 if coordinator.lifecycle_state is ProbeLifecycleState.ARMED:
@@ -1335,12 +1735,15 @@ def _run_real_observer(
             return 2
 
         active_registration = coordinator.owner_registration
-        current_identity = (
-            identity_probe(active_registration.process_id)
+        current_status = (
+            process_status_probe(
+                active_registration.process_id,
+                active_registration.process_identity,
+            )
             if active_registration is not None
             else None
         )
-        owner_error = coordinator.observe_owner_identity(current_identity)
+        owner_error = coordinator.observe_owner_status(current_status)
         if owner_error is not None:
             coordinator.fail(owner_error)
             _persist_checkpoint(root, coordinator)
@@ -1391,8 +1794,11 @@ def _run_real_observer(
         sleeper(POLL_INTERVAL_SECONDS)
 
 
-def _owner_ui_checkpoint_ready(session_nonce: str) -> bool:
-    """Validate the product-side Qt readiness checkpoint for the T1 gate."""
+def _owner_ui_checkpoint_has_final_stage(
+    session_nonce: str,
+    final_stage: str,
+) -> bool:
+    """Validate an ordered product-side Qt readiness checkpoint."""
 
     if not _valid_session_nonce(session_nonce):
         return False
@@ -1509,10 +1915,22 @@ def _owner_ui_checkpoint_ready(session_nonce: str) -> bool:
         seen.add(stage)
         last_order = stage_order[stage]
         last_elapsed = elapsed
-    return (
-        events[-1].get("stage") == "application_ready"
-        and required_stages <= seen
+    return events[-1].get("stage") == final_stage and required_stages <= seen
+
+
+def _owner_ui_checkpoint_ready(session_nonce: str) -> bool:
+    """Validate the product-side Qt readiness checkpoint for the T1 gate."""
+
+    return _owner_ui_checkpoint_has_final_stage(
+        session_nonce,
+        "application_ready",
     )
+
+
+def _owner_ui_checkpoint_closed(session_nonce: str) -> bool:
+    """Validate that the same Owner checkpoint reached safe closure."""
+
+    return _owner_ui_checkpoint_has_final_stage(session_nonce, "closed")
 
 
 def _set_phase(
@@ -1523,6 +1941,15 @@ def _set_phase(
     revision: int,
     session_nonce: str,
     stop: bool,
+    supervisor_completed: bool = False,
+    supervisor_identity_matched: bool = False,
+    owner_exit_code: int = -1,
+    pid_tcp_endpoint_count: int = -1,
+    forced_termination: bool = True,
+    toggle_command_count: int = -1,
+    tray_menu_activation_count: int = -1,
+    pet_menu_activation_count: int = -1,
+    secondary_creation_count: int = -1,
 ) -> int:
     if phase not in PHASES or expected_previous_phase not in PHASES:
         raise TimelineProbeError("The timeline phase is invalid.")
@@ -1550,6 +1977,25 @@ def _set_phase(
                 "autostart_t1_registry_state_invalid",
                 "The fixed Run value is not absent at T1.",
             )
+    terminal_conditions: OwnerTerminalConditions | None = None
+    if phase == "T9-final":
+        terminal_conditions = OwnerTerminalConditions(
+            supervisor_completed=supervisor_completed,
+            supervisor_identity_matched=supervisor_identity_matched,
+            owner_exit_code=owner_exit_code,
+            owner_checkpoint_closed=_owner_ui_checkpoint_closed(session_nonce),
+            pid_tcp_endpoint_count=pid_tcp_endpoint_count,
+            forced_termination=forced_termination,
+            toggle_command_count=toggle_command_count,
+            tray_menu_activation_count=tray_menu_activation_count,
+            pet_menu_activation_count=pet_menu_activation_count,
+            secondary_creation_count=secondary_creation_count,
+        )
+        if not terminal_conditions.verified():
+            raise TimelineCoordinationError(
+                "autostart_timeline_terminal_conditions_invalid",
+                "The timeline terminal conditions are invalid.",
+            )
     _write_json_atomically(
         root / "control.json",
         _control_document(
@@ -1561,6 +2007,7 @@ def _set_phase(
                 phase=phase,
                 stop=stop,
                 abort=False,
+                terminal_conditions=terminal_conditions,
             )
         ),
     )
@@ -1653,6 +2100,15 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--revision", type=int)
     parser.add_argument("--expected-previous-phase", choices=PHASES)
     parser.add_argument("--expected-executable-sha256", default="")
+    parser.add_argument("--supervisor-completed", action="store_true")
+    parser.add_argument("--supervisor-identity-matched", action="store_true")
+    parser.add_argument("--owner-exit-code", type=int, default=-1)
+    parser.add_argument("--forced-termination", action="store_true")
+    parser.add_argument("--pid-tcp-endpoint-count", type=int, default=-1)
+    parser.add_argument("--toggle-command-count", type=int, default=-1)
+    parser.add_argument("--tray-menu-activation-count", type=int, default=-1)
+    parser.add_argument("--pet-menu-activation-count", type=int, default=-1)
+    parser.add_argument("--secondary-creation-count", type=int, default=-1)
     return parser
 
 
@@ -1698,6 +2154,21 @@ def main(argv: list[str] | None = None) -> int:
                 revision=revision,
                 session_nonce=nonce,
                 stop=bool(arguments.stop),
+                supervisor_completed=bool(arguments.supervisor_completed),
+                supervisor_identity_matched=bool(
+                    arguments.supervisor_identity_matched
+                ),
+                owner_exit_code=int(arguments.owner_exit_code),
+                pid_tcp_endpoint_count=int(arguments.pid_tcp_endpoint_count),
+                forced_termination=bool(arguments.forced_termination),
+                toggle_command_count=int(arguments.toggle_command_count),
+                tray_menu_activation_count=int(
+                    arguments.tray_menu_activation_count
+                ),
+                pet_menu_activation_count=int(
+                    arguments.pet_menu_activation_count
+                ),
+                secondary_creation_count=int(arguments.secondary_creation_count),
             )
         if arguments.set_owner_pid is not None:
             nonce = str(arguments.session_nonce)
@@ -1733,6 +2204,15 @@ def main(argv: list[str] | None = None) -> int:
             or arguments.revision is not None
             or arguments.expected_previous_phase is not None
             or arguments.expected_executable_sha256
+            or arguments.supervisor_completed
+            or arguments.supervisor_identity_matched
+            or arguments.owner_exit_code != -1
+            or arguments.forced_termination
+            or arguments.pid_tcp_endpoint_count != -1
+            or arguments.toggle_command_count != -1
+            or arguments.tray_menu_activation_count != -1
+            or arguments.pet_menu_activation_count != -1
+            or arguments.secondary_creation_count != -1
         ):
             raise TimelineProbeError("Timeline control data is invalid.")
         print(
