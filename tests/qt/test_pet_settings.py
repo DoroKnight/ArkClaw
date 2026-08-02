@@ -21,6 +21,12 @@ from PySide6.QtWidgets import QApplication
 
 from sjtuclaw.application.pet_animation import PetRenderFrame
 from sjtuclaw.application.pet_geometry import Size
+from sjtuclaw.application.pet_renderer_model import (
+    PetRendererAction,
+    PetRendererActionRequest,
+    PetRendererAnimationCapability,
+    placeholder_animation_capability,
+)
 from sjtuclaw.application.pet_settings import (
     PetSettings,
     PetSettingsLoadResult,
@@ -67,11 +73,32 @@ class _RecordingRenderer:
     def __init__(self) -> None:
         self.closed = False
 
+    def initialize(self, viewport: Size) -> None:
+        del viewport
+
+    def set_viewport(self, viewport: Size) -> None:
+        del viewport
+
+    def set_state(self, request: PetRendererActionRequest) -> None:
+        del request
+
+    def update(self, delta_seconds: float) -> None:
+        del delta_seconds
+
     def render(self, painter: QPainter, frame: PetRenderFrame) -> None:
         del painter, frame
 
-    def resize(self, size: Size) -> None:
-        del size
+    def animation_capability(
+        self,
+        action: PetRendererAction,
+    ) -> PetRendererAnimationCapability:
+        return placeholder_animation_capability(action)
+
+    def pause(self) -> None:
+        pass
+
+    def resume(self) -> None:
+        pass
 
     def close(self) -> None:
         self.closed = True

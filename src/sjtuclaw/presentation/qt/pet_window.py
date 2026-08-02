@@ -32,6 +32,7 @@ from sjtuclaw.application.pet_animation import (
 )
 from sjtuclaw.application.pet_geometry import Point, Rect, Size
 from sjtuclaw.application.pet_motion import PetMotionModel
+from sjtuclaw.application.pet_renderer_model import action_request_for_frame
 from sjtuclaw.application.pet_state import (
     PetFacing,
     PetLifecycleState,
@@ -43,7 +44,9 @@ from sjtuclaw.presentation.qt.autostart_controller import (
 )
 from sjtuclaw.presentation.qt.pet_renderer import (
     PetRenderer,
+    PetRendererSafeCode,
     PlaceholderPetRenderer,
+    SafePetRenderer,
 )
 
 _PET_WIDTH = 160
@@ -76,7 +79,12 @@ class PetWindow(QWidget):
         self._context_menu: QMenu | None = None
         self._autostart_controller = autostart_controller
         self._autostart_action: QAction | None = None
-        self._renderer = renderer or PlaceholderPetRenderer()
+        selected_renderer = renderer or PlaceholderPetRenderer()
+        self._renderer = (
+            selected_renderer
+            if isinstance(selected_renderer, SafePetRenderer)
+            else SafePetRenderer(selected_renderer)
+        )
         self.setObjectName("placeholderPetWindow")
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
@@ -100,7 +108,8 @@ class PetWindow(QWidget):
             rng=rng,
             config=animation_config,
         )
-        self._renderer.resize(Size(_PET_WIDTH, _PET_HEIGHT))
+        self._renderer.initialize(Size(_PET_WIDTH, _PET_HEIGHT))
+        self._sync_renderer_state()
         self._clock = clock or SystemMonotonicClock()
         self._last_tick = self._clock.now()
         self.move(round(initial.x), round(initial.y))
@@ -137,17 +146,26 @@ class PetWindow(QWidget):
 
         return self._animation_timer
 
+    @property
+    def renderer_safe_code(self) -> PetRendererSafeCode:
+        """Expose only a fixed diagnostic category, never exception details."""
+
+        return self._renderer.safe_code
+
     def toggle_paused(self) -> None:
         if self.lifecycle_state is PetLifecycleState.CLOSING:
             return
         try:
             if self.lifecycle_state is PetLifecycleState.PAUSED:
                 self._animation.resume()
+                self._renderer.resume()
                 self._last_tick = self._clock.now()
             else:
                 self._animation.pause()
+                self._renderer.pause()
         except PetStateTransitionError:
             return
+        self._sync_renderer_state()
         self.update()
         self.presentation_state_changed.emit()
 
@@ -224,6 +242,7 @@ class PetWindow(QWidget):
             return
         self._exit_emitted = True
         self._drag_offset = None
+        self._sync_renderer_state()
         self._animation_timer.stop()
         self.update()
         self.presentation_state_changed.emit()
@@ -233,6 +252,8 @@ class PetWindow(QWidget):
         if self.lifecycle_state is not PetLifecycleState.CLOSING:
             return
         self._animation.recover_failed_close()
+        self._renderer.pause()
+        self._sync_renderer_state()
         self._exit_emitted = False
         self._last_tick = self._clock.now()
         self._animation_timer.start()
@@ -252,6 +273,7 @@ class PetWindow(QWidget):
             self._animation.request_reminder_animation()
         except PetStateTransitionError:
             return False
+        self._sync_renderer_state()
         self.update()
         return True
 
@@ -260,6 +282,7 @@ class PetWindow(QWidget):
             self._animation.request_thinking_animation()
         except PetStateTransitionError:
             return False
+        self._sync_renderer_state()
         self.update()
         return True
 
@@ -268,6 +291,7 @@ class PetWindow(QWidget):
             self._animation.request_walk(direction)
         except PetStateTransitionError:
             return False
+        self._sync_renderer_state()
         self.update()
         return True
 
@@ -278,7 +302,9 @@ class PetWindow(QWidget):
         painter.end()
 
     def resizeEvent(self, event: QResizeEvent) -> None:
-        self._renderer.resize(Size(event.size().width(), event.size().height()))
+        self._renderer.set_viewport(
+            Size(event.size().width(), event.size().height())
+        )
         super().resizeEvent(event)
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
@@ -291,6 +317,7 @@ class PetWindow(QWidget):
             except PetStateTransitionError:
                 event.ignore()
                 return
+            self._sync_renderer_state()
             global_position = event.globalPosition()
             self._drag_offset = Point(
                 global_position.x() - self.x(),
@@ -330,6 +357,7 @@ class PetWindow(QWidget):
         ):
             self._drag_offset = None
             self._animation.release_drag()
+            self._sync_renderer_state()
             self.update()
             event.accept()
             return
@@ -446,11 +474,20 @@ class PetWindow(QWidget):
             elapsed,
             self._workspaces(),
         )
+        self._renderer.set_state(
+            action_request_for_frame(snapshot.frame)
+        )
+        self._renderer.update(snapshot.applied_delta_seconds)
         self.move(
             round(snapshot.motion.position.x),
             round(snapshot.motion.position.y),
         )
         self.update()
+
+    def _sync_renderer_state(self) -> None:
+        self._renderer.set_state(
+            action_request_for_frame(self._animation.frame)
+        )
 
     def _apply_window_flags(self) -> None:
         flags = (

@@ -35,6 +35,12 @@ from sjtuclaw.application.pet_animation import (
     PetRenderFrame,
 )
 from sjtuclaw.application.pet_geometry import Size
+from sjtuclaw.application.pet_renderer_model import (
+    PetRendererAction,
+    PetRendererActionRequest,
+    PetRendererAnimationCapability,
+    placeholder_animation_capability,
+)
 from sjtuclaw.application.pet_state import (
     PetLifecycleState,
     PetMotionState,
@@ -95,15 +101,40 @@ class _FakeRenderer:
     def __init__(self, events: list[str] | None = None) -> None:
         self.frames: list[PetRenderFrame] = []
         self.sizes: list[Size] = []
+        self.requests: list[PetRendererActionRequest] = []
+        self.updates: list[float] = []
+        self.pause_count = 0
+        self.resume_count = 0
         self.closed = False
         self._events = events
+
+    def initialize(self, viewport: Size) -> None:
+        self.sizes.append(viewport)
+
+    def set_viewport(self, viewport: Size) -> None:
+        self.sizes.append(viewport)
+
+    def set_state(self, request: PetRendererActionRequest) -> None:
+        self.requests.append(request)
+
+    def update(self, delta_seconds: float) -> None:
+        self.updates.append(delta_seconds)
 
     def render(self, painter: QPainter, frame: PetRenderFrame) -> None:
         del painter
         self.frames.append(frame)
 
-    def resize(self, size: Size) -> None:
-        self.sizes.append(size)
+    def animation_capability(
+        self,
+        action: PetRendererAction,
+    ) -> PetRendererAnimationCapability:
+        return placeholder_animation_capability(action)
+
+    def pause(self) -> None:
+        self.pause_count += 1
+
+    def resume(self) -> None:
+        self.resume_count += 1
 
     def close(self) -> None:
         if self.closed:

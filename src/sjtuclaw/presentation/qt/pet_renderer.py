@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
+from contextlib import suppress
+from enum import StrEnum
 from typing import Protocol, runtime_checkable
 
 from PySide6.QtCore import QPointF, QRectF, Qt
@@ -15,6 +18,16 @@ from PySide6.QtGui import (
 
 from sjtuclaw.application.pet_animation import PetRenderFrame
 from sjtuclaw.application.pet_geometry import Size
+from sjtuclaw.application.pet_renderer_model import (
+    ExternalAssetConfigStatus,
+    ExternalPetAssetDescriptor,
+    PetRendererAction,
+    PetRendererActionRequest,
+    PetRendererAnimationCapability,
+    PetRendererKind,
+    placeholder_animation_capability,
+    validate_external_asset_descriptor,
+)
 from sjtuclaw.application.pet_state import (
     PetBehaviorState,
     PetFacing,
@@ -25,14 +38,230 @@ from sjtuclaw.application.pet_state import (
 
 @runtime_checkable
 class PetRenderer(Protocol):
+    def initialize(self, viewport: Size) -> None:
+        """Initialize renderer-owned state for a logical viewport."""
+
+    def set_viewport(self, viewport: Size) -> None:
+        """Receive logical viewport changes."""
+
+    def set_state(self, request: PetRendererActionRequest) -> None:
+        """Receive a renderer-neutral action request."""
+
+    def update(self, delta_seconds: float) -> None:
+        """Advance renderer-owned animation without blocking."""
+
     def render(self, painter: QPainter, frame: PetRenderFrame) -> None:
         """Render one non-sensitive visual frame."""
 
-    def resize(self, size: Size) -> None:
-        """Receive logical window dimensions."""
+    def animation_capability(
+        self,
+        action: PetRendererAction,
+    ) -> PetRendererAnimationCapability:
+        """Describe support without loading or scanning external assets."""
+
+    def pause(self) -> None:
+        """Pause renderer-owned time."""
+
+    def resume(self) -> None:
+        """Resume renderer-owned time."""
 
     def close(self) -> None:
         """Release renderer-owned resources idempotently."""
+
+
+class PetRendererSafeCode(StrEnum):
+    NONE = "none"
+    CONSTRUCTION_FAILED = "pet_renderer_construction_failed"
+    INITIALIZATION_FAILED = "pet_renderer_initialization_failed"
+    VIEWPORT_FAILED = "pet_renderer_viewport_failed"
+    STATE_FAILED = "pet_renderer_state_failed"
+    UPDATE_FAILED = "pet_renderer_update_failed"
+    RENDER_FAILED = "pet_renderer_render_failed"
+    PAUSE_FAILED = "pet_renderer_pause_failed"
+    RESUME_FAILED = "pet_renderer_resume_failed"
+    CLOSE_FAILED = "pet_renderer_close_failed"
+    INVALID_CONFIGURATION = "pet_renderer_invalid_configuration"
+    RUNTIME_UNAVAILABLE = "pet_renderer_runtime_unavailable"
+
+
+class SafePetRenderer:
+    """Contain renderer failures and retain a programmatic fallback."""
+
+    def __init__(
+        self,
+        renderer: PetRenderer,
+        *,
+        initial_safe_code: PetRendererSafeCode = PetRendererSafeCode.NONE,
+    ) -> None:
+        self._renderer = renderer
+        self._safe_code = initial_safe_code
+        self._viewport = Size(160, 180)
+        self._state: PetRendererActionRequest | None = None
+        self._paused = False
+        self._closed = False
+
+    @property
+    def safe_code(self) -> PetRendererSafeCode:
+        return self._safe_code
+
+    @property
+    def using_placeholder(self) -> bool:
+        return isinstance(self._renderer, PlaceholderPetRenderer)
+
+    @property
+    def closed(self) -> bool:
+        return self._closed
+
+    def initialize(self, viewport: Size) -> None:
+        if self._closed:
+            return
+        self._viewport = viewport
+        try:
+            self._renderer.initialize(viewport)
+        except Exception:
+            self._activate_fallback(PetRendererSafeCode.INITIALIZATION_FAILED)
+
+    def set_viewport(self, viewport: Size) -> None:
+        if self._closed:
+            return
+        self._viewport = viewport
+        try:
+            self._renderer.set_viewport(viewport)
+        except Exception:
+            self._activate_fallback(PetRendererSafeCode.VIEWPORT_FAILED)
+
+    def set_state(self, request: PetRendererActionRequest) -> None:
+        if self._closed:
+            return
+        self._state = request
+        try:
+            self._renderer.set_state(request)
+        except Exception:
+            self._activate_fallback(PetRendererSafeCode.STATE_FAILED)
+
+    def update(self, delta_seconds: float) -> None:
+        if self._closed or self._paused:
+            return
+        try:
+            self._renderer.update(delta_seconds)
+        except Exception:
+            self._activate_fallback(PetRendererSafeCode.UPDATE_FAILED)
+
+    def render(self, painter: QPainter, frame: PetRenderFrame) -> None:
+        if self._closed:
+            return
+        failed = False
+        painter.save()
+        try:
+            self._renderer.render(painter, frame)
+        except Exception:
+            failed = True
+        finally:
+            painter.restore()
+        if failed:
+            self._activate_fallback(PetRendererSafeCode.RENDER_FAILED)
+            painter.save()
+            try:
+                self._renderer.render(painter, frame)
+            finally:
+                painter.restore()
+
+    def animation_capability(
+        self,
+        action: PetRendererAction,
+    ) -> PetRendererAnimationCapability:
+        try:
+            return self._renderer.animation_capability(action)
+        except Exception:
+            self._activate_fallback(PetRendererSafeCode.STATE_FAILED)
+            return self._renderer.animation_capability(action)
+
+    def pause(self) -> None:
+        if self._closed or self._paused:
+            return
+        self._paused = True
+        try:
+            self._renderer.pause()
+        except Exception:
+            self._activate_fallback(PetRendererSafeCode.PAUSE_FAILED)
+
+    def resume(self) -> None:
+        if self._closed or not self._paused:
+            return
+        self._paused = False
+        try:
+            self._renderer.resume()
+        except Exception:
+            self._activate_fallback(PetRendererSafeCode.RESUME_FAILED)
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        try:
+            self._renderer.close()
+        except Exception:
+            self._safe_code = PetRendererSafeCode.CLOSE_FAILED
+
+    def _activate_fallback(self, safe_code: PetRendererSafeCode) -> None:
+        if self._closed:
+            return
+        previous = self._renderer
+        with suppress(Exception):
+            previous.close()
+        fallback = PlaceholderPetRenderer()
+        fallback.initialize(self._viewport)
+        if self._state is not None:
+            fallback.set_state(self._state)
+        if self._paused:
+            fallback.pause()
+        self._renderer = fallback
+        self._safe_code = safe_code
+
+    def __repr__(self) -> str:
+        return (
+            "SafePetRenderer("
+            f"safe_code={self._safe_code.value!r}, "
+            f"using_placeholder={self.using_placeholder!r}, "
+            f"closed={self._closed!r})"
+        )
+
+
+def create_safe_pet_renderer(
+    factory: Callable[[], PetRenderer],
+) -> SafePetRenderer:
+    """Construct a renderer without exposing its failure details."""
+
+    try:
+        renderer = factory()
+    except Exception:
+        return SafePetRenderer(
+            PlaceholderPetRenderer(),
+            initial_safe_code=PetRendererSafeCode.CONSTRUCTION_FAILED,
+        )
+    return SafePetRenderer(renderer)
+
+
+def create_configured_pet_renderer(
+    descriptor: ExternalPetAssetDescriptor,
+) -> SafePetRenderer:
+    """Select a renderer without scanning or persisting external resources."""
+
+    status = validate_external_asset_descriptor(descriptor)
+    if (
+        descriptor.renderer_kind is PetRendererKind.PLACEHOLDER
+        and status is ExternalAssetConfigStatus.VALID
+    ):
+        return SafePetRenderer(PlaceholderPetRenderer())
+    safe_code = (
+        PetRendererSafeCode.RUNTIME_UNAVAILABLE
+        if status is ExternalAssetConfigStatus.RENDERER_UNAVAILABLE
+        else PetRendererSafeCode.INVALID_CONFIGURATION
+    )
+    return SafePetRenderer(
+        PlaceholderPetRenderer(),
+        initial_safe_code=safe_code,
+    )
 
 
 class PlaceholderPetRenderer:
@@ -47,15 +276,46 @@ class PlaceholderPetRenderer:
     def __init__(self) -> None:
         self._size = Size(160, 180)
         self._closed = False
+        self._paused = False
+        self._state: PetRendererActionRequest | None = None
 
     @property
     def closed(self) -> bool:
         return self._closed
 
-    def resize(self, size: Size) -> None:
+    def initialize(self, viewport: Size) -> None:
+        self.set_viewport(viewport)
+
+    def set_viewport(self, viewport: Size) -> None:
         if self._closed:
             return
-        self._size = size
+        self._size = viewport
+
+    def resize(self, size: Size) -> None:
+        """Backward-compatible alias for the original renderer boundary."""
+
+        self.set_viewport(size)
+
+    def set_state(self, request: PetRendererActionRequest) -> None:
+        if not self._closed:
+            self._state = request
+
+    def update(self, delta_seconds: float) -> None:
+        del delta_seconds
+
+    def animation_capability(
+        self,
+        action: PetRendererAction,
+    ) -> PetRendererAnimationCapability:
+        return placeholder_animation_capability(action)
+
+    def pause(self) -> None:
+        if not self._closed:
+            self._paused = True
+
+    def resume(self) -> None:
+        if not self._closed:
+            self._paused = False
 
     def close(self) -> None:
         self._closed = True

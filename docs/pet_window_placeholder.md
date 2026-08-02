@@ -55,8 +55,26 @@ state, or Agent output.
 ## Replaceable renderer
 
 `PetWindow` produces a non-sensitive `PetRenderFrame` and passes it to the
-`PetRenderer` Protocol. `PlaceholderPetRenderer` contains all current QPainter
-character details. A future legally sourced renderer can replace it without
+`PetRenderer` Protocol. Its lifecycle is `initialize`, viewport/state updates,
+explicit delta-time `update`, `render`, `pause`/`resume`, and idempotent
+`close`. `PlaceholderPetRenderer` contains all current QPainter character
+details. `SafePetRenderer` contains construction and frame failures behind
+fixed safe codes and switches to a fresh programmatic placeholder; it never
+publishes an exception or an asset path.
+
+The framework-free action request vocabulary is intentionally smaller than a
+future asset runtime API. It covers movement and presentational requests while
+leaving window movement, gravity, landing, display clamping, input, and safe
+shutdown with the existing application and Qt layers. Placeholder rendering
+supports its existing actions; requests such as running, sitting, sleeping,
+reading, or typing report unsupported and use `idle` as their safe visual
+fallback.
+
+`ExternalPetAssetDescriptor` is an in-memory-only configuration boundary. It
+rejects URLs, UNC roots, traversal and nested filenames, does not scan or copy
+files, and is never persisted. Because no external animation runtime is part
+of this stage, every external renderer selection remains unavailable and falls
+back to Placeholder. A future legally sourced renderer can replace it without
 changing Agent Runtime, Provider, dragging, workspace physics, behavior state,
 or safe shutdown.
 
