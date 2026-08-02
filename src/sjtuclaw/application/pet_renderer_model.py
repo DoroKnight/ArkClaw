@@ -64,24 +64,57 @@ class PetRendererAnimationCapability:
 
 class ExternalAssetConfigStatus(StrEnum):
     VALID = "valid"
+    INVALID_ASSET_ID = "invalid_asset_id"
     INVALID_ROOT = "invalid_root"
     INVALID_FILENAME = "invalid_filename"
     INVALID_VERSION = "invalid_version"
+    INVALID_HASH = "invalid_hash"
+    INVALID_LIMIT = "invalid_limit"
     INVALID_SCALE = "invalid_scale"
     INVALID_GROUND_OFFSET = "invalid_ground_offset"
     RENDERER_UNAVAILABLE = "renderer_unavailable"
 
 
 @dataclass(frozen=True, slots=True)
+class ExternalPetAssetHashes:
+    skeleton_sha256: str | None = None
+    atlas_sha256: str | None = None
+    texture_sha256: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ExternalPetAssetLimits:
+    atlas_max_bytes: int = 1 * 1024 * 1024
+    skeleton_max_bytes: int = 16 * 1024 * 1024
+    texture_max_bytes: int = 64 * 1024 * 1024
+    bundle_max_bytes: int = 80 * 1024 * 1024
+
+
+@dataclass(frozen=True, slots=True)
 class ExternalPetAssetDescriptor:
     """Non-persistent descriptor; it never scans or copies asset files."""
 
+    opaque_asset_id: str
+    asset_root: str = field(repr=False)
+    skeleton_filename: str = field(repr=False)
+    atlas_filename: str = field(repr=False)
+    texture_filename: str = field(repr=False)
+    expected_spine_major: int = 3
+    expected_spine_minor: int = 8
+    expected_sha256: ExternalPetAssetHashes | None = field(
+        default=None,
+        repr=False,
+    )
+    limits: ExternalPetAssetLimits = ExternalPetAssetLimits()
+
+
+@dataclass(frozen=True, slots=True)
+class PetRendererConfig:
     renderer_kind: PetRendererKind = PetRendererKind.PLACEHOLDER
-    external_asset_root: str | None = field(default=None, repr=False)
-    skeleton_filename: str | None = field(default=None, repr=False)
-    atlas_filename: str | None = field(default=None, repr=False)
-    texture_filename: str | None = field(default=None, repr=False)
-    expected_spine_version: str | None = None
+    external_assets: ExternalPetAssetDescriptor | None = field(
+        default=None,
+        repr=False,
+    )
     scale: float = 1.0
     ground_offset: float = 0.0
 
@@ -91,11 +124,12 @@ def validate_external_asset_descriptor(
 ) -> ExternalAssetConfigStatus:
     """Validate syntax without touching the filesystem or loading resources."""
 
-    if descriptor.renderer_kind is PetRendererKind.PLACEHOLDER:
-        return ExternalAssetConfigStatus.VALID
-    if descriptor.renderer_kind is not PetRendererKind.SPINE38:
-        return ExternalAssetConfigStatus.RENDERER_UNAVAILABLE
-    if not _valid_local_asset_root(descriptor.external_asset_root):
+    if re.fullmatch(
+        r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}",
+        descriptor.opaque_asset_id,
+    ) is None:
+        return ExternalAssetConfigStatus.INVALID_ASSET_ID
+    if not _valid_local_asset_root(descriptor.asset_root):
         return ExternalAssetConfigStatus.INVALID_ROOT
     if not all(
         (
@@ -105,18 +139,54 @@ def validate_external_asset_descriptor(
         )
     ):
         return ExternalAssetConfigStatus.INVALID_FILENAME
-    if descriptor.expected_spine_version is None or re.fullmatch(
-        r"3\.8(?:\.\d+)?",
-        descriptor.expected_spine_version,
-    ) is None:
+    if (
+        isinstance(descriptor.expected_spine_major, bool)
+        or isinstance(descriptor.expected_spine_minor, bool)
+        or descriptor.expected_spine_major < 0
+        or descriptor.expected_spine_minor < 0
+    ):
         return ExternalAssetConfigStatus.INVALID_VERSION
-    if not math.isfinite(descriptor.scale) or descriptor.scale <= 0:
+    if descriptor.expected_sha256 is not None and not all(
+        _valid_optional_sha256(value)
+        for value in (
+            descriptor.expected_sha256.skeleton_sha256,
+            descriptor.expected_sha256.atlas_sha256,
+            descriptor.expected_sha256.texture_sha256,
+        )
+    ):
+        return ExternalAssetConfigStatus.INVALID_HASH
+    limits = descriptor.limits
+    if any(
+        isinstance(value, bool) or value <= 0
+        for value in (
+            limits.atlas_max_bytes,
+            limits.skeleton_max_bytes,
+            limits.texture_max_bytes,
+            limits.bundle_max_bytes,
+        )
+    ):
+        return ExternalAssetConfigStatus.INVALID_LIMIT
+    return ExternalAssetConfigStatus.VALID
+
+
+def validate_pet_renderer_config(
+    config: PetRendererConfig,
+) -> ExternalAssetConfigStatus:
+    if not math.isfinite(config.scale) or config.scale <= 0:
         return ExternalAssetConfigStatus.INVALID_SCALE
-    if not math.isfinite(descriptor.ground_offset):
+    if not math.isfinite(config.ground_offset):
         return ExternalAssetConfigStatus.INVALID_GROUND_OFFSET
-    # No external runtime is present in this phase. A syntactically valid
-    # descriptor therefore remains deliberately unavailable and must fall back.
-    return ExternalAssetConfigStatus.RENDERER_UNAVAILABLE
+    if config.renderer_kind is PetRendererKind.PLACEHOLDER:
+        return (
+            ExternalAssetConfigStatus.VALID
+            if config.external_assets is None
+            else ExternalAssetConfigStatus.INVALID_ROOT
+        )
+    if config.renderer_kind is not PetRendererKind.SPINE38:
+        return ExternalAssetConfigStatus.RENDERER_UNAVAILABLE
+    if config.external_assets is None:
+        return ExternalAssetConfigStatus.INVALID_ROOT
+    return validate_external_asset_descriptor(config.external_assets)
 
 
 def action_request_for_frame(
@@ -187,8 +257,13 @@ def placeholder_animation_capability(
     )
 
 
-def _valid_local_asset_root(value: str | None) -> bool:
-    if value is None or not value or "://" in value:
+def _valid_local_asset_root(value: str) -> bool:
+    if (
+        not value
+        or "://" in value
+        or any(ord(character) < 32 for character in value)
+        or value.startswith(("\\\\", "\\\\?\\", "\\\\.\\"))
+    ):
         return False
     path = PureWindowsPath(value)
     if not path.is_absolute() or not path.drive or path.drive.startswith("\\"):
@@ -196,8 +271,13 @@ def _valid_local_asset_root(value: str | None) -> bool:
     return ".." not in path.parts
 
 
-def _valid_filename(value: str | None, suffix: str) -> bool:
-    if value is None or not value:
+def _valid_filename(value: str, suffix: str) -> bool:
+    if (
+        not value
+        or ".." in value
+        or any(character in value for character in "/\\:\0")
+        or any(ord(character) < 32 for character in value)
+    ):
         return False
     path = PureWindowsPath(value)
     return (
@@ -205,3 +285,7 @@ def _valid_filename(value: str | None, suffix: str) -> bool:
         and value not in {".", ".."}
         and path.suffix.lower() == suffix
     )
+
+
+def _valid_optional_sha256(value: str | None) -> bool:
+    return value is None or re.fullmatch(r"[0-9a-f]{64}", value) is not None

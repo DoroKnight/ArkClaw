@@ -20,13 +20,13 @@ from sjtuclaw.application.pet_animation import PetRenderFrame
 from sjtuclaw.application.pet_geometry import Size
 from sjtuclaw.application.pet_renderer_model import (
     ExternalAssetConfigStatus,
-    ExternalPetAssetDescriptor,
     PetRendererAction,
     PetRendererActionRequest,
     PetRendererAnimationCapability,
+    PetRendererConfig,
     PetRendererKind,
     placeholder_animation_capability,
-    validate_external_asset_descriptor,
+    validate_pet_renderer_config,
 )
 from sjtuclaw.application.pet_state import (
     PetBehaviorState,
@@ -243,19 +243,23 @@ def create_safe_pet_renderer(
 
 
 def create_configured_pet_renderer(
-    descriptor: ExternalPetAssetDescriptor,
+    config: PetRendererConfig,
 ) -> SafePetRenderer:
     """Select a renderer without scanning or persisting external resources."""
 
-    status = validate_external_asset_descriptor(descriptor)
+    status = validate_pet_renderer_config(config)
     if (
-        descriptor.renderer_kind is PetRendererKind.PLACEHOLDER
+        config.renderer_kind is PetRendererKind.PLACEHOLDER
         and status is ExternalAssetConfigStatus.VALID
     ):
         return SafePetRenderer(PlaceholderPetRenderer())
     safe_code = (
         PetRendererSafeCode.RUNTIME_UNAVAILABLE
-        if status is ExternalAssetConfigStatus.RENDERER_UNAVAILABLE
+        if (
+            config.renderer_kind is PetRendererKind.SPINE38
+            and status is ExternalAssetConfigStatus.VALID
+        )
+        or status is ExternalAssetConfigStatus.RENDERER_UNAVAILABLE
         else PetRendererSafeCode.INVALID_CONFIGURATION
     )
     return SafePetRenderer(

@@ -70,13 +70,28 @@ supports its existing actions; requests such as running, sitting, sleeping,
 reading, or typing report unsupported and use `idle` as their safe visual
 fallback.
 
-`ExternalPetAssetDescriptor` is an in-memory-only configuration boundary. It
-rejects URLs, UNC roots, traversal and nested filenames, does not scan or copy
-files, and is never persisted. Because no external animation runtime is part
-of this stage, every external renderer selection remains unavailable and falls
-back to Placeholder. A future legally sourced renderer can replace it without
-changing Agent Runtime, Provider, dragging, workspace physics, behavior state,
-or safe shutdown.
+`PetRendererConfig` keeps renderer selection separate from its optional,
+in-memory-only `ExternalPetAssetDescriptor`. The descriptor uses an opaque ID,
+an explicitly supplied local root, three exact filenames, an expected major
+and minor version, optional hashes, and centralized size limits. It rejects
+URLs, UNC/device roots, traversal, control characters, streams and nested
+filenames; it is never persisted and does not discover files by scanning.
+
+`ExternalPetAssetLoader` opens exactly those three names through an injected
+filesystem boundary. The Windows implementation retains restrictive,
+non-inheritable read handles, rejects reparse points and multiple hard links,
+checks the final handle path, denies named data streams, and compares handle
+identity before and after streaming hashes. A bundle is published only after
+all three files pass. It owns the directory and file handles and closes them
+in reverse order, including partial-failure cleanup.
+
+Metadata parsing stops at PNG IHDR fields, atlas page/packing bounds, and the
+binary skeleton version header. It does not parse bones, slots, skins,
+attachments, constraints, events, animations, meshes, or deforms. Because no
+external animation runtime is part of this stage, every external renderer
+selection remains unavailable and falls back to Placeholder. A future legally
+sourced renderer can replace it without changing Agent Runtime, Provider,
+dragging, workspace physics, behavior state, or safe shutdown.
 
 Breathing uses a local coordinate deformation that tapers to zero above the
 lower legs. The torso, shoulders, head, ears, face, and upper arms move

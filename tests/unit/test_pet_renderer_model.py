@@ -12,10 +12,12 @@ from sjtuclaw.application.pet_renderer_model import (
     ExternalAssetConfigStatus,
     ExternalPetAssetDescriptor,
     PetRendererAction,
+    PetRendererConfig,
     PetRendererKind,
     action_request_for_frame,
     placeholder_animation_capability,
     validate_external_asset_descriptor,
+    validate_pet_renderer_config,
 )
 from sjtuclaw.application.pet_state import PetFacing
 
@@ -32,11 +34,12 @@ def _engine() -> PetAnimationEngine:
     )
 
 
-def test_default_descriptor_selects_placeholder_without_assets() -> None:
-    descriptor = ExternalPetAssetDescriptor()
+def test_default_renderer_config_selects_placeholder_without_assets() -> None:
+    config = PetRendererConfig()
 
-    assert descriptor.renderer_kind is PetRendererKind.PLACEHOLDER
-    assert validate_external_asset_descriptor(descriptor) is (
+    assert config.renderer_kind is PetRendererKind.PLACEHOLDER
+    assert config.external_assets is None
+    assert validate_pet_renderer_config(config) is (
         ExternalAssetConfigStatus.VALID
     )
 
@@ -44,29 +47,37 @@ def test_default_descriptor_selects_placeholder_without_assets() -> None:
 def test_external_descriptor_is_memory_only_and_runtime_unavailable() -> None:
     fictional_root = "X:\\fictional-pet-assets"
     descriptor = ExternalPetAssetDescriptor(
-        renderer_kind=PetRendererKind.SPINE38,
-        external_asset_root=fictional_root,
+        opaque_asset_id="fictional-bundle",
+        asset_root=fictional_root,
         skeleton_filename="fictional.skel",
         atlas_filename="fictional.atlas",
         texture_filename="fictional.png",
-        expected_spine_version="3.8.99",
-        scale=0.75,
-        ground_offset=4.0,
+        expected_spine_major=3,
+        expected_spine_minor=8,
     )
 
     assert validate_external_asset_descriptor(descriptor) is (
-        ExternalAssetConfigStatus.RENDERER_UNAVAILABLE
+        ExternalAssetConfigStatus.VALID
+    )
+    assert validate_pet_renderer_config(
+        PetRendererConfig(
+            renderer_kind=PetRendererKind.SPINE38,
+            external_assets=descriptor,
+        )
+    ) is (
+        ExternalAssetConfigStatus.VALID
     )
     assert fictional_root not in repr(descriptor)
 
 
 def test_external_descriptor_rejects_unsafe_or_invalid_values() -> None:
     base = {
-        "renderer_kind": PetRendererKind.SPINE38,
+        "opaque_asset_id": "fictional-bundle",
         "skeleton_filename": "fictional.skel",
         "atlas_filename": "fictional.atlas",
         "texture_filename": "fictional.png",
-        "expected_spine_version": "3.8",
+        "expected_spine_major": 3,
+        "expected_spine_minor": 8,
     }
 
     def descriptor(**changes: object) -> ExternalPetAssetDescriptor:
@@ -74,36 +85,33 @@ def test_external_descriptor_rejects_unsafe_or_invalid_values() -> None:
 
     assert validate_external_asset_descriptor(
         descriptor(
-            external_asset_root="\\\\host\\share\\assets",
+            asset_root="\\\\host\\share\\assets",
         )
     ) is ExternalAssetConfigStatus.INVALID_ROOT
     assert validate_external_asset_descriptor(
         descriptor(
-            external_asset_root="https://invalid.example/assets",
+            asset_root="https://invalid.example/assets",
         )
     ) is ExternalAssetConfigStatus.INVALID_ROOT
     assert validate_external_asset_descriptor(
         descriptor(
-            external_asset_root="X:\\fictional\\..\\escape",
+            asset_root="X:\\fictional\\..\\escape",
         )
     ) is ExternalAssetConfigStatus.INVALID_ROOT
     assert validate_external_asset_descriptor(
         descriptor(
-            external_asset_root="X:\\fictional",
+            asset_root="X:\\fictional",
             skeleton_filename="nested\\fictional.skel",
         )
     ) is ExternalAssetConfigStatus.INVALID_FILENAME
     assert validate_external_asset_descriptor(
         descriptor(
-            external_asset_root="X:\\fictional",
-            expected_spine_version="4.2",
+            asset_root="X:\\fictional",
+            expected_spine_major=-1,
         )
     ) is ExternalAssetConfigStatus.INVALID_VERSION
-    assert validate_external_asset_descriptor(
-        descriptor(
-            external_asset_root="X:\\fictional",
-            scale=0.0,
-        )
+    assert validate_pet_renderer_config(
+        PetRendererConfig(scale=0.0)
     ) is ExternalAssetConfigStatus.INVALID_SCALE
 
 

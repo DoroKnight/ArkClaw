@@ -20,6 +20,7 @@ from sjtuclaw.application.pet_renderer_model import (
     PetRendererAction,
     PetRendererActionRequest,
     PetRendererAnimationCapability,
+    PetRendererConfig,
     PetRendererKind,
     placeholder_animation_capability,
 )
@@ -118,13 +119,15 @@ def test_factory_construction_failure_uses_placeholder_without_details() -> None
 
 def test_external_configuration_falls_back_without_disk_access() -> None:
     renderer = create_configured_pet_renderer(
-        ExternalPetAssetDescriptor(
+        PetRendererConfig(
             renderer_kind=PetRendererKind.SPINE38,
-            external_asset_root="X:\\fictional-pet-assets",
-            skeleton_filename="fictional.skel",
-            atlas_filename="fictional.atlas",
-            texture_filename="fictional.png",
-            expected_spine_version="3.8",
+            external_assets=ExternalPetAssetDescriptor(
+                opaque_asset_id="fictional-bundle",
+                asset_root="X:\\fictional-pet-assets",
+                skeleton_filename="fictional.skel",
+                atlas_filename="fictional.atlas",
+                texture_filename="fictional.png",
+            ),
         )
     )
 
