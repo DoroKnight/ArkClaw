@@ -205,3 +205,37 @@ unavailable result into zero. Tests use an injected Win32 backend and verify
 that the retained handle is closed exactly once on every terminal or failure
 path. This observer is packaging-test infrastructure only and does not change
 the packaged application or its shutdown implementation.
+
+## Windows sign-in lifecycle verification
+
+A user-driven Windows logoff and sign-in completed with
+`safe_code=autostart_windows_lifecycle_verified`. Windows created one packaged
+Owner from the strictly owned Run value. The observed command contained only
+the fixed `--startup` argument, the executable matched the audited artifact,
+the pet and tray appeared, the Agent window and settings remained hidden, and
+SJTUClaw did not take foreground focus. No second runtime was observed, and
+PID-scoped observation found zero external and zero unattributed endpoints.
+
+The user then disabled autostart with one settings-checkbox action. The
+settings, tray and pet states synchronized to unchecked, and the fixed Run
+value became absent. The external observer had already retained the matching
+Owner process handle. After the user selected tray Exit, the same handle was
+signaled, its creation FILETIME still matched, its exit FILETIME was nonzero,
+and `GetExitCodeProcess` returned zero. No force termination was used. The Run
+value remained absent during the post-exit change-notification window, and no
+Owner or observer process remained.
+
+The verified distribution still contained 70 files totaling 139,884,776
+bytes, with no missing, extra, size-mismatched or hash-mismatched entries. The
+main executable SHA-256 remained
+`06ef8e02d5e98cab8405502808558d3ef697d68b51436c89c0f12e3df867caf1`,
+and the artifact-audit SHA-256 remained
+`e27875eb215fb7926b551ba30ab428532ceda46938e4e80462855f654d17b8f7`.
+`StartupApproved` was not accessed, other Run values were not enumerated, and
+no Credential Manager, real Provider, API-key or external-network operation
+was exercised. The machine is restored to the default disabled state.
+
+This verification does not cover restart or shutdown startup behavior,
+Windows policy changes, Authenticode, an installer, uninstall cleanup, or
+future Windows versions. Windows remains authoritative and may independently
+disable or delay a registered startup application.

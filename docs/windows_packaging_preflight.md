@@ -1643,3 +1643,35 @@ Win32 error text is persisted. Deterministic tests prove that a disappeared PID
 remains queryable through the retained handle and that no failure path invents
 an exit code. A new user-driven login lifecycle is still required to exercise
 this observer against the immutable standalone artifact.
+
+### Windows login lifecycle checkpoint
+
+The subsequent user-driven logoff and sign-in exercised the immutable
+standalone through the real HKCU Run entry. Windows created one matching Owner
+with the sole `--startup` argument. The pet and tray were visible, the Agent
+window and settings remained hidden, foreground focus was not taken, and no
+duplicate runtime was observed. PID-scoped TCP observation reported zero
+external and zero unattributed endpoints.
+
+Before shutdown, the external supervisor retained a minimal-rights process
+handle whose creation FILETIME matched the audited Owner. One settings action
+disabled autostart and synchronized the settings, tray and pet displays to
+unchecked. The fixed Run value became absent. After tray Exit, the retained
+handle became signaled, the exit FILETIME was nonzero, and
+`GetExitCodeProcess` returned zero before the handle was closed. No forced
+termination occurred, no process remained, and a post-exit registry change
+notification observed no value recreation.
+
+The final distribution remained 70 files and 139,884,776 bytes. Comparison
+against the schema-2 artifact manifest found zero missing, extra,
+size-mismatched or SHA-256-mismatched files. The executable and artifact-audit
+SHA-256 values remained
+`06ef8e02d5e98cab8405502808558d3ef697d68b51436c89c0f12e3df867caf1`
+and `e27875eb215fb7926b551ba30ab428532ceda46938e4e80462855f654d17b8f7`.
+The fixed Run value finished absent. `StartupApproved`, other Run values,
+Credential Manager, real Providers, API keys and external networks were
+outside the exercised path and were not accessed by the validation tooling.
+
+This closes the explicitly authorized Windows sign-in lifecycle gate. It does
+not validate an installer, Authenticode, uninstall cleanup, restart or shutdown
+semantics, or future Windows startup-policy behavior.
