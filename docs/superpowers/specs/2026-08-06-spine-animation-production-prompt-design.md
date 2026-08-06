@@ -22,8 +22,13 @@ independent `breathing` overlay, for 25 animation assets total:
 The accepted Stage 3 project is the only production baseline for the next
 stage:
 
-- project: `D:\Spine\test\stage3_idle_rebuild_20260806_145235\workspace\stage3_idle_working.spine`
+- project: `D:\Spine\test\stage3_idle_20260806_182345\stage3_idle_working.spine`
 - SHA-256: `F3CB4A733199148F5EB852EBC7B788F4F5117C601531120ED5A4793DF5857463`
+
+The project path and SHA-256 above are one atomic evidence pair. They were
+reverified together after the path-recording defect was diagnosed. Never take a
+directory from the clean reconstruction baseline and combine it with this
+working project's filename or hash.
 
 The earlier `EECEDEF...`, clean reconstruction `5BC267...`, and accidental
 save `25E4D16...` are not valid production inputs for the 25-animation build.

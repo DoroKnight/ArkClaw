@@ -10,8 +10,9 @@
 
 ## Global Constraints
 
-- Accepted input project: `D:\Spine\test\stage3_idle_rebuild_20260806_145235\workspace\stage3_idle_working.spine`.
+- Accepted input project: `D:\Spine\test\stage3_idle_20260806_182345\stage3_idle_working.spine`.
 - Accepted input SHA-256: `F3CB4A733199148F5EB852EBC7B788F4F5117C601531120ED5A4793DF5857463`.
+- Treat the accepted path and SHA-256 as one verified evidence pair. Never combine the clean reconstruction directory with the accepted working filename or hash.
 - The `EECEDEF...`, `5BC267...`, and `25E4D16...` files are not production inputs.
 - At the start of Task 1, capture the actual local start time in `yyyyMMdd_HHmmss` format as the immutable run identifier `RUN_ID`.
 - All new files must be created under `D:\Spine\test\stage4_all_animations_RUN_ID`, replacing `RUN_ID` once with the captured value and using that exact directory for the whole run.
@@ -32,7 +33,7 @@
 ### Task 1: Freeze the accepted project and establish the evidence chain
 
 **Files:**
-- Read: `D:\Spine\test\stage3_idle_rebuild_20260806_145235\workspace\stage3_idle_working.spine`
+- Read: `D:\Spine\test\stage3_idle_20260806_182345\stage3_idle_working.spine`
 - Create: `D:\Spine\test\stage4_all_animations_RUN_ID\00_input.spine`
 - Create: `D:\Spine\test\stage4_all_animations_RUN_ID\production_manifest.md`
 
