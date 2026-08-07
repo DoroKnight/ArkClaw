@@ -1,7 +1,7 @@
 # ArkPets Action Sequence Reuse Design
 
 **Date:** 2026-08-07  
-**Status:** Revised after second architecture review; pending document re-review
+**Status:** Closed and frozen for TDD implementation
 **Scope:** Conditional GPL-3.0-only migration and code-level reuse of selected
 ArkPets animation-sequencing mechanisms
 
@@ -123,10 +123,12 @@ class PetActionSequence:
 ```
 
 When no loop is active, the runner advances by `index + 1`. While a loop is
-active, a normal boundary repeats `loop_index`; after a pending graceful exit,
-the same boundary jumps to `loop_exit_index`. Validation rejects an out-of-
-range index, a loop index pointing to a non-looping step, an exit index without
-a loop, or any second source of next-step information.
+active, a normal boundary preserves `loop_index` and the existing player
+epoch; it does not request the same step again. After a pending graceful exit,
+the next matching boundary jumps to `loop_exit_index` and causes exactly one
+new player command for that exit step. Validation rejects an out-of-range
+index, a loop index pointing to a non-looping step, an exit index without a
+loop, or any second source of next-step information.
 
 ### 4.2 `PetSequenceRunner`
 
@@ -166,12 +168,12 @@ class ActionRequest:
 ```
 
 The interruption class remains stable for the lifetime of that request. A
-sequence cannot silently change priority when it advances from `drag_end` to
+sequence cannot silently change priority when it advances from `sleep_end` to
 `return_idle`. `request_token` uniquely identifies one logical request,
-`semantic_epoch` is the state machine's monotonically increasing commit
-counter, and `input_session_token` is stable for one direct manipulation
-gesture. These identities are values supplied by the event boundary, never
-inferred from wall-clock timing.
+`semantic_epoch` is the proposal's state-machine-issued target epoch, and
+`input_session_token` is stable for one direct manipulation gesture. These
+identities are values supplied by the event/state boundary, never inferred
+from wall-clock timing or calculated inside `PetAnimationEngine`.
 
 The previous name `PetActionComposer` may be retained only as a compatibility
 alias during migration. It must not own sequencing, transition, callbacks,
@@ -432,19 +434,57 @@ implicitly allowed by this Track 0 table.
 `PetAnimationEngine.handle_event()` is the sole mutation entry point for an
 event that may affect both semantic state and Track 0 playback.
 
+The state machine owns epoch allocation and returns it as part of the proposal:
+
+```python
+@dataclass(frozen=True, slots=True)
+class ProposedStateTransition:
+    source_state: PetLayeredState
+    target_state: PetLayeredState
+    source_epoch: int
+    target_epoch: int
+    mandatory_for_safety: bool = False
+```
+
+For example, a machine currently at epoch 17 proposes
+`source_epoch=17, target_epoch=18`. The derived
+`ActionRequest.semantic_epoch` is exactly `proposal.target_epoch`, so preflight
+evaluates the identity that would become authoritative. A successful commit
+atomically verifies the current source epoch and installs the target state at
+exactly epoch 18. A rejected normal proposal never makes epoch 18 committed.
+`PetAnimationEngine` must not compute `current_epoch + 1`, reserve an epoch, or
+mutate the state machine's counter itself.
+
 For each event, in one GUI-thread turn:
 
 1. Ask `PetLayeredStateMachine` to validate and produce a proposed semantic
-   transition without exposing a renderer object.
-2. Derive the required logical action request from that proposal.
+   transition, including source/target epochs, without exposing a renderer
+   object.
+2. Derive the required logical action request from that proposal and copy
+   `proposal.target_epoch` into `ActionRequest.semantic_epoch`.
 3. Ask `AnimationRegistry` and `PetTrack0Controller` to preflight the binding,
    interruption class, cancellation mode, and sequence.
-4. If preflight rejects, do not commit the semantic transition unless the
-   state transition is independently mandatory for safety. A normal rejected
-   action leaves both layers unchanged.
-5. If accepted, commit the semantic transition and execute the controller's
-   returned `clear`/`play` directive. Each physical command advances the epoch
-   counter exactly as specified in section 8.
+4. If preflight rejects, a normal transition leaves both layers unchanged. An
+   independently mandatory safety transition takes the fixed containment path:
+
+   1. commit the mandatory proposed semantic state and its target epoch;
+   2. invalidate the old playback generation and attempt an immediate Track 0
+      `clear` (the clear attempt consumes its own invalidation generation);
+   3. reset the runner and set `desired_action=None`;
+   4. if clear succeeds, set `confirmed_epoch=None`, health `DEGRADED`, and
+      return `PLAYBACK_DEGRADED`;
+   5. if clear fails, treat confirmed playback as unknowable, set health
+      `UNKNOWN`, and return `RENDERER_STATE_UNKNOWN`.
+
+   The rejected replacement is never played. For example, if `READING/read`
+   receives a mandatory falling transition but the `FALL_RECOVERY/drag_end`
+   binding fails preflight, semantic state still becomes `FALLING` while old
+   `read` playback is contained by this clear path. The method never returns
+   with healthy `FALLING/read`.
+5. If accepted, commit the semantic transition at `proposal.target_epoch` and
+   execute the controller's returned `clear`/`play` directive. Each physical
+   command advances the controller-owned playback generation counter exactly
+   as specified in section 8; it does not advance the semantic state epoch.
 6. If `AnimationPlayer` raises or rejects the directive, contain the error,
    apply the playback-health transition in section 10, and reset the runner.
    Do not roll back a committed safety or user-interaction state merely to
@@ -465,10 +505,11 @@ Callbacks are queued to the GUI thread. Any field mismatch makes the callback
 stale and side-effect free.
 
 Example: if `drag_end` is playing and the user begins a new drag,
-`USER_INTERACTION` outranks the active action. The same transaction commits
-`dragging`, invalidates and clears the old generation, then plays
-`drag_start`. A delayed `drag_end` completion is ignored, so the system cannot
-settle into `idle` while displaying `drag_loop`.
+the new input-session token activates the equal-class `USER_INTERACTION`
+replacement rule. The same transaction commits `dragging`, invalidates and
+clears the old generation, then plays `drag_start`. A delayed `drag_end`
+completion is ignored, so the system cannot settle into `idle` while
+displaying `drag_loop`.
 
 ## 7. Interruption and Cancellation Model
 
@@ -506,7 +547,7 @@ The arbiter uses this deterministic algorithm in order:
 | --- | --- |
 | `SYSTEM_SHUTDOWN` | `ACCEPTED` with no controller directive; do not issue a second clear |
 | `MOTION_SAFETY` | replace only when the proposed semantic state epoch differs or the active safety action is stale/incompatible; otherwise duplicate |
-| `USER_INTERACTION` | replace when the input-session token differs; same token and sequence is duplicate |
+| `USER_INTERACTION` | same input session plus same sequence is `REJECTED_DUPLICATE`; same input session plus the approved `DRAG_HOLD -> DRAG_RELEASE` phase transition is `REPLACE`; a different input session is `REPLACE`; every other same-session transition is rejected |
 | `STRICT_ACTION` | reject; validation requires `protected=True` |
 | `NORMAL_ACTION` | replace a different sequence only when `active.protected=False`; otherwise reject |
 | `IDLE` | reject as duplicate; idle never replaces another equal idle request |
@@ -522,6 +563,13 @@ or `STATE_ACTION_COMPATIBILITY` rejects it for the proposed state. No heuristic
 age or elapsed-time comparison participates in arbitration. Every matrix result
 contains both an outcome and either one exact cancellation mode or an explicit
 no-controller-directive value.
+
+`DRAG_HOLD` and `DRAG_RELEASE` carry the same input-session token for one
+press-drag-release gesture. Release is the sole approved same-session phase
+replacement. A later press creates a new token, so a new `DRAG_HOLD` replaces
+an older session's still-playing `DRAG_RELEASE`. `MOTION_SAFETY` remains
+reserved for actual fall recovery, collision/workspace recovery, and landing;
+it does not classify the user-release animation.
 
 ### 7.2 Cancellation reasons
 
@@ -634,7 +682,8 @@ request never retains priority while idle.
 | `CONFUSED` | 0 | `confused -> return_idle` | terminal `IDLE` | `STRICT_ACTION`, protected |
 | `ANGRY` | 0 | `angry -> return_idle` | terminal `IDLE` | `STRICT_ACTION`, protected |
 | `DRAG_HOLD` | 0 | `drag_start -> drag_loop*` | loop 1; replace-only; hold | `USER_INTERACTION`, unprotected |
-| `DRAG_RELEASE` | 0 | `drag_end` | complete then hold until physical landing | `MOTION_SAFETY`, unprotected |
+| `DRAG_RELEASE` | 0 | `drag_end` | complete then hold until physical landing | `USER_INTERACTION`, unprotected |
+| `FALL_RECOVERY` | 0 | `drag_end` | complete then hold until physical landing | `MOTION_SAFETY`, unprotected |
 | `LANDING` | 0 | `landing -> return_idle` | terminal `IDLE` | `MOTION_SAFETY`, unprotected |
 
 The drag lifecycle is deliberately state-gated rather than a blind playback
@@ -660,18 +709,29 @@ validation proves that every one of the 25 `PetActionName` values occurs in at
 least one entry, that Track 1/2 names never occur on Track 0, and that every
 Track 0 action is allowed by at least one compatibility-table row.
 
+`DRAG_RELEASE` is emitted only for the release phase of a direct manipulation
+session. An independently detected fall uses `FALL_RECOVERY`; collision or
+workspace recovery selects the compatible safety sequence for its proposed
+motion state. Thus identical logical `drag_end` playback may be reached through
+different sequence-level policies without moving interruption metadata onto
+the step.
+
 ### 8.3 Advancement rules
 
 1. A one-shot advances only on a matching completion event.
 2. A loop never exits because of a guessed normal-playback timer.
-3. A graceful exit records a pending exit and advances at the next matching
+3. A loop-boundary callback with no pending graceful exit is observational:
+   it issues no player command, does not advance generation, preserves the
+   current playback token and confirmed epoch, and leaves the current step
+   index unchanged.
+4. A graceful exit records a pending exit and advances at the next matching
    loop-boundary callback.
-4. A replace-only loop such as `DRAG_HOLD` rejects graceful exit and requires
+5. A replace-only loop such as `DRAG_HOLD` rejects graceful exit and requires
    an accepted replacement request.
-5. A duplicate completion advances at most once.
-6. A stale callback is ignored even when its action name matches.
-7. A missing callback is handled only by the failure policy in section 10.
-8. An invalid sequence is rejected before any state or player mutation.
+6. A duplicate completion advances at most once.
+7. A stale callback is ignored even when its action name matches.
+8. A missing callback is handled only by the failure policy in section 10.
+9. An invalid sequence is rejected before any state or player mutation.
 
 ### 8.4 Generation means one physical playback epoch
 
@@ -694,7 +754,10 @@ Example:
 play sleep_start -> generation 10
 complete          -> matches generation 10
 play sleep_loop  -> generation 11
-loop boundary     -> matches generation 11
+loop boundary     -> matches generation 11; no player command
+loop boundary     -> matches generation 11; no player command
+graceful exit     -> pending; generation and token unchanged
+loop boundary     -> matches generation 11 and advances once
 play sleep_end   -> generation 12
 ```
 
@@ -756,6 +819,10 @@ State transitions are exact:
 4. Failed normal `clear`: runner resets, desired becomes `None`, health becomes
    `UNKNOWN` regardless of the previously confirmed epoch.
 5. A callback timeout follows the same containment path as failed `play`.
+6. A mandatory safety transition whose replacement fails preflight follows the
+   section 6.3 containment path: the semantic transition remains committed,
+   desired playback is `None`, and clear success/failure yields `DEGRADED` or
+   `UNKNOWN` respectively.
 
 There is no automatic `FALLBACK_IDLE` player command. A second speculative
 play could fail again and would violate the semantic compatibility table for
@@ -995,16 +1062,24 @@ Tests verify:
    side effects defined in section 7;
 10. every `play` and every `clear` attempt consumes a new generation, while a
     runner-only reset does not;
-11. callbacks advance only when generation, logical name, physical name,
+11. `loop_boundary_without_pending_exit` leaves player `play()` call count,
+    generation, playback token, confirmed epoch, and runner index unchanged;
+12. the first matching boundary after graceful exit issues exactly one play
+    for the declared exit step and advances generation exactly once;
+13. callbacks advance only when generation, logical name, physical name,
     token, and expected step all match;
-12. the four-capability gate is all-or-nothing: every missing-capability
+14. the four-capability gate is all-or-nothing: every missing-capability
     permutation disables production sequencing;
-13. `PlaceholderAnimationPlayer` always uses `LEGACY_DIRECT`, never starts a
+15. `PlaceholderAnimationPlayer` always uses `LEGACY_DIRECT`, never starts a
     production sequence, and never fabricates completion with a timer;
-14. invalid sequences are rejected before state or player mutation;
-15. `FakeClock` verifies the exact watchdog deadline formula, lower and upper
+16. invalid sequences are rejected before state or player mutation;
+17. `FakeClock` verifies the exact watchdog deadline formula, lower and upper
     tolerance clamps, positive-speed validation, and one-shot timeout behavior
-    without sleeping.
+    without sleeping;
+18. proposal epoch tests start from committed epoch 17, verify that the state
+    machine supplies target epoch 18, that `ActionRequest` copies 18, that an
+    accepted or mandatory transition commits exactly 18, and that a rejected
+    normal proposal leaves committed epoch 17 without engine-side increment.
 
 The compatibility mapping receives an exhaustive table test. For every valid
 combination of lifecycle, motion, activity, and overlay behaviors, the test
@@ -1020,6 +1095,15 @@ epoch). Every cell asserts the applicable fixed outcome such as `ACCEPTED`,
 or explicit no-controller-directive result; no priority pair is left to an
 example-only test.
 
+Named drag-arbitration cases pin the matrix to lifecycle semantics:
+
+- session A `DRAG_HOLD` requested again as session A `DRAG_HOLD` is
+  `REJECTED_DUPLICATE`;
+- session A `DRAG_HOLD -> DRAG_RELEASE` is the approved phase `REPLACE`;
+- session B `DRAG_HOLD` replaces session A `DRAG_RELEASE`;
+- `FALL_RECOVERY` and `LANDING` retain `MOTION_SAFETY` rank and outrank any
+  active user-interaction request.
+
 ### 13.2 Deterministic interleaving tests
 
 Although mutation is GUI-thread-owned, logical concurrency is tested by
@@ -1031,7 +1115,11 @@ controlling event order:
 4. duplicate completion before and after replacement;
 5. callback with correct name but stale generation;
 6. callback with correct generation but wrong physical binding;
-7. graceful loop exit racing with a higher-priority replacement.
+7. graceful loop exit racing with a higher-priority replacement;
+8. repeated loop boundaries before graceful exit with stable generation,
+   player token, confirmed epoch, runner index, and `play()` call count;
+9. session A release callback arriving after session B has replaced it with a
+   new `DRAG_HOLD`.
 
 Every interleaving asserts both runner state and semantic-state/action
 compatibility. In particular, `dragging + sleep_loop`, `sleeping + drag_loop`,
@@ -1042,6 +1130,9 @@ and inactive lifecycle plus `idle` are forbidden combinations.
 A fake player exercises:
 
 - exception or rejection from `play`;
+- mandatory `READING -> FALLING` with `FALL_RECOVERY/drag_end` preflight
+  rejection and a successful containment clear;
+- the same mandatory transition with a failed containment clear;
 - successful containment `clear` after failed `play`;
 - failed containment `clear` after failed `play`;
 - exception from a normal `clear`;
@@ -1056,6 +1147,11 @@ uncaught Qt exceptions, and leave the Agent runtime untouched. Assertions also
 distinguish desired playback from confirmed playback: successful containment
 ends `DEGRADED` with no confirmed epoch, while a failed clear ends `UNKNOWN`
 without claiming that the renderer is idle or empty.
+
+The two mandatory-transition tests additionally assert that the state epoch is
+committed to `FALLING`, `read` is no longer desired, the rejected `drag_end` is
+never played, the old generation is invalidated, the runner is empty, and the
+final state/action/health tuple passes the compatibility invariant.
 
 ### 13.4 Integration and Agent-isolation regression tests
 
@@ -1103,3 +1199,8 @@ It does not mean that Spine Runtime export, Track composition, programmatic
 Spine playback, event callbacks, remaining Spine animation production, or
 Agent program integration has been completed. Those activities remain paused
 pending their own approved execution steps.
+
+After this closure, implementation proceeds test-first against these
+invariants. A failing implementation test is corrected in implementation by
+default; the architecture/specification is reopened only when evidence shows
+that an invariant itself is contradictory or impossible to satisfy.
