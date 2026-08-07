@@ -1,7 +1,7 @@
 # ArkPets Action Sequence Reuse Design
 
 **Date:** 2026-08-07  
-**Status:** Revised after architecture review; pending document re-review
+**Status:** Revised after second architecture review; pending document re-review
 **Scope:** Conditional GPL-3.0-only migration and code-level reuse of selected
 ArkPets animation-sequencing mechanisms
 
@@ -67,13 +67,15 @@ The following invariants are mandatory:
    that authorized it and with a monotonically increasing playback
    `generation`.
 5. A callback may advance a sequence only when its generation, logical action,
-   physical animation name, and expected step all match the active playback.
+   physical animation name, player token, and expected step all match the
+   active playback.
 6. After every handled event, semantic state and active logical animation must
-   satisfy an explicit compatibility table. For example, `dragging` may be
-   paired only with `drag_start` or `drag_loop`, never `sleep_loop`.
+   satisfy the executable compatibility table in section 6. For example,
+   `dragging` may be paired only with `drag_start` or `drag_loop`, never
+   `sleep_loop`.
 7. If playback fails, semantic state remains authoritative. Playback is
-   cleared and reset to a state-derived safe visual fallback; Agent state is
-   never changed as recovery.
+   cleared and marked degraded or unknown; Agent state is never changed as
+   recovery.
 8. All mutable state, arbitration, and callback handling occurs on the Qt GUI
    thread. A renderer callback arriving on another thread is queued to that
    thread before it is inspected.
@@ -99,9 +101,32 @@ PetSequenceRunner <- PetActionArbiter
 
 ### 4.1 `PetActionSequence`
 
-An immutable description only. It contains ordered `PetActionStep` values and
-has no queue, current index, completion handler, renderer, state machine, or
-interruption policy.
+The only sequencing truth. It contains an ordered tuple of `PetActionStep`
+values plus sequence-level loop and terminal metadata. A step never contains
+a `next` pointer.
+
+```python
+@dataclass(frozen=True, slots=True)
+class PetActionStep:
+    action: PetActionName
+    loop: bool
+    speed: float = 1.0
+    mix_seconds: float | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class PetActionSequence:
+    steps: tuple[PetActionStep, ...]
+    loop_index: int | None = None
+    loop_exit_index: int | None = None
+    terminal: SequenceTerminal = SequenceTerminal.COMPLETE
+```
+
+When no loop is active, the runner advances by `index + 1`. While a loop is
+active, a normal boundary repeats `loop_index`; after a pending graceful exit,
+the same boundary jumps to `loop_exit_index`. Validation rejects an out-of-
+range index, a loop index pointing to a non-looping step, an exit index without
+a loop, or any second source of next-step information.
 
 ### 4.2 `PetSequenceRunner`
 
@@ -121,11 +146,32 @@ the renderer.
 
 Owns only request acceptance:
 
-- compare the incoming and active interruption classes;
-- reject a duplicate request;
-- reject an equal- or lower-priority request when the active request is
-  protected;
+- compare the incoming and active `ActionRequest` policies using the exact
+  algorithm in section 7;
+- reject duplicate or lower-priority requests;
+- apply the explicit same-class replacement matrix;
 - select the permitted cancellation mode for an accepted replacement.
+
+Interruption metadata belongs to the request, not to individual steps:
+
+```python
+@dataclass(frozen=True, slots=True)
+class ActionRequest:
+    sequence_name: SequenceName
+    interruption_class: InterruptClass
+    protected: bool
+    request_token: object
+    semantic_epoch: int
+    input_session_token: object | None = None
+```
+
+The interruption class remains stable for the lifetime of that request. A
+sequence cannot silently change priority when it advances from `drag_end` to
+`return_idle`. `request_token` uniquely identifies one logical request,
+`semantic_epoch` is the state machine's monotonically increasing commit
+counter, and `input_session_token` is stable for one direct manipulation
+gesture. These identities are values supplied by the event boundary, never
+inferred from wall-clock timing.
 
 The previous name `PetActionComposer` may be retained only as a compatibility
 alias during migration. It must not own sequencing, transition, callbacks,
@@ -143,13 +189,36 @@ A narrow protocol rather than a Spine-specific implementation:
 
 ```python
 class AnimationPlayer(Protocol):
+    @property
+    def capabilities(self) -> AnimationPlayerCapabilities: ...
     def play(self, request: PlaybackRequest) -> PlaybackToken: ...
     def clear(self, track: int, mix_seconds: float) -> None: ...
 ```
 
-The current placeholder renderer may implement a symbolic adapter that
-preserves existing behavior. A future Spine adapter may implement the same
-protocol without changing state, arbitration, or sequence logic.
+Capabilities are explicit:
+
+```python
+@dataclass(frozen=True, slots=True)
+class AnimationPlayerCapabilities:
+    completion_callbacks: bool
+    loop_boundary_callbacks: bool
+    duration_metadata: bool
+    liveness_reporting: bool
+```
+
+Completion-driven production sequencing is enabled only when all four
+capabilities are true. The adapters are deliberately different:
+
+- `FakeAnimationPlayer` reports all capabilities and drives deterministic
+  runner/controller tests.
+- `PlaceholderAnimationPlayer` reports no completion or loop-boundary
+  callbacks and stays on the existing legacy direct/symbolic render path. It
+  does not start production sequences.
+- a future `SpineAnimationPlayer` may enable production sequencing only after
+  all four capabilities have been verified.
+
+The placeholder must never synthesize completion with `QTimer`,
+`singleShot`, or a guessed duration merely to advance a sequence.
 
 ### 4.6 Dependency and Agent Isolation
 
@@ -241,6 +310,125 @@ state and sequencing code.
 
 ## 6. State-to-Animation Transaction Protocol
 
+### 6.1 Minimal semantic-state extension
+
+The current state model can distinguish idle, walking, dragging, falling,
+landing, thinking, and reminding, but cannot represent sitting, sleeping,
+running, reading, typing, or the requested performances. Treating all of those
+as `motion=IDLE` would make the state machine cease to be semantic authority.
+
+The implementation therefore makes the smallest explicit extension while
+retaining `PetLayeredStateMachine`, `PetMotionModel`, and
+`PetAnimationEngine`:
+
+```python
+class PetMotionState(Enum):
+    IDLE = "idle"
+    WALKING_LEFT = "walking_left"
+    WALKING_RIGHT = "walking_right"
+    RUNNING_LEFT = "running_left"
+    RUNNING_RIGHT = "running_right"
+    DRAGGING = "dragging"
+    FALLING = "falling"
+    LANDING = "landing"
+
+
+class PetActivityState(Enum):
+    NONE = "none"
+    SITTING = "sitting"
+    SLEEPING = "sleeping"
+    WAVING = "waving"
+    HAPPY = "happy"
+    THINKING = "thinking"
+    READING = "reading"
+    TYPING = "typing"
+    REMINDING = "reminding"
+    CONFUSED = "confused"
+    ANGRY = "angry"
+```
+
+`PetLayeredState` gains one `activity` field. Activity is exclusive, is
+permitted only while lifecycle is active and motion is idle, and is distinct
+from Track 1/2 overlays. Existing public thinking/reminding request methods are
+preserved while their semantic storage migrates from `PetBehaviorState` to
+`PetActivityState`. Existing behavior properties may expose a temporary
+compatibility projection so current callers and tests are migrated without an
+unrelated API break.
+
+`PetBehaviorState` continues to describe overlay/derived visual facts such as
+breathing and blinking. `DRAG_STRUGGLE` may remain as a compatibility-derived
+view of `motion=DRAGGING`; it is not a second Track 0 authority.
+
+### 6.2 Executable compatibility table
+
+The following is the complete Track 0 table for healthy,
+completion-driven playback. `ANY` is used only for the two inactive lifecycle
+rows. All omitted combinations are invalid and must be rejected by
+`validate_layered_state()` before animation arbitration.
+
+| Lifecycle | Motion | Activity | Allowed Track 0 logical actions |
+| --- | --- | --- | --- |
+| `PAUSED` | `ANY` | `ANY` | none; Track 0 must be cleared |
+| `CLOSING` | `ANY` | `ANY` | none; Track 0 must be cleared |
+| `ACTIVE` | `IDLE` | `NONE` | `idle`, `return_idle` |
+| `ACTIVE` | `WALKING_LEFT` | `NONE` | `walk_left` |
+| `ACTIVE` | `WALKING_RIGHT` | `NONE` | `walk_right` |
+| `ACTIVE` | `RUNNING_LEFT` | `NONE` | `run_left` |
+| `ACTIVE` | `RUNNING_RIGHT` | `NONE` | `run_right` |
+| `ACTIVE` | `DRAGGING` | `NONE` | `drag_start`, `drag_loop` |
+| `ACTIVE` | `FALLING` | `NONE` | `drag_end` |
+| `ACTIVE` | `LANDING` | `NONE` | `landing` |
+| `ACTIVE` | `IDLE` | `SITTING` | `sit_down`, `sit_idle` |
+| `ACTIVE` | `IDLE` | `SLEEPING` | `sleep_start`, `sleep_loop`, `sleep_end` |
+| `ACTIVE` | `IDLE` | `WAVING` | `wave` |
+| `ACTIVE` | `IDLE` | `HAPPY` | `happy` |
+| `ACTIVE` | `IDLE` | `THINKING` | `think` |
+| `ACTIVE` | `IDLE` | `READING` | `read` |
+| `ACTIVE` | `IDLE` | `TYPING` | `type` |
+| `ACTIVE` | `IDLE` | `REMINDING` | `remind` |
+| `ACTIVE` | `IDLE` | `CONFUSED` | `confused` |
+| `ACTIVE` | `IDLE` | `ANGRY` | `angry` |
+
+This table is implemented once, not duplicated in conditionals:
+
+```python
+SemanticTrack0Key = tuple[
+    PetLifecycleState,
+    PetMotionState,
+    PetActivityState,
+]
+
+STATE_ACTION_COMPATIBILITY: Mapping[
+    SemanticTrack0Key,
+    frozenset[PetActionName],
+] = MappingProxyType({...})
+
+def assert_animation_compatible(
+    state: PetLayeredState,
+    action: PetActionName | None,
+    health: PlaybackHealth,
+) -> None: ...
+```
+
+For `HEALTHY` production playback, an active lifecycle requires the desired
+Track 0 action to be in the mapped set, and an inactive lifecycle requires it
+to be `None`. For `DEGRADED` or `UNKNOWN` playback, desired action `None` is
+permitted for any otherwise valid semantic state; the program must not claim
+that an unconfirmed renderer action is compatible.
+
+Before playing `return_idle`, the same transaction first commits the semantic
+destination: activity becomes `NONE`, or landing becomes motion `IDLE`. This
+is why `return_idle` belongs only to the `ACTIVE/IDLE/NONE` row. During
+`FALLING`, completed `drag_end` may hold its final pose until the physical
+landing event replaces it; animation completion never invents a landing state.
+
+Track 1/2 use a separate `OVERLAY_COMPATIBILITY` mapping that initially
+preserves existing breathing/blinking state validation. Expanding an overlay
+to a new activity requires the later Spine property-conflict audit; it is not
+implicitly allowed by this Track 0 table.
+
+### 6.3 Atomic event protocol
+
 `PetAnimationEngine.handle_event()` is the sole mutation entry point for an
 event that may affect both semantic state and Track 0 playback.
 
@@ -254,12 +442,13 @@ For each event, in one GUI-thread turn:
 4. If preflight rejects, do not commit the semantic transition unless the
    state transition is independently mandatory for safety. A normal rejected
    action leaves both layers unchanged.
-5. If accepted, commit the semantic transition, invalidate the prior playback
-   generation, and execute the returned `clear`/`play` directive.
+5. If accepted, commit the semantic transition and execute the controller's
+   returned `clear`/`play` directive. Each physical command advances the epoch
+   counter exactly as specified in section 8.
 6. If `AnimationPlayer` raises or rejects the directive, contain the error,
-   attempt an immediate Track 0 clear, reset the runner, and select a
-   state-derived safe visual intent. Do not roll back a committed safety or
-   user-interaction state merely to preserve an old animation.
+   apply the playback-health transition in section 10, and reset the runner.
+   Do not roll back a committed safety or user-interaction state merely to
+   preserve an old animation.
 7. Assert the state/action compatibility invariant before returning a fixed
    result code.
 
@@ -297,11 +486,42 @@ explicit class and total order:
 | 100 | `NORMAL_ACTION` | think, read, type, remind, ordinary transitions |
 | 0 | `IDLE` | idle maintenance |
 
-A higher class may interrupt a lower class. Equal classes are rejected while
-the active action is protected unless the request is an explicitly permitted
-continuation of that same sequence. Consequently, a strict `wave` rejects
-`happy` and normal actions, but never blocks shutdown, falling recovery, or a
-new direct drag.
+The arbiter uses this deterministic algorithm in order:
+
+1. With no active request, accept the incoming request.
+2. `SYSTEM_SHUTDOWN` always wins. If shutdown is already active, return
+   `ACCEPTED` with no controller directive; otherwise accept it with
+   `IMMEDIATE_CLEAR`.
+3. If `incoming.rank > active.rank`, accept with the cancellation mode assigned
+   to the incoming event.
+4. If `incoming.rank < active.rank`, return `REJECTED_PRIORITY` regardless of
+   whether the active request is protected.
+5. If ranks are equal and the incoming request is the runner-authorized
+   continuation of the active sequence, accept without replacement.
+6. If ranks are equal and the request is the same sequence and request token,
+   return `REJECTED_DUPLICATE`.
+7. Otherwise apply the following exhaustive same-class matrix.
+
+| Equal class | Replacement rule |
+| --- | --- |
+| `SYSTEM_SHUTDOWN` | `ACCEPTED` with no controller directive; do not issue a second clear |
+| `MOTION_SAFETY` | replace only when the proposed semantic state epoch differs or the active safety action is stale/incompatible; otherwise duplicate |
+| `USER_INTERACTION` | replace when the input-session token differs; same token and sequence is duplicate |
+| `STRICT_ACTION` | reject; validation requires `protected=True` |
+| `NORMAL_ACTION` | replace a different sequence only when `active.protected=False`; otherwise reject |
+| `IDLE` | reject as duplicate; idle never replaces another equal idle request |
+
+`STRICT_ACTION` requests must be protected, while other classes default to
+unprotected and may be protected only by a separately documented catalog rule.
+Consequently, a strict `wave` rejects `happy` and normal actions, but never
+blocks shutdown, motion recovery, or a new direct drag.
+
+For this matrix, a safety action is `stale/incompatible` exactly when playback
+health is not `HEALTHY`, the confirmed epoch does not match the active request,
+or `STATE_ACTION_COMPATIBILITY` rejects it for the proposed state. No heuristic
+age or elapsed-time comparison participates in arbitration. Every matrix result
+contains both an outcome and either one exact cancellation mode or an explicit
+no-controller-directive value.
 
 ### 7.2 Cancellation reasons
 
@@ -322,7 +542,6 @@ CALLBACK_TIMEOUT
 GRACEFUL_EXIT
 IMMEDIATE_CLEAR
 REPLACE
-RESET_TO_IDLE
 ```
 
 Their semantics are exact:
@@ -335,9 +554,6 @@ Their semantics are exact:
 - `REPLACE`: invalidate and clear the old generation, start the approved
   replacement in the same controller transaction, and make late callbacks
   stale.
-- `RESET_TO_IDLE`: invalidate and clear, reset runner state, then request
-  logical `idle` only when lifecycle state is active and the registry/player
-  are healthy enough to accept it.
 
 The public operations are distinct:
 
@@ -348,6 +564,11 @@ The public operations are distinct:
 - `PetSequenceRunner.reset()` is internal state cleanup only and has no
   renderer side effect.
 
+Neither `clear()` nor `reset()` automatically plays `idle`. A healthy normal
+transition reaches idle only through the sequence catalog. Failure recovery
+uses the health model in section 10 and does not create a second speculative
+player command.
+
 The required mapping is:
 
 | Situation | Mode | Follow-up |
@@ -357,43 +578,129 @@ The required mapping is:
 | new drag | `REPLACE` | `drag_start` |
 | fall/collision recovery | `REPLACE` | state-derived safety action |
 | normal request to leave a loop | `GRACEFUL_EXIT` | declared end chain |
-| renderer failure or callback timeout | `RESET_TO_IDLE` | only if lifecycle is active |
+| renderer failure or callback timeout | `IMMEDIATE_CLEAR` | reset runner and mark degraded/unknown; no automatic idle |
 
 ## 8. Sequence Semantics
 
-`PetActionStep` is immutable and contains only:
+### 8.1 One sequencing truth
 
-- logical `PetActionName`;
-- loop intent;
-- interruption class/protection metadata;
-- declared next-step relation;
-- non-sensitive playback metadata such as speed and mix suggestion when
-  explicitly supported.
+`PetActionStep` contains only logical playback data: action, loop flag, speed,
+and optional mix suggestion. It contains no next pointer, interruption policy,
+physical resource name, renderer, callback, state machine, position, Agent
+content, or mutable queue.
 
-It contains no physical resource name, renderer, callback, state machine,
-position, Agent content, or mutable queue.
+The ordered `PetActionSequence.steps` tuple is the only source of advancement.
+The runner uses its index and the sequence-level `loop_index` /
+`loop_exit_index`. `then()` creates a new ordered tuple; it does not link
+nodes. Catalog validation rejects any model or serialized input that attempts
+to provide a per-step next relation.
 
-The approved full-body lifecycle chains are:
+At a boundary where the next step requires another semantic state, the runner
+only proposes the next logical action. `PetAnimationEngine` performs the
+section 6 state transaction before the controller plays it. For example,
+`wave` completion proposes `return_idle`; the engine first changes activity
+from `WAVING` to `NONE`, preflights the compatibility table, and then plays
+`return_idle`.
+
+### 8.2 Complete sequence catalog
+
+`SEQUENCE_CATALOG: Mapping[SequenceName, SequenceCatalogEntry]` is the single
+source for all standard sequences and request policies. No request method may
+construct an ad-hoc chain in `if`/`else` logic.
+
+Notation: `*` marks a loop step; `exit=N` is the index selected at the next
+matching loop boundary after graceful exit; `hold` keeps the completed final
+pose until an external state event replaces it. Reaching terminal `idle`
+starts the baseline `IDLE` request with class `IDLE`, so an old strict or normal
+request never retains priority while idle.
+
+| Sequence | Track | Ordered steps | Loop/exit/terminal | Request policy |
+| --- | ---: | --- | --- | --- |
+| `IDLE` | 0 | `idle*` | loop 0; hold | `IDLE`, unprotected |
+| `BREATHING` | 1 | `breathing*` | loop 0; hold | overlay scheduler |
+| `BLINK` | 2 | `blink` | complete | overlay scheduler |
+| `WALK_LEFT` | 0 | `walk_left* -> return_idle` | loop 0; exit=1; terminal `IDLE` | `NORMAL_ACTION`, unprotected |
+| `WALK_RIGHT` | 0 | `walk_right* -> return_idle` | loop 0; exit=1; terminal `IDLE` | `NORMAL_ACTION`, unprotected |
+| `RUN_LEFT` | 0 | `run_left* -> return_idle` | loop 0; exit=1; terminal `IDLE` | `NORMAL_ACTION`, unprotected |
+| `RUN_RIGHT` | 0 | `run_right* -> return_idle` | loop 0; exit=1; terminal `IDLE` | `NORMAL_ACTION`, unprotected |
+| `SIT` | 0 | `sit_down -> sit_idle* -> return_idle` | loop 1; exit=2; terminal `IDLE` | `NORMAL_ACTION`, unprotected |
+| `SLEEP` | 0 | `sleep_start -> sleep_loop* -> sleep_end -> return_idle` | loop 1; exit=2; terminal `IDLE` | `NORMAL_ACTION`, unprotected |
+| `WAVE` | 0 | `wave -> return_idle` | terminal `IDLE` | `STRICT_ACTION`, protected |
+| `HAPPY` | 0 | `happy -> return_idle` | terminal `IDLE` | `STRICT_ACTION`, protected |
+| `THINK` | 0 | `think -> return_idle` | terminal `IDLE` | `NORMAL_ACTION`, unprotected |
+| `READ` | 0 | `read* -> return_idle` | loop 0; exit=1; terminal `IDLE` | `NORMAL_ACTION`, unprotected |
+| `TYPE` | 0 | `type* -> return_idle` | loop 0; exit=1; terminal `IDLE` | `NORMAL_ACTION`, unprotected |
+| `REMIND` | 0 | `remind -> return_idle` | terminal `IDLE` | `NORMAL_ACTION`, unprotected |
+| `CONFUSED` | 0 | `confused -> return_idle` | terminal `IDLE` | `STRICT_ACTION`, protected |
+| `ANGRY` | 0 | `angry -> return_idle` | terminal `IDLE` | `STRICT_ACTION`, protected |
+| `DRAG_HOLD` | 0 | `drag_start -> drag_loop*` | loop 1; replace-only; hold | `USER_INTERACTION`, unprotected |
+| `DRAG_RELEASE` | 0 | `drag_end` | complete then hold until physical landing | `MOTION_SAFETY`, unprotected |
+| `LANDING` | 0 | `landing -> return_idle` | terminal `IDLE` | `MOTION_SAFETY`, unprotected |
+
+The drag lifecycle is deliberately state-gated rather than a blind playback
+chain:
 
 ```text
-sit_down -> sit_idle -> return_idle -> idle
-sleep_start -> sleep_loop -> sleep_end -> return_idle -> idle
-drag_start -> drag_loop -> drag_end -> landing -> return_idle -> idle
+DRAG_HOLD
+  drag_start -> drag_loop
+       |
+       | user release commits FALLING
+       v
+DRAG_RELEASE
+  drag_end (completed pose may hold)
+       |
+       | PetMotionModel reports physical landing
+       v
+LANDING
+  landing -> return_idle -> IDLE
 ```
 
-The sequencing rules are:
+Animation completion cannot invent the physical landing event. Catalog
+validation proves that every one of the 25 `PetActionName` values occurs in at
+least one entry, that Track 1/2 names never occur on Track 0, and that every
+Track 0 action is allowed by at least one compatibility-table row.
 
-1. A start step is one-shot and advances on a matching completion event.
+### 8.3 Advancement rules
+
+1. A one-shot advances only on a matching completion event.
 2. A loop never exits because of a guessed normal-playback timer.
-3. A graceful exit request records a pending exit.
-4. The next matching loop boundary advances to the declared end step.
-5. End advances to `return_idle`, then to `idle`.
-6. A duplicate completion advances at most once.
-7. A stale-generation callback is ignored even if its animation name matches.
-8. A missing callback is handled only by the failure watchdog in section 10,
-   not by ordinary sequence timing.
-9. An invalid sequence is rejected during preflight and cannot partially
-   replace the active state or playback.
+3. A graceful exit records a pending exit and advances at the next matching
+   loop-boundary callback.
+4. A replace-only loop such as `DRAG_HOLD` rejects graceful exit and requires
+   an accepted replacement request.
+5. A duplicate completion advances at most once.
+6. A stale callback is ignored even when its action name matches.
+7. A missing callback is handled only by the failure policy in section 10.
+8. An invalid sequence is rejected before any state or player mutation.
+
+### 8.4 Generation means one physical playback epoch
+
+`generation` identifies exactly one concrete Track 0 player command epoch,
+not a whole sequence. The controller owns a monotonically increasing Python
+integer counter.
+
+- Every `play` attempt allocates a fresh generation before invoking the
+  player, including a normal step advance and an explicit post-recovery play.
+- Every `clear` attempt allocates a fresh invalidation generation before
+  invoking the player, even if clear later fails.
+- `replace` therefore invalidates/clears the old epoch and allocates another
+  generation for the replacement play.
+- Runner `reset()` does not allocate a generation because it has no player
+  side effect; it retains no active generation afterward.
+
+Example:
+
+```text
+play sleep_start -> generation 10
+complete          -> matches generation 10
+play sleep_loop  -> generation 11
+loop boundary     -> matches generation 11
+play sleep_end   -> generation 12
+```
+
+Callbacks carry generation, logical action, physical name, and playback token.
+All four must match the current confirmed epoch. A callback from any earlier
+epoch is stale and side-effect free.
 
 ## 9. Track Ownership
 
@@ -413,15 +720,96 @@ but does not claim actual runtime Track composition.
 
 ## 10. Failure Recovery and Diagnostics
 
-Normal advancement remains completion-driven. A watchdog exists only to
-contain a failed player/callback path. It uses duration and capability metadata
-reported by the active player/registry plus a bounded tolerance; it must not
-guess an animation duration from a hard-coded timer.
+### 10.1 Desired intent, confirmed playback, and health
 
-For a one-shot, absence of the expected callback by the verified deadline
-produces `CALLBACK_TIMEOUT`. For a loop, the watchdog applies only after a
-graceful exit is pending or when the player reports lost playback liveness.
-Recovery invalidates the generation before any fallback request.
+The controller never treats a command it attempted as renderer truth. It keeps
+three distinct facts:
+
+```python
+class PlaybackHealth(Enum):
+    HEALTHY = "healthy"
+    DEGRADED = "degraded"
+    UNKNOWN = "unknown"
+
+
+@dataclass(frozen=True, slots=True)
+class Track0PlaybackState:
+    desired_action: PetActionName | None
+    confirmed_epoch: ConfirmedPlaybackEpoch | None
+    health: PlaybackHealth
+```
+
+- `desired_action` is the application intent.
+- `confirmed_epoch` exists only after `play()` returns a token for the current
+  generation, or is `None` after a confirmed successful clear.
+- `UNKNOWN` means the adapter failed to establish what remains visible. The
+  application must not relabel the renderer as idle or cleared.
+
+State transitions are exact:
+
+1. Successful `play`: desired action and confirmed epoch match; health is
+   `HEALTHY`.
+2. Failed `play`, then successful containment `clear`: runner resets, desired
+   and confirmed playback become `None`, health becomes `DEGRADED`.
+3. Failed `play`, then failed containment `clear`: runner resets, desired
+   becomes `None`, confirmed playback is unknowable, health becomes `UNKNOWN`.
+4. Failed normal `clear`: runner resets, desired becomes `None`, health becomes
+   `UNKNOWN` regardless of the previously confirmed epoch.
+5. A callback timeout follows the same containment path as failed `play`.
+
+There is no automatic `FALLBACK_IDLE` player command. A second speculative
+play could fail again and would violate the semantic compatibility table for
+states such as dragging. The semantic state is retained. The existing legacy
+placeholder may continue to derive a renderer-neutral safe visual through
+`action_request_for_frame(state)`; that is not reported as confirmed Spine
+Track 0 playback.
+
+Recovery from `DEGRADED` or `UNKNOWN` requires an explicit adapter re-probe or
+renderer reinitialization followed by capability validation and a new
+state-derived request. It is not hidden inside `clear()` or `reset()`.
+
+### 10.2 Exact watchdog policy
+
+Normal advancement remains completion-driven. The watchdog only detects a
+failed callback/player path and is available only when production sequencing
+passed the capability gate.
+
+```python
+@dataclass(frozen=True, slots=True)
+class WatchdogPolicy:
+    tolerance_ratio: float = 0.25
+    minimum_tolerance_seconds: float = 0.25
+    maximum_tolerance_seconds: float = 1.0
+```
+
+Let (d_s) be the source duration reported by the registry/player and (v)
+be the strictly positive playback speed. The effective duration is
+
+\[
+d = \frac{d_s}{v}.
+\]
+
+With \(\alpha=0.25\), \(t_{\min}=0.25\) seconds, and
+\(t_{\max}=1.0\) second, the deadline is
+
+\[
+t_{\text{deadline}}
+= t_{\text{start}} + d
++ \operatorname{clamp}(\alpha d, t_{\min}, t_{\max}).
+\]
+
+Production uses `time.monotonic()` through the existing `MonotonicClock`
+protocol. Tests inject `FakeClock` and advance it directly; no test sleeps.
+
+For a one-shot, no matching completion by the deadline produces
+`CALLBACK_TIMEOUT`. For a loop, a boundary deadline is armed only after a
+graceful exit becomes pending; an explicit negative liveness report may fail
+earlier. A replace-only loop has no ordinary boundary watchdog until an
+external replacement is requested. Missing duration metadata disables
+completion-driven production sequencing rather than causing a guessed
+timeout.
+
+### 10.3 Fixed outcomes
 
 Fixed, non-sensitive outcomes include:
 
@@ -435,8 +823,11 @@ INVALID_SEQUENCE
 REGISTRY_MISMATCH
 PLAYER_FAILURE
 CALLBACK_TIMEOUT
-FALLBACK_IDLE
 CLEARED
+PLAYBACK_DEGRADED
+RENDERER_STATE_UNKNOWN
+SEQUENCING_DISABLED_CAPABILITY
+LEGACY_DIRECT
 ```
 
 No outcome contains a prompt, response, credential, Provider continuation,
@@ -474,6 +865,15 @@ retaining `base_action`, so current renderers and callers remain compatible.
 `pet_state.py` remains semantic authority and exposes validation/proposal
 behavior required by the transaction protocol. `pet_motion.py` remains the
 authority for position and physics. Neither imports the player.
+
+The state change is intentionally narrow: add the two running motion values
+and the `PetActivityState` field defined in section 6.1. Existing callers keep
+using the current public state-transition methods. `thinking` and `reminding`
+may be projected into the legacy behavior view during migration, but the new
+activity field is the single source of truth for Track 0 compatibility. The
+executable `STATE_ACTION_COMPATIBILITY` mapping lives with the state/action
+boundary and is imported by validation and tests; prose tables are not a
+second implementation.
 
 ### 11.4 Qt and callback boundary
 
@@ -577,18 +977,48 @@ core/src/cn/harryh/arkpets/animations/AnimClip.java
 Tests verify:
 
 1. steps and sequences are immutable descriptions;
-2. `then()` returns ordered data without mutating its source;
-3. the logical catalog contains exactly 25 unique, case-sensitive names;
-4. registry identity mapping, alias mapping, missing binding, duplicate
+2. the sequence's ordered `steps` tuple is the only next-step source and a
+   step has no `next` field or alternate successor pointer;
+3. `then()` returns ordered data without mutating its source;
+4. the logical catalog contains exactly 25 unique, case-sensitive names;
+5. the union of logical names referenced by the sequence catalog equals the
+   complete 25-name set, assigns `breathing` only to Track 1 and `blink` only
+   to Track 2, and validates every Track 0 step against at least one compatible
+   semantic key;
+6. registry identity mapping, alias mapping, missing binding, duplicate
    binding, and case mismatch behavior;
-5. the arbiter alone implements the total priority order and equal-priority
-   protection;
-6. the runner alone implements current step, one-shot completion, loop pending
+7. the arbiter alone implements the total priority order, request-level
+   protection, and same-class replacement rules;
+8. the runner alone implements current step, one-shot completion, loop pending
    exit, duplicate completion suppression, and reset;
-7. controller `cancel`, `clear`, and runner `reset` have the exact distinct
+9. controller `cancel`, `clear`, and runner `reset` have the exact distinct
    side effects defined in section 7;
-8. `breathing` and `blink` cannot enter Track 0;
-9. invalid sequences are rejected before state or player mutation.
+10. every `play` and every `clear` attempt consumes a new generation, while a
+    runner-only reset does not;
+11. callbacks advance only when generation, logical name, physical name,
+    token, and expected step all match;
+12. the four-capability gate is all-or-nothing: every missing-capability
+    permutation disables production sequencing;
+13. `PlaceholderAnimationPlayer` always uses `LEGACY_DIRECT`, never starts a
+    production sequence, and never fabricates completion with a timer;
+14. invalid sequences are rejected before state or player mutation;
+15. `FakeClock` verifies the exact watchdog deadline formula, lower and upper
+    tolerance clamps, positive-speed validation, and one-shot timeout behavior
+    without sleeping.
+
+The compatibility mapping receives an exhaustive table test. For every valid
+combination of lifecycle, motion, activity, and overlay behaviors, the test
+cross-products all 25 logical actions and checks the result against the one
+immutable mapping. It separately checks `desired_action=None` in
+`DEGRADED`/`UNKNOWN` health and rejects inactive-lifecycle Track 0 playback.
+
+The arbiter receives a full matrix test over every incoming class, every active
+class, both active protection values, and the relevant equality dimensions
+(same/different sequence, request token, input-session token, and semantic
+epoch). Every cell asserts the applicable fixed outcome such as `ACCEPTED`,
+`REJECTED_PRIORITY`, or `REJECTED_DUPLICATE`, plus the exact cancellation mode
+or explicit no-controller-directive result; no priority pair is left to an
+example-only test.
 
 ### 13.2 Deterministic interleaving tests
 
@@ -612,14 +1042,20 @@ and inactive lifecycle plus `idle` are forbidden combinations.
 A fake player exercises:
 
 - exception or rejection from `play`;
-- exception from `clear`;
+- successful containment `clear` after failed `play`;
+- failed containment `clear` after failed `play`;
+- exception from a normal `clear`;
 - missing one-shot completion;
 - lost loop liveness;
 - stale callback after failure recovery;
-- failure while attempting fallback idle.
+- explicit re-probe/reinitialization from `DEGRADED` and `UNKNOWN`;
+- absence of any automatic fallback-idle `play` command.
 
 Each failure must leave `PetState` valid, invalidate the old generation, avoid
-uncaught Qt exceptions, and leave the Agent runtime untouched.
+uncaught Qt exceptions, and leave the Agent runtime untouched. Assertions also
+distinguish desired playback from confirmed playback: successful containment
+ends `DEGRADED` with no confirmed epoch, while a failed clear ends `UNKNOWN`
+without claiming that the renderer is idle or empty.
 
 ### 13.4 Integration and Agent-isolation regression tests
 
@@ -653,8 +1089,13 @@ Completion of this change means only:
 
 - the selected ArkPets sequencing mechanism has been adapted into the
   separated registry/arbiter/runner/controller/player architecture;
-- state-to-animation ownership, interruption, cancellation, stale callback,
-  and failure recovery protocols are tested;
+- the executable state/action compatibility mapping and complete 25-action
+  sequence catalog are the tested sources of truth;
+- state-to-animation ownership, deterministic arbitration, cancellation,
+  per-command generation, stale callback, playback-health, and exact watchdog
+  protocols are tested;
+- production sequencing is capability-gated, while the current placeholder
+  remains on the tested legacy direct path and synthesizes no completion;
 - the GPL audit passed before any source-license migration;
 - relevant unit, Qt, Agent-isolation, license, and asset checks pass.
 
