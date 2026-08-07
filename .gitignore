@@ -20,5 +20,6 @@ packaging/deployment/
 .vscode/
 .serena/
 .agents/
+.worktrees/
 *.log
 *.tmp
