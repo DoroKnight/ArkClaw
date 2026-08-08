@@ -5,18 +5,38 @@ from __future__ import annotations
 import math
 import random
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from enum import StrEnum
 from typing import Protocol
 
+from sjtuclaw.application.pet_action_sequence import (
+    SEQUENCE_CATALOG,
+    PetActionName,
+    SequenceName,
+    SequenceTerminal,
+)
 from sjtuclaw.application.pet_geometry import Rect, Size
 from sjtuclaw.application.pet_motion import PetMotionModel, PetMotionSnapshot
 from sjtuclaw.application.pet_state import (
+    AnimationCompatibilityError,
+    PetActivityState,
     PetBehaviorState,
     PetFacing,
     PetLayeredState,
     PetLifecycleState,
     PetMotionState,
     PetStateTransitionError,
+    ProposedStateTransition,
+    assert_animation_compatible,
+)
+from sjtuclaw.application.pet_track0 import (
+    ActionOutcome,
+    ActionRequest,
+    ArbitrationContext,
+    CancellationMode,
+    CancelReason,
+    PetTrack0Controller,
+    PlaybackEvent,
 )
 
 
@@ -28,6 +48,97 @@ class MonotonicClock(Protocol):
 class SystemMonotonicClock:
     def now(self) -> float:
         return time.monotonic()
+
+
+class PetAnimationEventType(StrEnum):
+    """Semantic events that may also replace Track 0 playback."""
+
+    START_READING = "start_reading"
+    START_FALLING = "start_falling"
+    START_WALKING = "start_walking"
+    START_THINKING = "start_thinking"
+    START_REMINDING = "start_reminding"
+    START_DRAGGING = "start_dragging"
+    RELEASE_DRAG = "release_drag"
+    PAUSE = "pause"
+    RESUME = "resume"
+    BEGIN_CLOSING = "begin_closing"
+
+
+@dataclass(frozen=True, slots=True)
+class PetAnimationEvent:
+    """Content-free transaction input owned by the application layer."""
+
+    event_type: PetAnimationEventType
+    request_token: object
+    facing: PetFacing | None = None
+    input_session_token: object | None = None
+
+    @classmethod
+    def start_reading(cls, *, token: object) -> PetAnimationEvent:
+        return cls(PetAnimationEventType.START_READING, token)
+
+    @classmethod
+    def start_falling(cls, *, token: object | None = None) -> PetAnimationEvent:
+        return cls(
+            PetAnimationEventType.START_FALLING,
+            object() if token is None else token,
+        )
+
+    @classmethod
+    def start_walking(
+        cls,
+        direction: PetFacing,
+        *,
+        token: object,
+    ) -> PetAnimationEvent:
+        return cls(PetAnimationEventType.START_WALKING, token, facing=direction)
+
+    @classmethod
+    def start_thinking(cls, *, token: object) -> PetAnimationEvent:
+        return cls(PetAnimationEventType.START_THINKING, token)
+
+    @classmethod
+    def start_reminding(cls, *, token: object) -> PetAnimationEvent:
+        return cls(PetAnimationEventType.START_REMINDING, token)
+
+    @classmethod
+    def start_dragging(
+        cls,
+        *,
+        token: object,
+        input_session_token: object,
+    ) -> PetAnimationEvent:
+        return cls(
+            PetAnimationEventType.START_DRAGGING,
+            token,
+            input_session_token=input_session_token,
+        )
+
+    @classmethod
+    def release_drag(
+        cls,
+        *,
+        token: object,
+        input_session_token: object,
+    ) -> PetAnimationEvent:
+        return cls(
+            PetAnimationEventType.RELEASE_DRAG,
+            token,
+            input_session_token=input_session_token,
+        )
+
+    @classmethod
+    def pause(cls, *, token: object) -> PetAnimationEvent:
+        return cls(PetAnimationEventType.PAUSE, token)
+
+    @classmethod
+    def resume(cls, *, token: object) -> PetAnimationEvent:
+        return cls(PetAnimationEventType.RESUME, token)
+
+    @classmethod
+    def begin_closing(cls, *, token: object) -> PetAnimationEvent:
+        return cls(PetAnimationEventType.BEGIN_CLOSING, token)
 
 
 @dataclass(frozen=True, slots=True)
@@ -114,20 +225,31 @@ class PetAnimationEngine:
         *,
         rng: random.Random | None = None,
         config: PetAnimationConfig | None = None,
+        track0: PetTrack0Controller | None = None,
     ) -> None:
         self._motion = motion
         self._rng = rng or random.Random()
         self._config = config or PetAnimationConfig()
+        self._track0 = track0
         self._animation_time = 0.0
         self._blink_elapsed = 0.0
         self._action_remaining = 0.0
         self._next_blink = self._new_blink_interval()
         self._next_random_action = self._new_random_action_interval()
         self._last_applied_delta = 0.0
+        self._drag_session_token: object | None = None
 
     @property
     def motion(self) -> PetMotionModel:
         return self._motion
+
+    @property
+    def track0(self) -> PetTrack0Controller | None:
+        return self._track0
+
+    @property
+    def _production_sequencing_enabled(self) -> bool:
+        return self._track0 is not None and self._track0.sequencing_enabled
 
     @property
     def frame(self) -> PetRenderFrame:
@@ -157,6 +279,349 @@ class PetAnimationEngine:
     def last_applied_delta_seconds(self) -> float:
         return self._last_applied_delta
 
+    def handle_event(self, event: PetAnimationEvent) -> ActionOutcome:
+        """Atomically coordinate one semantic proposal and Track 0 request."""
+
+        track0 = self._track0
+        if track0 is None:
+            return ActionOutcome.LEGACY_DIRECT
+
+        proposal, sequence_name, cancel_reason = self._propose_event(event)
+        if sequence_name is None:
+            self._motion.commit_state_transition(proposal)
+            outcome = track0.clear(cancel_reason)
+            self._assert_transaction_compatible()
+            return outcome
+        entry = SEQUENCE_CATALOG[sequence_name]
+        request = ActionRequest(
+            sequence_name=sequence_name,
+            interruption_class=entry.interruption_class,
+            protected=entry.protected,
+            request_token=event.request_token,
+            semantic_epoch=proposal.target_epoch,
+            input_session_token=event.input_session_token,
+        )
+        target_action = entry.sequence.steps[0].action
+        try:
+            assert_animation_compatible(
+                proposal.target_state,
+                target_action,
+                track0.state.health,
+            )
+        except AnimationCompatibilityError:
+            if proposal.mandatory_for_safety:
+                return self._contain_mandatory_proposal(
+                    proposal,
+                    cancel_reason,
+                )
+            return ActionOutcome.REJECTED_INCOMPATIBLE_STATE
+
+        preflight = track0.preflight(request)
+        if preflight.outcome is not ActionOutcome.ACCEPTED:
+            if not proposal.mandatory_for_safety:
+                return preflight.outcome
+            return self._contain_mandatory_proposal(proposal, cancel_reason)
+
+        active = track0.active_request
+        active_compatible = self._active_playback_is_compatible()
+        confirmed_epoch = (
+            active.semantic_epoch
+            if active is not None and track0.state.confirmed_epoch is not None
+            else None
+        )
+        decision = track0.arbitrate(
+            request,
+            ArbitrationContext(
+                incoming_mode=CancellationMode.REPLACE,
+                playback_health=track0.state.health,
+                confirmed_semantic_epoch=confirmed_epoch,
+                active_action_compatible=active_compatible,
+            ),
+        )
+        if decision.outcome is not ActionOutcome.ACCEPTED:
+            return decision.outcome
+
+        self._motion.commit_state_transition(proposal)
+        if active is None:
+            outcome = track0.play(request)
+        elif decision.mode is None:
+            outcome = ActionOutcome.ACCEPTED
+        else:
+            outcome = track0.cancel(
+                cancel_reason,
+                decision.mode,
+                replacement=request,
+            )
+        self._assert_transaction_compatible()
+        return outcome
+
+    def _contain_mandatory_proposal(
+        self,
+        proposal: ProposedStateTransition,
+        reason: CancelReason,
+    ) -> ActionOutcome:
+        track0 = self._track0
+        if track0 is None:
+            return ActionOutcome.LEGACY_DIRECT
+        self._motion.commit_state_transition(proposal)
+        outcome = track0.contain_preflight_failure(reason)
+        self._assert_transaction_compatible()
+        return outcome
+
+    def handle_playback_event(self, event: PlaybackEvent) -> ActionOutcome:
+        """Apply one renderer callback on the same serialized engine boundary."""
+
+        track0 = self._track0
+        if track0 is None:
+            return ActionOutcome.LEGACY_DIRECT
+        if not self._callback_matches_snapshot(event):
+            outcome = track0.handle_completion(event)
+            self._assert_transaction_compatible()
+            return outcome
+
+        next_action = self._next_action_for_callback(event)
+        continuation_request: ActionRequest | None = None
+        if next_action is PetActionName.RETURN_IDLE:
+            proposal = self._motion.states.propose(
+                motion=PetMotionState.IDLE,
+                activity=PetActivityState.NONE,
+            )
+            assert_animation_compatible(
+                proposal.target_state,
+                next_action,
+                track0.state.health,
+            )
+            active = track0.active_request
+            if active is None:
+                return ActionOutcome.INVALID_SEQUENCE
+            continuation_request = replace(
+                active,
+                semantic_epoch=proposal.target_epoch,
+            )
+            self._motion.commit_state_transition(proposal)
+
+        reaches_idle_terminal = self._callback_reaches_idle_terminal(event)
+        outcome = track0.handle_completion(
+            event,
+            continuation_request=continuation_request,
+        )
+        if outcome is ActionOutcome.ACCEPTED and reaches_idle_terminal:
+            outcome = self._start_idle_after_terminal()
+        self._assert_transaction_compatible()
+        return outcome
+
+    def request_graceful_exit(self) -> ActionOutcome:
+        """Arm a catalog-declared loop exit without guessing a duration."""
+
+        track0 = self._track0
+        if track0 is None or not track0.sequencing_enabled:
+            return ActionOutcome.LEGACY_DIRECT
+        return track0.cancel(
+            CancelReason.USER_INTERRUPT,
+            CancellationMode.GRACEFUL_EXIT,
+        )
+
+    def _callback_matches_snapshot(self, event: PlaybackEvent) -> bool:
+        track0 = self._track0
+        if track0 is None:
+            return False
+        snapshot = track0.runner.snapshot
+        confirmed = snapshot.confirmed_epoch
+        sequence = snapshot.sequence
+        current_index = snapshot.current_index
+        if confirmed is None or sequence is None or current_index is None:
+            return False
+        step = sequence.steps[current_index]
+        return (
+            event.generation == confirmed.generation
+            and event.logical_action is confirmed.logical_action
+            and event.logical_action is step.action
+            and event.physical_name == confirmed.physical_name
+            and event.playback_token is confirmed.playback_token
+        )
+
+    def _next_action_for_callback(
+        self,
+        event: PlaybackEvent,
+    ) -> PetActionName | None:
+        track0 = self._track0
+        if track0 is None:
+            return None
+        snapshot = track0.runner.snapshot
+        sequence = snapshot.sequence
+        current_index = snapshot.current_index
+        if sequence is None or current_index is None:
+            return None
+        step = sequence.steps[current_index]
+        if step.loop:
+            if not event.loop_boundary or not snapshot.pending_graceful_exit:
+                return None
+            exit_index = sequence.loop_exit_index
+            return None if exit_index is None else sequence.steps[exit_index].action
+        if event.loop_boundary:
+            return None
+        next_index = current_index + 1
+        if next_index >= len(sequence.steps):
+            return None
+        return sequence.steps[next_index].action
+
+    def _callback_reaches_idle_terminal(self, event: PlaybackEvent) -> bool:
+        track0 = self._track0
+        if track0 is None:
+            return False
+        snapshot = track0.runner.snapshot
+        sequence = snapshot.sequence
+        current_index = snapshot.current_index
+        if sequence is None or current_index is None:
+            return False
+        step = sequence.steps[current_index]
+        return (
+            not step.loop
+            and not event.loop_boundary
+            and current_index + 1 == len(sequence.steps)
+            and sequence.terminal is SequenceTerminal.IDLE
+        )
+
+    def _start_idle_after_terminal(self) -> ActionOutcome:
+        track0 = self._track0
+        if track0 is None:
+            return ActionOutcome.LEGACY_DIRECT
+        entry = SEQUENCE_CATALOG[SequenceName.IDLE]
+        request = ActionRequest(
+            sequence_name=SequenceName.IDLE,
+            interruption_class=entry.interruption_class,
+            protected=entry.protected,
+            request_token=object(),
+            semantic_epoch=self._motion.states.epoch,
+        )
+        preflight = track0.preflight(request)
+        if preflight.outcome is not ActionOutcome.ACCEPTED:
+            return track0.contain_preflight_failure(CancelReason.RENDERER_FAILURE)
+        return track0.play(request)
+
+    def _propose_event(
+        self,
+        event: PetAnimationEvent,
+    ) -> tuple[ProposedStateTransition, SequenceName | None, CancelReason]:
+        machine = self._motion.states
+        if event.event_type is PetAnimationEventType.START_READING:
+            return (
+                machine.propose(activity=PetActivityState.READING),
+                SequenceName.READ,
+                CancelReason.USER_INTERRUPT,
+            )
+        if event.event_type is PetAnimationEventType.START_FALLING:
+            return (
+                machine.propose(
+                    motion=PetMotionState.FALLING,
+                    mandatory_for_safety=True,
+                ),
+                SequenceName.FALL_RECOVERY,
+                CancelReason.MOTION_OVERRIDE,
+            )
+        if event.event_type is PetAnimationEventType.START_WALKING:
+            direction = event.facing
+            if direction is None:
+                raise ValueError("walking event requires a facing direction")
+            motion = (
+                PetMotionState.WALKING_LEFT
+                if direction is PetFacing.LEFT
+                else PetMotionState.WALKING_RIGHT
+            )
+            sequence = (
+                SequenceName.WALK_LEFT
+                if direction is PetFacing.LEFT
+                else SequenceName.WALK_RIGHT
+            )
+            return (
+                machine.propose(motion=motion, facing=direction),
+                sequence,
+                CancelReason.USER_INTERRUPT,
+            )
+        if event.event_type is PetAnimationEventType.START_THINKING:
+            return (
+                machine.propose(
+                    motion=PetMotionState.IDLE,
+                    activity=PetActivityState.THINKING,
+                ),
+                SequenceName.THINK,
+                CancelReason.USER_INTERRUPT,
+            )
+        if event.event_type is PetAnimationEventType.START_REMINDING:
+            return (
+                machine.propose(
+                    motion=PetMotionState.IDLE,
+                    activity=PetActivityState.REMINDING,
+                ),
+                SequenceName.REMIND,
+                CancelReason.USER_INTERRUPT,
+            )
+        if event.event_type is PetAnimationEventType.START_DRAGGING:
+            return (
+                machine.propose(motion=PetMotionState.DRAGGING),
+                SequenceName.DRAG_HOLD,
+                CancelReason.USER_INTERRUPT,
+            )
+        if event.event_type is PetAnimationEventType.RELEASE_DRAG:
+            return (
+                machine.propose(motion=PetMotionState.FALLING),
+                SequenceName.DRAG_RELEASE,
+                CancelReason.MOTION_OVERRIDE,
+            )
+        if event.event_type is PetAnimationEventType.PAUSE:
+            return (
+                machine.propose(
+                    lifecycle=PetLifecycleState.PAUSED,
+                    mandatory_for_safety=True,
+                ),
+                None,
+                CancelReason.PAUSE,
+            )
+        if event.event_type is PetAnimationEventType.RESUME:
+            return (
+                machine.propose(
+                    lifecycle=PetLifecycleState.ACTIVE,
+                    motion=PetMotionState.IDLE,
+                    activity=PetActivityState.NONE,
+                ),
+                SequenceName.IDLE,
+                CancelReason.USER_INTERRUPT,
+            )
+        if event.event_type is PetAnimationEventType.BEGIN_CLOSING:
+            return (
+                machine.propose(
+                    lifecycle=PetLifecycleState.CLOSING,
+                    mandatory_for_safety=True,
+                ),
+                None,
+                CancelReason.SYSTEM_SHUTDOWN,
+            )
+        raise AssertionError("unhandled animation event")
+
+    def _active_playback_is_compatible(self) -> bool:
+        track0 = self._track0
+        if track0 is None:
+            return True
+        try:
+            assert_animation_compatible(
+                self._motion.state,
+                track0.state.desired_action,
+                track0.state.health,
+            )
+        except AnimationCompatibilityError:
+            return False
+        return True
+
+    def _assert_transaction_compatible(self) -> None:
+        track0 = self._track0
+        if track0 is None:
+            return
+        assert_animation_compatible(
+            self._motion.state,
+            track0.state.desired_action,
+            track0.state.health,
+        )
+
     def advance(
         self,
         elapsed_seconds: float,
@@ -181,11 +646,20 @@ class PetAnimationEngine:
         motion = self._motion.update(applied, workspaces)
         return self._snapshot(motion)
 
-    def request_walk(self, direction: PetFacing) -> None:
+    def request_walk(self, direction: PetFacing) -> ActionOutcome:
+        if self._production_sequencing_enabled:
+            return self.handle_event(
+                PetAnimationEvent.start_walking(direction, token=object())
+            )
         self._motion.start_walking(direction)
         self._action_remaining = self._config.walking_duration_seconds
+        return ActionOutcome.LEGACY_DIRECT
 
-    def request_thinking_animation(self) -> None:
+    def request_thinking_animation(self) -> ActionOutcome:
+        if self._production_sequencing_enabled:
+            return self.handle_event(
+                PetAnimationEvent.start_thinking(token=object())
+            )
         state = self._motion.state
         if state.motion in {
             PetMotionState.WALKING_LEFT,
@@ -194,27 +668,72 @@ class PetAnimationEngine:
             self._motion.stop_walking()
         self._motion.states.start_thinking()
         self._action_remaining = self._config.thinking_duration_seconds
+        return ActionOutcome.LEGACY_DIRECT
 
-    def request_reminder_animation(self) -> None:
+    def request_reminder_animation(self) -> ActionOutcome:
+        if self._production_sequencing_enabled:
+            return self.handle_event(
+                PetAnimationEvent.start_reminding(token=object())
+            )
         self._motion.states.start_reminding()
         self._action_remaining = self._config.reminder_duration_seconds
+        return ActionOutcome.LEGACY_DIRECT
 
-    def start_dragging(self) -> None:
+    def start_dragging(self) -> ActionOutcome:
+        if self._production_sequencing_enabled:
+            session_token = object()
+            outcome = self.handle_event(
+                PetAnimationEvent.start_dragging(
+                    token=object(),
+                    input_session_token=session_token,
+                )
+            )
+            if outcome is ActionOutcome.ACCEPTED:
+                self._drag_session_token = session_token
+                self._action_remaining = 0.0
+            return outcome
         self._action_remaining = 0.0
         self._motion.start_dragging()
+        return ActionOutcome.LEGACY_DIRECT
 
-    def release_drag(self) -> None:
+    def release_drag(self) -> ActionOutcome:
+        if self._production_sequencing_enabled:
+            session_token = self._drag_session_token
+            if session_token is None:
+                raise PetStateTransitionError
+            outcome = self.handle_event(
+                PetAnimationEvent.release_drag(
+                    token=object(),
+                    input_session_token=session_token,
+                )
+            )
+            if outcome is ActionOutcome.ACCEPTED:
+                self._drag_session_token = None
+            return outcome
         self._motion.release_drag()
+        return ActionOutcome.LEGACY_DIRECT
 
-    def pause(self) -> None:
+    def pause(self) -> ActionOutcome:
+        if self._production_sequencing_enabled:
+            return self.handle_event(PetAnimationEvent.pause(token=object()))
         self._motion.pause()
+        return ActionOutcome.LEGACY_DIRECT
 
-    def resume(self) -> None:
+    def resume(self) -> ActionOutcome:
+        if self._production_sequencing_enabled:
+            return self.handle_event(PetAnimationEvent.resume(token=object()))
         self._motion.resume()
+        return ActionOutcome.LEGACY_DIRECT
 
-    def begin_closing(self) -> None:
+    def begin_closing(self) -> ActionOutcome:
+        if self._production_sequencing_enabled:
+            self._action_remaining = 0.0
+            return self.handle_event(
+                PetAnimationEvent.begin_closing(token=object())
+            )
         self._action_remaining = 0.0
         self._motion.begin_closing()
+        return ActionOutcome.LEGACY_DIRECT
 
     def recover_failed_close(self) -> None:
         self._motion.recover_failed_close()

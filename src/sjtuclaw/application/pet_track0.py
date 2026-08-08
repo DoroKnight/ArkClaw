@@ -577,6 +577,10 @@ class PetTrack0Controller:
     def watchdog_deadline(self) -> float | None:
         return self._watchdog_deadline
 
+    @property
+    def sequencing_enabled(self) -> bool:
+        return sequencing_enabled(self._player.capabilities)
+
     def preflight(self, request: ActionRequest) -> ControllerPreflight:
         """Validate catalog and registry facts without changing any state."""
 
@@ -598,6 +602,15 @@ class PetTrack0Controller:
         except AnimationRegistryError:
             return ControllerPreflight(ActionOutcome.REGISTRY_MISMATCH)
         return ControllerPreflight(ActionOutcome.ACCEPTED, entry)
+
+    def arbitrate(
+        self,
+        request: ActionRequest,
+        context: ArbitrationContext,
+    ) -> ArbitrationDecision:
+        """Decide against the current request without mutating playback."""
+
+        return self._arbiter.decide(request, self._active_request, context)
 
     def play(self, request: ActionRequest) -> ActionOutcome:
         """Start a preflighted sequence and attempt its first physical play."""
@@ -642,6 +655,7 @@ class PetTrack0Controller:
         """Unconditionally invalidate and clear Track 0 without playing idle."""
 
         del reason
+        prior_health = self._state.health
         self._watchdog_deadline = None
         self._allocate_generation()
         try:
@@ -658,10 +672,37 @@ class PetTrack0Controller:
 
         self._runner.reset()
         self._active_request = None
-        self._state = Track0PlaybackState(None, None, PlaybackHealth.HEALTHY)
+        self._state = Track0PlaybackState(None, None, prior_health)
         return ActionOutcome.CLEARED
 
-    def handle_completion(self, event: PlaybackEvent) -> ActionOutcome:
+    def contain_preflight_failure(
+        self,
+        reason: CancelReason,
+    ) -> ActionOutcome:
+        """Invalidate old playback after a mandatory proposal cannot play."""
+
+        del reason
+        self._watchdog_deadline = None
+        self._allocate_generation()
+        try:
+            self._player.clear(0, 0.0)
+        except Exception:
+            health = PlaybackHealth.UNKNOWN
+            outcome = ActionOutcome.RENDERER_STATE_UNKNOWN
+        else:
+            health = PlaybackHealth.DEGRADED
+            outcome = ActionOutcome.PLAYBACK_DEGRADED
+        self._runner.reset()
+        self._active_request = None
+        self._state = Track0PlaybackState(None, None, health)
+        return outcome
+
+    def handle_completion(
+        self,
+        event: PlaybackEvent,
+        *,
+        continuation_request: ActionRequest | None = None,
+    ) -> ActionOutcome:
         """Translate a runner directive into at most one next-step play."""
 
         directive = self._runner.handle_completion(event)
@@ -671,8 +712,15 @@ class PetTrack0Controller:
             return directive.outcome
         if directive.step is None:
             self._watchdog_deadline = None
+            if directive.terminal is SequenceTerminal.IDLE:
+                self._active_request = None
+                self._state = Track0PlaybackState(
+                    None,
+                    None,
+                    PlaybackHealth.HEALTHY,
+                )
             return ActionOutcome.ACCEPTED
-        active_request = self._active_request
+        active_request = continuation_request or self._active_request
         if active_request is None:
             return ActionOutcome.INVALID_SEQUENCE
         return self._play_directive(active_request, directive)
