@@ -1,4 +1,12 @@
-"""Pure Track 0 request arbitration and cancellation vocabulary."""
+"""Pure Track 0 request arbitration and cancellation vocabulary.
+
+Provenance: this is an independent Python rewrite informed by the ArkPets
+project by Harry Huang (GPL-3.0), specifically ``AnimData.java``,
+``AnimComposer.java``, ``AnimClipGroup.java``, and ``AnimClip.java`` under
+``core/src/cn/harryh/arkpets/animations``. No ArkPets Java source or comments,
+character assets, mobility logic, root-motion ownership, or stochastic
+behavior matrix are vendored or reproduced here.
+"""
 
 from __future__ import annotations
 
