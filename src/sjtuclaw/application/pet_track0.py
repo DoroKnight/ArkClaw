@@ -7,9 +7,15 @@ from enum import StrEnum
 
 from sjtuclaw.application.pet_action_sequence import (
     InterruptClass,
+    PetActionName,
+    PetActionSequence,
+    PetActionStep,
     PlaybackHealth,
     SequenceName,
+    SequenceTerminal,
 )
+
+type PlaybackToken = object
 
 
 class CancelReason(StrEnum):
@@ -197,3 +203,204 @@ class PetActionArbiter:
                 CancellationMode.REPLACE,
             )
         return ArbitrationDecision(ActionOutcome.REJECTED_PRIORITY, None)
+
+
+@dataclass(frozen=True, slots=True)
+class ConfirmedPlaybackEpoch:
+    """One player-confirmed physical playback command epoch."""
+
+    generation: int
+    logical_action: PetActionName
+    physical_name: str
+    playback_token: PlaybackToken
+
+    def __post_init__(self) -> None:
+        if self.generation < 0:
+            raise ValueError("generation must be non-negative")
+        if not self.physical_name:
+            raise ValueError("physical_name must not be empty")
+
+
+@dataclass(frozen=True, slots=True)
+class PlaybackEvent:
+    """Completion or loop-boundary event reported by the player."""
+
+    generation: int
+    logical_action: PetActionName
+    physical_name: str
+    playback_token: PlaybackToken
+    loop_boundary: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class RunnerDirective:
+    """Pure runner result for a controller to translate into player commands."""
+
+    outcome: ActionOutcome
+    next_index: int | None = None
+    step: PetActionStep | None = None
+    terminal: SequenceTerminal | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class RunnerSnapshot:
+    """Immutable view of runner-local sequencing progress."""
+
+    sequence: PetActionSequence | None
+    current_index: int | None
+    pending_graceful_exit: bool
+    confirmed_epoch: ConfirmedPlaybackEpoch | None
+
+
+class PetSequenceRunner:
+    """Advance one immutable sequence using only matching player callbacks."""
+
+    def __init__(self) -> None:
+        self._sequence: PetActionSequence | None = None
+        self._current_index: int | None = None
+        self._pending_graceful_exit = False
+        self._confirmed_epoch: ConfirmedPlaybackEpoch | None = None
+
+    @property
+    def snapshot(self) -> RunnerSnapshot:
+        return RunnerSnapshot(
+            sequence=self._sequence,
+            current_index=self._current_index,
+            pending_graceful_exit=self._pending_graceful_exit,
+            confirmed_epoch=self._confirmed_epoch,
+        )
+
+    def start(self, sequence: PetActionSequence) -> RunnerDirective:
+        """Replace runner-local progress and select the sequence's first step."""
+
+        self._sequence = sequence
+        self._current_index = 0
+        self._pending_graceful_exit = False
+        self._confirmed_epoch = None
+        return self._advance_directive(0)
+
+    def accept_playback(
+        self,
+        *,
+        generation: int,
+        logical_action: PetActionName,
+        physical_name: str,
+        playback_token: PlaybackToken,
+    ) -> ConfirmedPlaybackEpoch:
+        """Record player confirmation for exactly the selected current step."""
+
+        step = self._current_step()
+        if logical_action is not step.action:
+            raise ValueError("playback action does not match the current step")
+        epoch = ConfirmedPlaybackEpoch(
+            generation=generation,
+            logical_action=logical_action,
+            physical_name=physical_name,
+            playback_token=playback_token,
+        )
+        self._confirmed_epoch = epoch
+        return epoch
+
+    def handle_completion(
+        self,
+        event: PlaybackEvent,
+    ) -> RunnerDirective | None:
+        """Advance only when every callback identity field matches."""
+
+        if not self._event_matches_current_epoch(event):
+            return RunnerDirective(ActionOutcome.STALE_COMPLETION)
+
+        sequence = self._require_sequence()
+        current_index = self._require_current_index()
+        step = sequence.steps[current_index]
+
+        if step.loop:
+            if not event.loop_boundary:
+                return RunnerDirective(ActionOutcome.STALE_COMPLETION)
+            if not self._pending_graceful_exit:
+                return None
+            exit_index = sequence.loop_exit_index
+            if exit_index is None:
+                return RunnerDirective(ActionOutcome.INVALID_SEQUENCE)
+            self._current_index = exit_index
+            self._pending_graceful_exit = False
+            self._confirmed_epoch = None
+            return self._advance_directive(exit_index)
+
+        if event.loop_boundary:
+            return RunnerDirective(ActionOutcome.STALE_COMPLETION)
+
+        next_index = current_index + 1
+        self._confirmed_epoch = None
+        if next_index < len(sequence.steps):
+            self._current_index = next_index
+            return self._advance_directive(next_index)
+
+        terminal = sequence.terminal
+        self.reset()
+        return RunnerDirective(
+            outcome=ActionOutcome.ACCEPTED,
+            terminal=terminal,
+        )
+
+    def request_graceful_exit(self) -> ActionOutcome:
+        """Arm the next matching loop boundary when this sequence has an exit."""
+
+        sequence = self._sequence
+        current_index = self._current_index
+        if sequence is None or current_index is None:
+            return ActionOutcome.INVALID_SEQUENCE
+        if sequence.loop_index is None or sequence.loop_exit_index is None:
+            return ActionOutcome.INVALID_SEQUENCE
+        if current_index > sequence.loop_index:
+            return ActionOutcome.INVALID_SEQUENCE
+        if self._pending_graceful_exit:
+            return ActionOutcome.REJECTED_DUPLICATE
+        self._pending_graceful_exit = True
+        return ActionOutcome.ACCEPTED
+
+    def reset(self) -> None:
+        """Clear only runner-local state; no generation or renderer is touched."""
+
+        self._sequence = None
+        self._current_index = None
+        self._pending_graceful_exit = False
+        self._confirmed_epoch = None
+
+    def _advance_directive(self, index: int) -> RunnerDirective:
+        sequence = self._require_sequence()
+        return RunnerDirective(
+            outcome=ActionOutcome.ACCEPTED,
+            next_index=index,
+            step=sequence.steps[index],
+        )
+
+    def _event_matches_current_epoch(self, event: PlaybackEvent) -> bool:
+        epoch = self._confirmed_epoch
+        if epoch is None:
+            return False
+        try:
+            step = self._current_step()
+        except RuntimeError:
+            return False
+        return (
+            event.generation == epoch.generation
+            and event.logical_action is epoch.logical_action
+            and event.logical_action is step.action
+            and event.physical_name == epoch.physical_name
+            and event.playback_token is epoch.playback_token
+        )
+
+    def _current_step(self) -> PetActionStep:
+        sequence = self._require_sequence()
+        return sequence.steps[self._require_current_index()]
+
+    def _require_sequence(self) -> PetActionSequence:
+        if self._sequence is None:
+            raise RuntimeError("no active sequence")
+        return self._sequence
+
+    def _require_current_index(self) -> int:
+        if self._current_index is None:
+            raise RuntimeError("no active sequence step")
+        return self._current_index
