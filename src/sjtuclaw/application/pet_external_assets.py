@@ -216,7 +216,6 @@ class ExternalPetAssetLoadResult:
 @dataclass(frozen=True, slots=True)
 class _ReadResult:
     data: bytes
-    prefix: bytes
     sha256: str
     size_bytes: int
 
@@ -266,20 +265,20 @@ class ExternalPetAssetLoader:
             handles.append(texture)
 
             limits = descriptor.limits
+            remaining_bundle_bytes = limits.bundle_max_bytes
             skeleton_read = self._read_verified(
                 skeleton,
-                limits.skeleton_max_bytes,
-                self._SKELETON_PREFIX_BYTES,
+                min(limits.skeleton_max_bytes, remaining_bundle_bytes),
             )
+            remaining_bundle_bytes -= skeleton_read.size_bytes
             atlas_read = self._read_verified(
                 atlas,
-                limits.atlas_max_bytes,
-                limits.atlas_max_bytes,
+                min(limits.atlas_max_bytes, remaining_bundle_bytes),
             )
+            remaining_bundle_bytes -= atlas_read.size_bytes
             texture_read = self._read_verified(
                 texture,
-                limits.texture_max_bytes,
-                self._PNG_PREFIX_BYTES,
+                min(limits.texture_max_bytes, remaining_bundle_bytes),
             )
             total_size = (
                 skeleton_read.size_bytes
@@ -297,11 +296,11 @@ class ExternalPetAssetLoader:
                 texture_read,
             )
             texture_metadata = _parse_png_metadata(
-                texture_read.prefix,
+                texture_read.data[: self._PNG_PREFIX_BYTES],
                 texture_read.sha256,
             )
             atlas_metadata = _parse_atlas_metadata(
-                atlas_read.prefix,
+                atlas_read.data,
                 atlas_read.sha256,
                 descriptor.texture_filename,
             )
@@ -311,9 +310,9 @@ class ExternalPetAssetLoader:
             ):
                 raise ExternalAssetFilesystemError(
                     ExternalPetAssetStatus.ATLAS_TEXTURE_MISMATCH
-                )
+            )
             skeleton_metadata = _parse_skeleton_metadata(
-                skeleton_read.prefix,
+                skeleton_read.data[: self._SKELETON_PREFIX_BYTES],
                 skeleton_read.sha256,
                 descriptor.expected_spine_major,
                 descriptor.expected_spine_minor,
@@ -356,7 +355,6 @@ class ExternalPetAssetLoader:
         self,
         handle: ReadOnlyExternalAssetHandle,
         maximum_bytes: int,
-        prefix_bytes: int,
     ) -> _ReadResult:
         initial = handle.identity
         if initial.size_bytes > maximum_bytes:
@@ -370,7 +368,6 @@ class ExternalPetAssetLoader:
         handle.seek(0)
         digest = hashlib.sha256()
         data = bytearray()
-        prefix = bytearray()
         total = 0
         while True:
             block = handle.read(self._CHUNK_BYTES)
@@ -383,19 +380,12 @@ class ExternalPetAssetLoader:
                 )
             digest.update(block)
             data.extend(block)
-            if len(prefix) < prefix_bytes:
-                prefix.extend(block[: prefix_bytes - len(prefix)])
         final = handle.current_identity()
         if final != initial or total != initial.size_bytes:
             raise ExternalAssetFilesystemError(
                 ExternalPetAssetStatus.CHANGED_DURING_READ
             )
-        return _ReadResult(
-            data=bytes(data),
-            prefix=bytes(prefix),
-            sha256=digest.hexdigest(),
-            size_bytes=total,
-        )
+        return _ReadResult(bytes(data), digest.hexdigest(), total)
 
     @staticmethod
     def _verify_expected_hashes(

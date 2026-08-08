@@ -115,6 +115,7 @@ class _FakeHandle:
         self._alternate_stream = alternate_stream
         self._identity_changes = identity_changes
         self.close_count = 0
+        self.read_count = 0
 
     @property
     def identity(self) -> ExternalFileIdentity:
@@ -129,6 +130,7 @@ class _FakeHandle:
         return self._alternate_stream
 
     def read(self, size: int = -1) -> bytes:
+        self.read_count += 1
         return self._reader.read(size)
 
     def seek(self, offset: int) -> int:
@@ -338,6 +340,27 @@ def test_individual_and_bundle_size_limits_are_centralized() -> None:
     result = ExternalPetAssetLoader(filesystem).load(descriptor)
 
     assert result.status is ExternalPetAssetStatus.TOO_LARGE
+
+
+def test_bundle_limit_stops_before_reading_later_assets() -> None:
+    filesystem = _FakeFilesystem()
+    descriptor = replace(
+        _descriptor(),
+        limits=ExternalPetAssetLimits(
+            atlas_max_bytes=1024,
+            skeleton_max_bytes=1024,
+            texture_max_bytes=1024,
+            bundle_max_bytes=len(_skeleton()) + len(_atlas()) - 1,
+        ),
+    )
+
+    result = ExternalPetAssetLoader(filesystem).load(descriptor)
+
+    assert result.status is ExternalPetAssetStatus.TOO_LARGE
+    assert result.bundle is None
+    assert filesystem.handles["fictional.skel"].read_count > 0
+    assert filesystem.handles["fictional.atlas"].read_count == 0
+    assert filesystem.handles["fictional.png"].read_count == 0
 
 
 def test_invalid_png_header_is_rejected() -> None:
