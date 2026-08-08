@@ -25,16 +25,6 @@ $PinnedManifest = [ordered]@{
     license_filename = [string]$Manifest.license_filename
 }
 
-if ($PrintSourceManifest) {
-    $PinnedManifest | ConvertTo-Json -Compress
-    exit 0
-}
-
-if ([string]::IsNullOrWhiteSpace($SpineSource)) {
-    $SpineSource = $DefaultSource
-}
-$SpineSource = [System.IO.Path]::GetFullPath($SpineSource)
-
 function Exit-WithCode {
     param(
         [Parameter(Mandatory = $true)]
@@ -45,6 +35,21 @@ function Exit-WithCode {
 
     Write-Output $Code
     exit $ExitCode
+}
+
+function Require-NativeCommand {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Name,
+        [Parameter(Mandatory = $true)]
+        [string]$FailureCode
+    )
+
+    $Command = Get-Command -Name $Name -CommandType Application `
+        -ErrorAction SilentlyContinue
+    if ($null -eq $Command) {
+        Exit-WithCode -Code $FailureCode -ExitCode 1
+    }
 }
 
 function Get-SourceCommit {
@@ -64,69 +69,223 @@ function Get-SourceCommit {
     return ([string]$Commit).Trim()
 }
 
-if ($ValidateSourceOnly) {
-    $ActualCommit = Get-SourceCommit -SourcePath $SpineSource
+function Get-SourceValidationCode {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$SourcePath,
+        [switch]$ManagedSource
+    )
+
+    $ActualCommit = Get-SourceCommit -SourcePath $SourcePath
     if ($ActualCommit -ne $PinnedManifest.commit) {
-        Exit-WithCode -Code "spine38_source_commit_mismatch" -ExitCode 2
+        return "spine38_source_commit_mismatch"
+    }
+
+    $LicensePath = Join-Path $SourcePath $PinnedManifest.license_filename
+    if (-not (Test-Path -LiteralPath $LicensePath -PathType Leaf)) {
+        return "spine38_source_license_missing"
+    }
+
+    if ($ManagedSource) {
+        $null = & git -C $SourcePath symbolic-ref -q HEAD 2>$null
+        if ($LASTEXITCODE -eq 0) {
+            return "spine38_source_not_detached"
+        }
+
+        $Origin = & git -C $SourcePath remote get-url origin 2>$null
+        if (
+            $LASTEXITCODE -ne 0 -or
+            ([string]$Origin).Trim() -ne $PinnedManifest.repository_url
+        ) {
+            return "spine38_source_origin_mismatch"
+        }
+
+        $FetchRefspecs = @(
+            & git -C $SourcePath config --get-all remote.origin.fetch 2>$null
+        )
+        $FetchRefspecExitCode = $LASTEXITCODE
+        if ($FetchRefspecExitCode -notin @(0, 1)) {
+            return "spine38_source_refspec_mismatch"
+        }
+        if (
+            @($FetchRefspecs | Where-Object {
+                -not [string]::IsNullOrWhiteSpace([string]$_)
+            }).Count -ne 0
+        ) {
+            return "spine38_source_refspec_mismatch"
+        }
+    }
+
+    return $null
+}
+
+function Invoke-NativeStage {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$FailureCode,
+        [Parameter(Mandatory = $true)]
+        [scriptblock]$Command
+    )
+
+    $PreviousErrorActionPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = "Continue"
+        & $Command
+        if ($LASTEXITCODE -ne 0) {
+            Exit-WithCode -Code $FailureCode -ExitCode 1
+        }
+    }
+    catch {
+        Exit-WithCode -Code $FailureCode -ExitCode 1
+    }
+    finally {
+        $ErrorActionPreference = $PreviousErrorActionPreference
+    }
+}
+
+if ($PrintSourceManifest) {
+    $PinnedManifest | ConvertTo-Json -Compress
+    exit 0
+}
+
+$HasExplicitSpineSource = $PSBoundParameters.ContainsKey("SpineSource")
+if ($HasExplicitSpineSource) {
+    if ([string]::IsNullOrWhiteSpace($SpineSource)) {
+        Exit-WithCode -Code "spine38_source_missing" -ExitCode 2
+    }
+    $SpineSource = [System.IO.Path]::GetFullPath($SpineSource)
+    if (-not (Test-Path -LiteralPath $SpineSource -PathType Container)) {
+        Exit-WithCode -Code "spine38_source_missing" -ExitCode 2
+    }
+}
+else {
+    $SpineSource = $DefaultSource
+}
+
+Require-NativeCommand -Name "git" -FailureCode "spine38_git_missing"
+
+if ($ValidateSourceOnly) {
+    $ValidationCode = Get-SourceValidationCode -SourcePath $SpineSource
+    if ($null -ne $ValidationCode) {
+        $ValidationExitCode = if (
+            $ValidationCode -eq "spine38_source_commit_mismatch"
+        ) { 2 } else { 1 }
+        Exit-WithCode -Code $ValidationCode -ExitCode $ValidationExitCode
     }
     Write-Output "spine38_source_valid"
     exit 0
 }
 
+Require-NativeCommand -Name "cmake" -FailureCode "spine38_cmake_missing"
 [System.IO.Directory]::CreateDirectory($BuildRoot) | Out-Null
-if (-not (Test-Path -LiteralPath $SpineSource)) {
-    Write-Output "spine38_source_clone"
-    & git clone `
-        --depth 1 `
-        --branch $PinnedManifest.runtime_data_version `
-        --single-branch `
-        --no-checkout `
-        $PinnedManifest.repository_url `
-        $SpineSource
-    if ($LASTEXITCODE -ne 0) {
-        Exit-WithCode -Code "spine38_source_clone_failed" -ExitCode 1
-    }
 
-    $null = & git -C $SpineSource rev-parse --verify "$($PinnedManifest.commit)^{commit}" 2>$null
-    if ($LASTEXITCODE -ne 0) {
-        Write-Output "spine38_source_fetch"
-        & git -C $SpineSource fetch --depth 1 origin $PinnedManifest.commit
+if (-not $HasExplicitSpineSource -and -not (Test-Path -LiteralPath $SpineSource)) {
+    $TemporarySource = Join-Path $BuildRoot (
+        "source.acquire." + [Guid]::NewGuid().ToString("N")
+    )
+    $AcquisitionFailure = $null
+    $SourcePromoted = $false
+    $PreviousErrorActionPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = "Continue"
+
+        Write-Output "spine38_source_init"
+        $null = & git init --quiet $TemporarySource
         if ($LASTEXITCODE -ne 0) {
-            Exit-WithCode -Code "spine38_source_fetch_failed" -ExitCode 1
+            throw "spine38_source_init_failed"
+        }
+
+        $null = & git -C $TemporarySource remote add origin `
+            $PinnedManifest.repository_url
+        if ($LASTEXITCODE -ne 0) {
+            throw "spine38_source_origin_failed"
+        }
+
+        $null = & git -C $TemporarySource config --unset-all `
+            remote.origin.fetch
+        if ($LASTEXITCODE -ne 0) {
+            throw "spine38_source_refspec_failed"
+        }
+
+        Write-Output "spine38_source_fetch"
+        & git -C $TemporarySource fetch `
+            --depth 1 `
+            --no-tags `
+            origin `
+            $PinnedManifest.commit
+        if ($LASTEXITCODE -ne 0) {
+            throw "spine38_source_fetch_failed"
+        }
+
+        Write-Output "spine38_source_checkout"
+        $null = & git -C $TemporarySource checkout --detach FETCH_HEAD
+        if ($LASTEXITCODE -ne 0) {
+            throw "spine38_source_checkout_failed"
+        }
+
+        $ValidationCode = Get-SourceValidationCode `
+            -SourcePath $TemporarySource `
+            -ManagedSource
+        if ($null -ne $ValidationCode) {
+            throw $ValidationCode
+        }
+
+        try {
+            Move-Item -LiteralPath $TemporarySource -Destination $SpineSource `
+                -ErrorAction Stop
+        }
+        catch {
+            throw "spine38_source_promote_failed"
+        }
+        $SourcePromoted = $true
+    }
+    catch {
+        $AcquisitionFailure = $_.Exception.Message
+    }
+    finally {
+        $ErrorActionPreference = $PreviousErrorActionPreference
+        if (-not $SourcePromoted -and (Test-Path -LiteralPath $TemporarySource)) {
+            try {
+                Remove-Item -LiteralPath $TemporarySource -Recurse -Force `
+                    -ErrorAction Stop
+            }
+            catch {
+                $AcquisitionFailure = "spine38_source_cleanup_failed"
+            }
         }
     }
 
-    & git -C $SpineSource checkout --detach $PinnedManifest.commit
-    if ($LASTEXITCODE -ne 0) {
-        Exit-WithCode -Code "spine38_source_checkout_failed" -ExitCode 1
+    if ($null -ne $AcquisitionFailure) {
+        Exit-WithCode -Code $AcquisitionFailure -ExitCode 1
     }
 }
 
-$ActualCommit = Get-SourceCommit -SourcePath $SpineSource
-if ($ActualCommit -ne $PinnedManifest.commit) {
-    Exit-WithCode -Code "spine38_source_commit_mismatch" -ExitCode 2
+$ValidationCode = Get-SourceValidationCode `
+    -SourcePath $SpineSource `
+    -ManagedSource:(-not $HasExplicitSpineSource)
+if ($null -ne $ValidationCode) {
+    $ValidationExitCode = if (
+        $ValidationCode -eq "spine38_source_commit_mismatch"
+    ) { 2 } else { 1 }
+    Exit-WithCode -Code $ValidationCode -ExitCode $ValidationExitCode
 }
 
 $LicenseSource = Join-Path $SpineSource $PinnedManifest.license_filename
-if (-not (Test-Path -LiteralPath $LicenseSource -PathType Leaf)) {
-    Exit-WithCode -Code "spine38_source_license_missing" -ExitCode 1
-}
 
 Write-Output "spine38_configure"
-& cmake `
-    -S $BridgeRoot `
-    -B $BuildRoot `
-    -G "Visual Studio 18 2026" `
-    -A x64 `
-    "-DSPINE_RUNTIMES_SOURCE_DIR=$SpineSource"
-if ($LASTEXITCODE -ne 0) {
-    Exit-WithCode -Code "spine38_configure_failed" -ExitCode 1
+Invoke-NativeStage -FailureCode "spine38_configure_failed" -Command {
+    & cmake `
+        -S $BridgeRoot `
+        -B $BuildRoot `
+        -G "Visual Studio 18 2026" `
+        -A x64 `
+        "-DSPINE_RUNTIMES_SOURCE_DIR=$SpineSource"
 }
 
 Write-Output "spine38_build"
-& cmake --build $BuildRoot --config $Configuration --target sjtuclaw_spine38_bridge
-if ($LASTEXITCODE -ne 0) {
-    Exit-WithCode -Code "spine38_build_failed" -ExitCode 1
+Invoke-NativeStage -FailureCode "spine38_build_failed" -Command {
+    & cmake --build $BuildRoot --config $Configuration `
+        --target sjtuclaw_spine38_bridge
 }
 
 $OutputDirectory = Join-Path $BuildRoot $Configuration
