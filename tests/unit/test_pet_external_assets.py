@@ -194,6 +194,19 @@ def test_valid_bundle_publishes_verified_metadata_and_open_handles() -> None:
     assert filesystem.root.close_count == 1
 
 
+def test_successful_load_retains_the_verified_bytes() -> None:
+    filesystem = _FakeFilesystem()
+
+    result = ExternalPetAssetLoader(filesystem).load(_descriptor())
+
+    assert result.succeeded
+    bundle = result.bundle
+    assert bundle is not None
+    assert bundle.snapshot.skeleton_bytes == _skeleton()
+    assert bundle.snapshot.atlas_bytes == _atlas()
+    assert bundle.snapshot.texture_bytes == _png()
+
+
 @pytest.mark.skipif(os.name != "nt", reason="Windows handle backend")
 def test_windows_backend_loads_only_runtime_created_micro_files(
     tmp_path: Path,
@@ -409,7 +422,7 @@ def test_toctou_or_size_change_is_rejected(handle: _FakeHandle) -> None:
     assert result.status is ExternalPetAssetStatus.CHANGED_DURING_READ
 
 
-def test_expected_hashes_are_checked_without_publishing_content() -> None:
+def test_hash_failure_publishes_no_snapshot() -> None:
     filesystem = _FakeFilesystem()
     descriptor = replace(
         _descriptor(),
@@ -423,6 +436,7 @@ def test_expected_hashes_are_checked_without_publishing_content() -> None:
     result = ExternalPetAssetLoader(filesystem).load(descriptor)
 
     assert result.status is ExternalPetAssetStatus.HASH_MISMATCH
+    assert result.bundle is None
 
 
 def test_failures_do_not_expose_paths_content_or_exception_text(

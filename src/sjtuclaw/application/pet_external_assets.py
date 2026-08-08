@@ -132,6 +132,15 @@ class ExternalPetAssetMetadata:
     total_size_bytes: int
 
 
+@dataclass(frozen=True, slots=True, repr=False)
+class ExternalPetAssetSnapshot:
+    """Verified immutable asset bytes for in-memory Runtime construction."""
+
+    skeleton_bytes: bytes
+    atlas_bytes: bytes
+    texture_bytes: bytes
+
+
 class ExternalPetAssetBundle:
     """Own three verified read-only handles until a future renderer closes it."""
 
@@ -143,6 +152,7 @@ class ExternalPetAssetBundle:
         atlas_handle: ReadOnlyExternalAssetHandle,
         texture_handle: ReadOnlyExternalAssetHandle,
         metadata: ExternalPetAssetMetadata,
+        snapshot: ExternalPetAssetSnapshot,
     ) -> None:
         self.opaque_asset_id = opaque_asset_id
         self._root_handle = root_handle
@@ -150,6 +160,7 @@ class ExternalPetAssetBundle:
         self.atlas_handle = atlas_handle
         self.texture_handle = texture_handle
         self.metadata = metadata
+        self.snapshot = snapshot
         self._closed = False
 
     @property
@@ -204,6 +215,7 @@ class ExternalPetAssetLoadResult:
 
 @dataclass(frozen=True, slots=True)
 class _ReadResult:
+    data: bytes
     prefix: bytes
     sha256: str
     size_bytes: int
@@ -306,6 +318,11 @@ class ExternalPetAssetLoader:
                 descriptor.expected_spine_major,
                 descriptor.expected_spine_minor,
             )
+            snapshot = ExternalPetAssetSnapshot(
+                skeleton_bytes=skeleton_read.data,
+                atlas_bytes=atlas_read.data,
+                texture_bytes=texture_read.data,
+            )
             for handle in handles:
                 handle.seek(0)
             bundle = ExternalPetAssetBundle(
@@ -320,6 +337,7 @@ class ExternalPetAssetLoader:
                     skeleton=skeleton_metadata,
                     total_size_bytes=total_size,
                 ),
+                snapshot,
             )
             return ExternalPetAssetLoadResult(
                 ExternalPetAssetStatus.OK,
@@ -351,6 +369,7 @@ class ExternalPetAssetLoader:
             )
         handle.seek(0)
         digest = hashlib.sha256()
+        data = bytearray()
         prefix = bytearray()
         total = 0
         while True:
@@ -363,6 +382,7 @@ class ExternalPetAssetLoader:
                     ExternalPetAssetStatus.TOO_LARGE
                 )
             digest.update(block)
+            data.extend(block)
             if len(prefix) < prefix_bytes:
                 prefix.extend(block[: prefix_bytes - len(prefix)])
         final = handle.current_identity()
@@ -370,7 +390,12 @@ class ExternalPetAssetLoader:
             raise ExternalAssetFilesystemError(
                 ExternalPetAssetStatus.CHANGED_DURING_READ
             )
-        return _ReadResult(bytes(prefix), digest.hexdigest(), total)
+        return _ReadResult(
+            data=bytes(data),
+            prefix=bytes(prefix),
+            sha256=digest.hexdigest(),
+            size_bytes=total,
+        )
 
     @staticmethod
     def _verify_expected_hashes(
