@@ -1,5 +1,8 @@
 # Textured mesh renderer spike
 
+The follow-up engineering result is documented in
+`pet_opengl_mesh_backend.md`. This file remains the historical route comparison.
+
 ## Scope
 
 This spike evaluates renderer backends with an original, runtime-generated

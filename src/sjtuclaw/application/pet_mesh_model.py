@@ -101,6 +101,8 @@ def validate_pet_mesh_scene(scene: PetMeshScene) -> None:
         raise PetMeshValidationError(PetMeshValidationCode.INVALID_VIEWPORT)
     if not math.isfinite(scene.foot_baseline_y):
         raise PetMeshValidationError(PetMeshValidationCode.INVALID_BASELINE)
+    if not 0.0 <= scene.foot_baseline_y <= scene.height:
+        raise PetMeshValidationError(PetMeshValidationCode.INVALID_BASELINE)
 
     texture_ids: set[str] = set()
     for texture in scene.textures:
@@ -145,14 +147,8 @@ def validate_pet_mesh_scene(scene: PetMeshScene) -> None:
             )
         ):
             raise PetMeshValidationError(PetMeshValidationCode.INVALID_INDEX)
-        if command.clip_polygon is not None and (
-            len(command.clip_polygon) < 3
-            or any(
-                not math.isfinite(point.x) or not math.isfinite(point.y)
-                for point in command.clip_polygon
-            )
-        ):
-            raise PetMeshValidationError(PetMeshValidationCode.INVALID_CLIP)
+        if command.clip_polygon is not None:
+            _validate_convex_clip_polygon(scene, command.clip_polygon)
 
 
 def sorted_draw_commands(
@@ -182,3 +178,40 @@ def _valid_color(color: PetMeshColor) -> bool:
         not isinstance(channel, bool) and 0 <= channel <= 255
         for channel in (color.red, color.green, color.blue, color.alpha)
     )
+
+
+def _validate_convex_clip_polygon(
+    scene: PetMeshScene,
+    points: tuple[PetMeshPoint, ...],
+) -> None:
+    """Accept bounded convex clips; the OpenGL backend uses a triangle fan."""
+
+    if len(points) < 3:
+        raise PetMeshValidationError(PetMeshValidationCode.INVALID_CLIP)
+    if any(
+        not math.isfinite(point.x)
+        or not math.isfinite(point.y)
+        or point.x < 0.0
+        or point.y < 0.0
+        or point.x > scene.width
+        or point.y > scene.height
+        for point in points
+    ):
+        raise PetMeshValidationError(PetMeshValidationCode.INVALID_CLIP)
+
+    winding = 0
+    count = len(points)
+    for index in range(count):
+        first = points[index]
+        second = points[(index + 1) % count]
+        third = points[(index + 2) % count]
+        cross = (second.x - first.x) * (third.y - second.y) - (
+            second.y - first.y
+        ) * (third.x - second.x)
+        if math.isclose(cross, 0.0, abs_tol=1e-9):
+            raise PetMeshValidationError(PetMeshValidationCode.INVALID_CLIP)
+        direction = 1 if cross > 0.0 else -1
+        if winding == 0:
+            winding = direction
+        elif winding != direction:
+            raise PetMeshValidationError(PetMeshValidationCode.INVALID_CLIP)

@@ -1,0 +1,183 @@
+"""Lifecycle and real-driver tests for the reusable OpenGL mesh backend."""
+
+from __future__ import annotations
+
+import json
+import os
+import subprocess
+import sys
+import threading
+from collections.abc import Iterator
+from pathlib import Path
+
+import pytest
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+from PySide6.QtGui import QImage
+from PySide6.QtWidgets import QApplication
+
+from sjtuclaw.application.pet_geometry import Size
+from sjtuclaw.application.pet_mesh_model import PetMeshScene
+from sjtuclaw.presentation.qt.pet_mesh_opengl_renderer import (
+    OpenGLMeshError,
+    OpenGLMeshPetRenderer,
+    OpenGLMeshSafeCode,
+    OpenGLTexturedMeshBackend,
+)
+from sjtuclaw.presentation.qt.pet_mesh_spike import generate_mesh_spike_scene
+from sjtuclaw.presentation.qt.pet_renderer import SafePetRenderer
+
+
+@pytest.fixture(scope="module")
+def qt_application() -> Iterator[QApplication]:
+    existing = QApplication.instance()
+    application = existing if isinstance(existing, QApplication) else QApplication([])
+    yield application
+
+
+class _FakeImageBackend:
+    def __init__(self, *, fail_initialize: bool = False) -> None:
+        self.fail_initialize = fail_initialize
+        self.closed = False
+        self.calls: list[str] = []
+        self.scene: PetMeshScene | None = None
+
+    def initialize(self, viewport: Size) -> None:
+        del viewport
+        self.calls.append("initialize")
+        if self.fail_initialize:
+            raise OpenGLMeshError(OpenGLMeshSafeCode.INITIALIZATION_FAILED)
+
+    def set_viewport(self, viewport: Size) -> None:
+        del viewport
+        self.calls.append("set_viewport")
+
+    def set_scene(self, scene: PetMeshScene) -> None:
+        self.scene = scene
+        self.calls.append("set_scene")
+
+    def render_scene(self) -> QImage:
+        self.calls.append("render_scene")
+        return QImage(160, 180, QImage.Format.Format_RGBA8888_Premultiplied)
+
+    def pause(self) -> None:
+        self.calls.append("pause")
+
+    def resume(self) -> None:
+        self.calls.append("resume")
+
+    def close(self) -> None:
+        self.calls.append("close")
+        self.closed = True
+
+
+def test_adapter_lifecycle_uses_injected_generic_backend() -> None:
+    scene = generate_mesh_spike_scene()
+    backend = _FakeImageBackend()
+    renderer = OpenGLMeshPetRenderer(scene, backend=backend)
+
+    renderer.initialize(Size(160, 180))
+    renderer.set_viewport(Size(200, 225))
+    renderer.set_scene(scene)
+    renderer.pause()
+    renderer.pause()
+    renderer.resume()
+    renderer.resume()
+    renderer.close()
+    renderer.close()
+
+    assert backend.calls == [
+        "initialize",
+        "set_viewport",
+        "set_scene",
+        "pause",
+        "resume",
+        "close",
+    ]
+    assert backend.closed is True
+
+
+def test_safe_renderer_falls_back_when_backend_initialization_fails() -> None:
+    scene = generate_mesh_spike_scene()
+    backend = _FakeImageBackend(fail_initialize=True)
+    safe = SafePetRenderer(OpenGLMeshPetRenderer(scene, backend=backend))
+
+    safe.initialize(Size(160, 180))
+
+    assert safe.using_placeholder is True
+    assert backend.closed is True
+    safe.close()
+
+
+def test_backend_rejects_cross_thread_context_work(
+    qt_application: QApplication,
+) -> None:
+    del qt_application
+    backend = OpenGLTexturedMeshBackend(generate_mesh_spike_scene())
+    observed: list[OpenGLMeshSafeCode] = []
+
+    def initialize_from_worker() -> None:
+        try:
+            backend.initialize(Size(160, 180))
+        except OpenGLMeshError as error:
+            observed.append(error.code)
+
+    worker = threading.Thread(target=initialize_from_worker)
+    worker.start()
+    worker.join(timeout=5)
+
+    assert worker.is_alive() is False
+    assert observed == [OpenGLMeshSafeCode.WRONG_THREAD]
+    backend.close()
+
+
+def test_backend_errors_are_fixed_and_do_not_expose_driver_details() -> None:
+    error = OpenGLMeshError(OpenGLMeshSafeCode.CONTEXT_LOST)
+
+    assert error.code is OpenGLMeshSafeCode.CONTEXT_LOST
+    assert str(error) == "The OpenGL pet renderer failed safely."
+    assert "context" not in str(error).lower()
+
+
+def test_real_windows_backend_smoke_and_metrics() -> None:
+    repository = Path(__file__).resolve().parents[2]
+    environment = os.environ.copy()
+    environment["QT_QPA_PLATFORM"] = "windows"
+    environment.pop("QT_QPA_FONTDIR", None)
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(repository / "scripts" / "qt_pet_opengl_backend_smoke.py"),
+        ],
+        cwd=repository,
+        env=environment,
+        check=False,
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        timeout=180,
+    )
+
+    assert completed.returncode == 0
+    assert completed.stderr == ""
+    result = json.loads(completed.stdout)
+    assert result["qt_pet_opengl_backend_smoke"] is True
+    assert result["safe_code"] == "none"
+    assert all(result["pixel_contracts"].values())
+    assert all(result["window_contracts"].values())
+    assert all(result["fault_contracts"].values())
+    assert result["warmed_frames"] >= 1000
+    assert result["lifecycle_cycles"] == 50
+    assert result["persistent_uploads"] is True
+    assert result["scene_replacements"] == 20
+    assert result["framebuffer_replacements"] == 4
+    assert result["dpi"]["sizes"] == {
+        "1.0": [160, 180],
+        "1.25": [200, 225],
+        "1.5": [240, 270],
+        "2.0": [320, 360],
+    }
+    assert result["dpi"]["logical_baseline_stable"] is True
+    assert result["dpi"]["logical_bounds_stable"] is True

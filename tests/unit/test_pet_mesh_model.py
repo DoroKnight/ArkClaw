@@ -101,3 +101,65 @@ def test_model_is_minimal_and_contains_no_spine_structures() -> None:
         "clip_polygon",
     }
     assert fields.isdisjoint({"bone", "slot", "skin", "attachment", "deform"})
+
+
+@pytest.mark.parametrize(
+    "clip",
+    [
+        (
+            PetMeshPoint(0.0, 0.0),
+            PetMeshPoint(2.0, 2.0),
+            PetMeshPoint(0.0, 2.0),
+            PetMeshPoint(2.0, 0.0),
+        ),
+        (
+            PetMeshPoint(0.0, 0.0),
+            PetMeshPoint(2.0, 0.0),
+            PetMeshPoint(1.0, 0.5),
+            PetMeshPoint(2.0, 2.0),
+            PetMeshPoint(0.0, 2.0),
+        ),
+        (
+            PetMeshPoint(-1.0, 0.0),
+            PetMeshPoint(1.0, 0.0),
+            PetMeshPoint(0.0, 1.0),
+        ),
+    ],
+)
+def test_clip_contract_rejects_self_intersecting_concave_and_unbounded_polygons(
+    clip: tuple[PetMeshPoint, ...],
+) -> None:
+    source = _command()
+    scene = _scene(
+        PetMeshDrawCommand(
+            source.texture_id,
+            source.vertices,
+            source.triangle_indices,
+            source.draw_order,
+            clip_polygon=clip,
+        )
+    )
+
+    with pytest.raises(PetMeshValidationError) as caught:
+        validate_pet_mesh_scene(scene)
+
+    assert caught.value.code is PetMeshValidationCode.INVALID_CLIP
+
+
+def test_clip_contract_accepts_bounded_convex_polygon() -> None:
+    source = _command()
+    scene = _scene(
+        PetMeshDrawCommand(
+            source.texture_id,
+            source.vertices,
+            source.triangle_indices,
+            source.draw_order,
+            clip_polygon=(
+                PetMeshPoint(0.0, 0.0),
+                PetMeshPoint(2.0, 0.0),
+                PetMeshPoint(1.0, 2.0),
+            ),
+        )
+    )
+
+    validate_pet_mesh_scene(scene)
