@@ -24,15 +24,22 @@ class FakeAnimationPlayer:
         *,
         fail_play: bool = False,
         fail_clear: bool = False,
+        capabilities: AnimationPlayerCapabilities | None = None,
     ) -> None:
         self._fail_play = fail_play
         self._fail_clear = fail_clear
+        self._capabilities = capabilities or AnimationPlayerCapabilities(
+            True,
+            True,
+            True,
+            True,
+        )
         self._next_token = 0
         self.calls: list[FakePlayerCall] = []
 
     @property
     def capabilities(self) -> AnimationPlayerCapabilities:
-        return AnimationPlayerCapabilities(True, True, True, True)
+        return self._capabilities
 
     def play(self, request: PlaybackRequest) -> PlaybackToken:
         self.calls.append(

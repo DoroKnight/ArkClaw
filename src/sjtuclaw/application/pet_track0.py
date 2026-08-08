@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from sjtuclaw.application.pet_action_sequence import (
     SEQUENCE_CATALOG,
@@ -19,6 +20,9 @@ from sjtuclaw.application.pet_action_sequence import (
     SequenceName,
     SequenceTerminal,
 )
+
+if TYPE_CHECKING:
+    from sjtuclaw.application.pet_animation import MonotonicClock
 
 type PlaybackToken = object
 
@@ -421,6 +425,61 @@ class AnimationPlayerCapabilities:
     liveness_reporting: bool
 
 
+def sequencing_enabled(capabilities: AnimationPlayerCapabilities) -> bool:
+    """Require the complete callback, duration, and liveness contract."""
+
+    return all(
+        (
+            capabilities.completion_callbacks,
+            capabilities.loop_boundary_callbacks,
+            capabilities.duration_metadata,
+            capabilities.liveness_reporting,
+        )
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class WatchdogPolicy:
+    """Bounded completion/boundary timeout tolerance."""
+
+    tolerance_ratio: float = 0.25
+    minimum_tolerance_seconds: float = 0.25
+    maximum_tolerance_seconds: float = 1.0
+
+    def __post_init__(self) -> None:
+        if self.tolerance_ratio < 0:
+            raise ValueError("tolerance_ratio must be non-negative")
+        if self.minimum_tolerance_seconds < 0:
+            raise ValueError("minimum tolerance must be non-negative")
+        if self.maximum_tolerance_seconds < self.minimum_tolerance_seconds:
+            raise ValueError("watchdog tolerance bounds are invalid")
+
+    def deadline(
+        self,
+        start: float,
+        source_duration: float,
+        speed: float,
+    ) -> float:
+        if source_duration <= 0:
+            raise ValueError("source_duration must be positive")
+        if speed <= 0:
+            raise ValueError("speed must be positive")
+        effective_duration = source_duration / speed
+        tolerance = min(
+            self.maximum_tolerance_seconds,
+            max(
+                self.minimum_tolerance_seconds,
+                self.tolerance_ratio * effective_duration,
+            ),
+        )
+        return start + effective_duration + tolerance
+
+
+class _SystemMonotonicClock:
+    def now(self) -> float:
+        return time.monotonic()
+
+
 @dataclass(frozen=True, slots=True)
 class PlaybackRequest:
     """One concrete logical-to-physical player command."""
@@ -484,11 +543,16 @@ class PetTrack0Controller:
         registry: AnimationRegistry,
         arbiter: PetActionArbiter | None = None,
         runner: PetSequenceRunner | None = None,
+        clock: MonotonicClock | None = None,
+        watchdog_policy: WatchdogPolicy | None = None,
     ) -> None:
         self._player = player
         self._registry = registry
         self._arbiter = arbiter or PetActionArbiter()
         self._runner = runner or PetSequenceRunner()
+        self._clock = clock or _SystemMonotonicClock()
+        self._watchdog_policy = watchdog_policy or WatchdogPolicy()
+        self._watchdog_deadline: float | None = None
         self._generation = 0
         self._active_request: ActionRequest | None = None
         self._state = Track0PlaybackState(None, None, PlaybackHealth.HEALTHY)
@@ -509,6 +573,10 @@ class PetTrack0Controller:
     def active_request(self) -> ActionRequest | None:
         return self._active_request
 
+    @property
+    def watchdog_deadline(self) -> float | None:
+        return self._watchdog_deadline
+
     def preflight(self, request: ActionRequest) -> ControllerPreflight:
         """Validate catalog and registry facts without changing any state."""
 
@@ -520,10 +588,12 @@ class PetTrack0Controller:
             or request.protected is not entry.protected
         ):
             return ControllerPreflight(ActionOutcome.INVALID_SEQUENCE)
+        if not sequencing_enabled(self._player.capabilities):
+            return ControllerPreflight(ActionOutcome.SEQUENCING_DISABLED_CAPABILITY)
         try:
             self._registry.validate_sequence(
                 entry,
-                require_duration_metadata=False,
+                require_duration_metadata=True,
             )
         except AnimationRegistryError:
             return ControllerPreflight(ActionOutcome.REGISTRY_MISMATCH)
@@ -553,7 +623,10 @@ class PetTrack0Controller:
         """Apply one explicit cancellation mode; never synthesize fallback idle."""
 
         if mode is CancellationMode.GRACEFUL_EXIT:
-            return self._runner.request_graceful_exit()
+            outcome = self._runner.request_graceful_exit()
+            if outcome is ActionOutcome.ACCEPTED:
+                self._arm_current_loop_boundary_watchdog()
+            return outcome
         if mode is CancellationMode.IMMEDIATE_CLEAR:
             return self.clear(reason)
         if mode is CancellationMode.REPLACE:
@@ -569,6 +642,7 @@ class PetTrack0Controller:
         """Unconditionally invalidate and clear Track 0 without playing idle."""
 
         del reason
+        self._watchdog_deadline = None
         self._allocate_generation()
         try:
             self._player.clear(0, 0.0)
@@ -596,6 +670,7 @@ class PetTrack0Controller:
         if directive.outcome is not ActionOutcome.ACCEPTED:
             return directive.outcome
         if directive.step is None:
+            self._watchdog_deadline = None
             return ActionOutcome.ACCEPTED
         active_request = self._active_request
         if active_request is None:
@@ -644,9 +719,11 @@ class PetTrack0Controller:
             confirmed_epoch=confirmed_epoch,
             health=PlaybackHealth.HEALTHY,
         )
+        self._arm_after_successful_play(step)
         return ActionOutcome.ACCEPTED
 
     def _contain_failed_play(self) -> ActionOutcome:
+        self._watchdog_deadline = None
         self._allocate_generation()
         try:
             self._player.clear(0, 0.0)
@@ -660,6 +737,55 @@ class PetTrack0Controller:
         self._active_request = None
         self._state = Track0PlaybackState(None, None, health)
         return outcome
+
+    def poll_watchdog(self) -> ActionOutcome | None:
+        """Contain a missing completion/boundary callback at its exact deadline."""
+
+        deadline = self._watchdog_deadline
+        if deadline is None or self._clock.now() < deadline:
+            return None
+        self._watchdog_deadline = None
+        self._allocate_generation()
+        try:
+            self._player.clear(0, 0.0)
+        except Exception:
+            health = PlaybackHealth.UNKNOWN
+        else:
+            health = PlaybackHealth.DEGRADED
+        self._runner.reset()
+        self._active_request = None
+        self._state = Track0PlaybackState(None, None, health)
+        return ActionOutcome.CALLBACK_TIMEOUT
+
+    def _arm_after_successful_play(self, step: PetActionStep) -> None:
+        if step.loop:
+            self._watchdog_deadline = None
+            return
+        self._watchdog_deadline = self._deadline_for_step(step)
+
+    def _arm_current_loop_boundary_watchdog(self) -> None:
+        snapshot = self._runner.snapshot
+        sequence = snapshot.sequence
+        current_index = snapshot.current_index
+        if sequence is None or current_index is None:
+            self._watchdog_deadline = None
+            return
+        step = sequence.steps[current_index]
+        if not step.loop:
+            self._watchdog_deadline = None
+            return
+        self._watchdog_deadline = self._deadline_for_step(step)
+
+    def _deadline_for_step(self, step: PetActionStep) -> float:
+        binding = self._registry.resolve(step.action)
+        source_duration = binding.source_duration_seconds
+        if source_duration is None:
+            raise RuntimeError("preflighted playback is missing duration metadata")
+        return self._watchdog_policy.deadline(
+            self._clock.now(),
+            source_duration,
+            step.speed,
+        )
 
     def _allocate_generation(self) -> int:
         self._generation += 1

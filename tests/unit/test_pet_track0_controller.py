@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 from tests.fakes.pet_animation_player import FakeAnimationPlayer
 
 from sjtuclaw.application.pet_action_sequence import (
     SEQUENCE_CATALOG,
+    AnimationRegistry,
     InterruptClass,
     PetActionName,
     PlaybackHealth,
@@ -38,9 +41,19 @@ def _request(sequence_name: SequenceName) -> ActionRequest:
 def _controller(
     player: FakeAnimationPlayer,
 ) -> PetTrack0Controller:
+    identity = default_animation_registry()
+    registry = AnimationRegistry(
+        {
+            action: replace(
+                identity.resolve(action),
+                source_duration_seconds=1.0,
+            )
+            for action in identity.actions
+        }
+    )
     return PetTrack0Controller(
         player=player,
-        registry=default_animation_registry(),
+        registry=registry,
     )
 
 
