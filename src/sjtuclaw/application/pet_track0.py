@@ -4,13 +4,18 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
+from typing import Protocol
 
 from sjtuclaw.application.pet_action_sequence import (
+    SEQUENCE_CATALOG,
+    AnimationRegistry,
+    AnimationRegistryError,
     InterruptClass,
     PetActionName,
     PetActionSequence,
     PetActionStep,
     PlaybackHealth,
+    SequenceCatalogEntry,
     SequenceName,
     SequenceTerminal,
 )
@@ -404,3 +409,258 @@ class PetSequenceRunner:
         if self._current_index is None:
             raise RuntimeError("no active sequence step")
         return self._current_index
+
+
+@dataclass(frozen=True, slots=True)
+class AnimationPlayerCapabilities:
+    """Capabilities required before completion-driven sequencing is enabled."""
+
+    completion_callbacks: bool
+    loop_boundary_callbacks: bool
+    duration_metadata: bool
+    liveness_reporting: bool
+
+
+@dataclass(frozen=True, slots=True)
+class PlaybackRequest:
+    """One concrete logical-to-physical player command."""
+
+    generation: int
+    track: int
+    logical_action: PetActionName
+    physical_name: str
+    loop: bool
+    speed: float
+    mix_seconds: float
+
+    def __post_init__(self) -> None:
+        if self.generation < 0:
+            raise ValueError("generation must be non-negative")
+        if self.track not in {0, 1, 2}:
+            raise ValueError("track must be 0, 1, or 2")
+        if not self.physical_name:
+            raise ValueError("physical_name must not be empty")
+        if self.speed <= 0:
+            raise ValueError("speed must be positive")
+        if self.mix_seconds < 0:
+            raise ValueError("mix_seconds must be non-negative")
+
+
+class AnimationPlayer(Protocol):
+    """Renderer-neutral player boundary used by the Track 0 controller."""
+
+    @property
+    def capabilities(self) -> AnimationPlayerCapabilities: ...
+
+    def play(self, request: PlaybackRequest) -> PlaybackToken: ...
+
+    def clear(self, track: int, mix_seconds: float) -> None: ...
+
+
+@dataclass(frozen=True, slots=True)
+class Track0PlaybackState:
+    """Separate desired intent, confirmed player epoch, and renderer health."""
+
+    desired_action: PetActionName | None
+    confirmed_epoch: ConfirmedPlaybackEpoch | None
+    health: PlaybackHealth
+
+
+@dataclass(frozen=True, slots=True)
+class ControllerPreflight:
+    """Read-only validation result produced before any runner/player mutation."""
+
+    outcome: ActionOutcome
+    entry: SequenceCatalogEntry | None = None
+
+
+class PetTrack0Controller:
+    """Thin transaction coordinator for Track 0 sequencing and player state."""
+
+    def __init__(
+        self,
+        *,
+        player: AnimationPlayer,
+        registry: AnimationRegistry,
+        arbiter: PetActionArbiter | None = None,
+        runner: PetSequenceRunner | None = None,
+    ) -> None:
+        self._player = player
+        self._registry = registry
+        self._arbiter = arbiter or PetActionArbiter()
+        self._runner = runner or PetSequenceRunner()
+        self._generation = 0
+        self._active_request: ActionRequest | None = None
+        self._state = Track0PlaybackState(None, None, PlaybackHealth.HEALTHY)
+
+    @property
+    def state(self) -> Track0PlaybackState:
+        return self._state
+
+    @property
+    def runner(self) -> PetSequenceRunner:
+        return self._runner
+
+    @property
+    def generation(self) -> int:
+        return self._generation
+
+    @property
+    def active_request(self) -> ActionRequest | None:
+        return self._active_request
+
+    def preflight(self, request: ActionRequest) -> ControllerPreflight:
+        """Validate catalog and registry facts without changing any state."""
+
+        entry = SEQUENCE_CATALOG.get(request.sequence_name)
+        if entry is None or entry.track != 0:
+            return ControllerPreflight(ActionOutcome.INVALID_SEQUENCE)
+        if (
+            request.interruption_class is not entry.interruption_class
+            or request.protected is not entry.protected
+        ):
+            return ControllerPreflight(ActionOutcome.INVALID_SEQUENCE)
+        try:
+            self._registry.validate_sequence(
+                entry,
+                require_duration_metadata=False,
+            )
+        except AnimationRegistryError:
+            return ControllerPreflight(ActionOutcome.REGISTRY_MISMATCH)
+        return ControllerPreflight(ActionOutcome.ACCEPTED, entry)
+
+    def play(self, request: ActionRequest) -> ActionOutcome:
+        """Start a preflighted sequence and attempt its first physical play."""
+
+        if self._active_request is not None:
+            return ActionOutcome.REJECTED_PRIORITY
+        preflight = self.preflight(request)
+        if preflight.outcome is not ActionOutcome.ACCEPTED:
+            return preflight.outcome
+        entry = preflight.entry
+        if entry is None:
+            return ActionOutcome.INVALID_SEQUENCE
+        directive = self._runner.start(entry.sequence)
+        return self._play_directive(request, directive)
+
+    def cancel(
+        self,
+        reason: CancelReason,
+        mode: CancellationMode,
+        *,
+        replacement: ActionRequest | None = None,
+    ) -> ActionOutcome:
+        """Apply one explicit cancellation mode; never synthesize fallback idle."""
+
+        if mode is CancellationMode.GRACEFUL_EXIT:
+            return self._runner.request_graceful_exit()
+        if mode is CancellationMode.IMMEDIATE_CLEAR:
+            return self.clear(reason)
+        if mode is CancellationMode.REPLACE:
+            if replacement is None:
+                return ActionOutcome.INVALID_SEQUENCE
+            clear_outcome = self.clear(reason)
+            if clear_outcome is not ActionOutcome.CLEARED:
+                return clear_outcome
+            return self.play(replacement)
+        raise AssertionError("unhandled cancellation mode")
+
+    def clear(self, reason: CancelReason) -> ActionOutcome:
+        """Unconditionally invalidate and clear Track 0 without playing idle."""
+
+        del reason
+        self._allocate_generation()
+        try:
+            self._player.clear(0, 0.0)
+        except Exception:
+            self._runner.reset()
+            self._active_request = None
+            self._state = Track0PlaybackState(
+                None,
+                None,
+                PlaybackHealth.UNKNOWN,
+            )
+            return ActionOutcome.RENDERER_STATE_UNKNOWN
+
+        self._runner.reset()
+        self._active_request = None
+        self._state = Track0PlaybackState(None, None, PlaybackHealth.HEALTHY)
+        return ActionOutcome.CLEARED
+
+    def handle_completion(self, event: PlaybackEvent) -> ActionOutcome:
+        """Translate a runner directive into at most one next-step play."""
+
+        directive = self._runner.handle_completion(event)
+        if directive is None:
+            return ActionOutcome.ACCEPTED
+        if directive.outcome is not ActionOutcome.ACCEPTED:
+            return directive.outcome
+        if directive.step is None:
+            return ActionOutcome.ACCEPTED
+        active_request = self._active_request
+        if active_request is None:
+            return ActionOutcome.INVALID_SEQUENCE
+        return self._play_directive(active_request, directive)
+
+    def _play_directive(
+        self,
+        request: ActionRequest,
+        directive: RunnerDirective,
+    ) -> ActionOutcome:
+        step = directive.step
+        if directive.outcome is not ActionOutcome.ACCEPTED or step is None:
+            return ActionOutcome.INVALID_SEQUENCE
+
+        try:
+            binding = self._registry.resolve(step.action)
+        except KeyError:
+            self._runner.reset()
+            return ActionOutcome.REGISTRY_MISMATCH
+
+        generation = self._allocate_generation()
+        playback_request = PlaybackRequest(
+            generation=generation,
+            track=binding.track,
+            logical_action=step.action,
+            physical_name=binding.physical_name,
+            loop=step.loop,
+            speed=step.speed,
+            mix_seconds=step.mix_seconds or 0.0,
+        )
+        try:
+            token = self._player.play(playback_request)
+            confirmed_epoch = self._runner.accept_playback(
+                generation=generation,
+                logical_action=step.action,
+                physical_name=binding.physical_name,
+                playback_token=token,
+            )
+        except Exception:
+            return self._contain_failed_play()
+
+        self._active_request = request
+        self._state = Track0PlaybackState(
+            desired_action=step.action,
+            confirmed_epoch=confirmed_epoch,
+            health=PlaybackHealth.HEALTHY,
+        )
+        return ActionOutcome.ACCEPTED
+
+    def _contain_failed_play(self) -> ActionOutcome:
+        self._allocate_generation()
+        try:
+            self._player.clear(0, 0.0)
+        except Exception:
+            health = PlaybackHealth.UNKNOWN
+            outcome = ActionOutcome.RENDERER_STATE_UNKNOWN
+        else:
+            health = PlaybackHealth.DEGRADED
+            outcome = ActionOutcome.PLAYBACK_DEGRADED
+        self._runner.reset()
+        self._active_request = None
+        self._state = Track0PlaybackState(None, None, health)
+        return outcome
+
+    def _allocate_generation(self) -> int:
+        self._generation += 1
+        return self._generation
