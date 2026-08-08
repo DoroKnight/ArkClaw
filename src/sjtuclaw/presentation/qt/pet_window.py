@@ -23,6 +23,10 @@ from sjtuclaw.application.autostart_service import (
     AutostartSnapshot,
     AutostartStatus,
 )
+from sjtuclaw.application.pet_action_sequence import (
+    PetActionName,
+    default_animation_registry,
+)
 from sjtuclaw.application.pet_animation import (
     MonotonicClock,
     PetAnimationConfig,
@@ -39,6 +43,13 @@ from sjtuclaw.application.pet_state import (
     PetMotionState,
     PetStateTransitionError,
 )
+from sjtuclaw.application.pet_track0 import (
+    ActionOutcome,
+    AnimationPlayerCapabilities,
+    PetTrack0Controller,
+    PlaybackRequest,
+    PlaybackToken,
+)
 from sjtuclaw.presentation.qt.autostart_controller import (
     AutostartUiController,
 )
@@ -52,6 +63,37 @@ from sjtuclaw.presentation.qt.pet_renderer import (
 _PET_WIDTH = 160
 _PET_HEIGHT = 180
 _TIMER_INTERVAL_MS = 16
+
+
+class PlaceholderAnimationPlayer:
+    """Explicitly disable production sequencing for the drawn placeholder."""
+
+    _CAPABILITIES = AnimationPlayerCapabilities(False, False, False, False)
+
+    def __init__(self) -> None:
+        self._play_call_count = 0
+
+    @property
+    def capabilities(self) -> AnimationPlayerCapabilities:
+        return self._CAPABILITIES
+
+    @property
+    def play_call_count(self) -> int:
+        return self._play_call_count
+
+    def request(self, action: PetActionName) -> ActionOutcome:
+        """Retain the legacy renderer-neutral path without pretending to play."""
+
+        del action
+        return ActionOutcome.LEGACY_DIRECT
+
+    def play(self, request: PlaybackRequest) -> PlaybackToken:
+        del request
+        self._play_call_count += 1
+        raise RuntimeError("placeholder production sequencing is disabled")
+
+    def clear(self, track: int, mix_seconds: float) -> None:
+        del track, mix_seconds
 
 
 class PetWindow(QWidget):
@@ -103,14 +145,22 @@ class PetWindow(QWidget):
             initial,
             Size(_PET_WIDTH, _PET_HEIGHT),
         )
+        selected_clock = clock or SystemMonotonicClock()
+        self._animation_player = PlaceholderAnimationPlayer()
+        track0 = PetTrack0Controller(
+            player=self._animation_player,
+            registry=default_animation_registry(),
+            clock=selected_clock,
+        )
         self._animation = PetAnimationEngine(
             motion,
             rng=rng,
             config=animation_config,
+            track0=track0,
         )
         self._renderer.initialize(Size(_PET_WIDTH, _PET_HEIGHT))
         self._sync_renderer_state()
-        self._clock = clock or SystemMonotonicClock()
+        self._clock = selected_clock
         self._last_tick = self._clock.now()
         self.move(round(initial.x), round(initial.y))
 
