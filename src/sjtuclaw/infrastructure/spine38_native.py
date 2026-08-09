@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ctypes
 import math
+import threading
 import weakref
 from dataclasses import dataclass
 from enum import IntEnum
@@ -13,6 +14,9 @@ from typing import Protocol, cast
 from sjtuclaw.application.pet_external_assets import ExternalPetAssetSnapshot
 
 _EXPECTED_ABI_VERSION = 1
+# Adapter safety limits bound catalog work even if a loaded DLL is corrupt.
+_MAX_CATALOG_ENTRIES = 4096
+_MAX_CATALOG_NAME_BYTES = 4096
 
 
 class Spine38NativeCode(IntEnum):
@@ -112,20 +116,24 @@ class Spine38NativeLibrary:
             raise Spine38NativeError(Spine38NativeCode.DLL_PATH_INVALID)
         try:
             library = cast(_NativeLibrary, ctypes.CDLL(str(path)))
-        except OSError as error:
-            raise Spine38NativeError(Spine38NativeCode.DLL_PATH_INVALID) from error
+        except OSError:
+            raise Spine38NativeError(Spine38NativeCode.DLL_PATH_INVALID) from None
         return cls(library)
 
     def create(self, snapshot: ExternalPetAssetSnapshot) -> Spine38CatalogNativePort:
         """Create a handle while retaining input buffers through the native call."""
 
         skeleton, atlas = self._validated_create_bytes(snapshot)
-        skeleton_buffer = (ctypes.c_uint8 * len(skeleton)).from_buffer_copy(skeleton)
-        atlas_buffer = (ctypes.c_char * len(atlas)).from_buffer_copy(atlas)
+        skeleton_size = len(skeleton)
+        try:
+            skeleton_buffer = (ctypes.c_uint8 * skeleton_size).from_buffer_copy(skeleton)
+            atlas_buffer = (ctypes.c_char * len(atlas)).from_buffer_copy(atlas)
+        except (MemoryError, OverflowError):
+            raise Spine38NativeError(Spine38NativeCode.RUNTIME_FAILURE) from None
         handle = ctypes.c_void_p()
         code = self._library.sjtuclaw_spine38_create(
             skeleton_buffer,
-            len(skeleton),
+            skeleton_size,
             atlas_buffer,
             len(atlas),
             ctypes.byref(handle),
@@ -133,7 +141,7 @@ class Spine38NativeLibrary:
         _require_ok(code)
         if handle.value is None:
             raise Spine38NativeError(Spine38NativeCode.RUNTIME_FAILURE)
-        return _Spine38CatalogNativeHandle(self._library, handle)
+        return _Spine38CatalogNativeHandle(self._library, handle, skeleton_size)
 
     def _declare_signatures(self) -> None:
         library = self._library
@@ -203,9 +211,17 @@ class Spine38NativeLibrary:
 class _Spine38CatalogNativeHandle:
     """Own one opaque native handle; the finalizer is only a leak fallback."""
 
-    def __init__(self, library: _NativeLibrary, handle: ctypes.c_void_p) -> None:
+    def __init__(
+        self,
+        library: _NativeLibrary,
+        handle: ctypes.c_void_p,
+        skeleton_size: int,
+    ) -> None:
         self._library = library
         self._handle = handle
+        self._catalog_entry_limit = min(_MAX_CATALOG_ENTRIES, skeleton_size)
+        self._catalog_name_limit = min(_MAX_CATALOG_NAME_BYTES, skeleton_size)
+        self._lock = threading.RLock()
         self._closed = False
         self._finalizer = weakref.finalize(
             self,
@@ -215,40 +231,64 @@ class _Spine38CatalogNativeHandle:
         )
 
     def catalog(self) -> tuple[Spine38AnimationInfo, ...]:
-        handle = self._require_open()
-        count = int(cast(int, self._library.sjtuclaw_spine38_animation_count(handle)))
-        return tuple(self._animation_info(handle, index) for index in range(count))
+        with self._lock:
+            handle = self._require_open()
+            count = _bounded_native_size(
+                self._library.sjtuclaw_spine38_animation_count(handle),
+                minimum=0,
+                maximum=self._catalog_entry_limit,
+            )
+            try:
+                return tuple(self._animation_info(handle, index) for index in range(count))
+            except (MemoryError, OverflowError):
+                raise Spine38NativeError(Spine38NativeCode.RUNTIME_FAILURE) from None
 
     def skins(self) -> tuple[str, ...]:
-        handle = self._require_open()
-        count = int(cast(int, self._library.sjtuclaw_spine38_skin_count(handle)))
-        return tuple(self._skin_info(handle, index) for index in range(count))
+        with self._lock:
+            handle = self._require_open()
+            count = _bounded_native_size(
+                self._library.sjtuclaw_spine38_skin_count(handle),
+                minimum=0,
+                maximum=self._catalog_entry_limit,
+            )
+            try:
+                return tuple(self._skin_info(handle, index) for index in range(count))
+            except (MemoryError, OverflowError):
+                raise Spine38NativeError(Spine38NativeCode.RUNTIME_FAILURE) from None
 
     def setup_bounds(self) -> Spine38Bounds:
-        handle = self._require_open()
-        raw_bounds = _SjtuclawSpine38Bounds()
-        _require_ok(self._library.sjtuclaw_spine38_setup_bounds(handle, ctypes.byref(raw_bounds)))
-        values = (raw_bounds.x, raw_bounds.y, raw_bounds.width, raw_bounds.height)
-        if not all(math.isfinite(value) for value in values) or any(
-            value <= 0.0 for value in values[2:]
-        ):
-            raise Spine38NativeError(Spine38NativeCode.RUNTIME_FAILURE)
-        return Spine38Bounds(*values)
+        with self._lock:
+            handle = self._require_open()
+            raw_bounds = _SjtuclawSpine38Bounds()
+            _require_ok(
+                self._library.sjtuclaw_spine38_setup_bounds(
+                    handle,
+                    ctypes.byref(raw_bounds),
+                )
+            )
+            values = (raw_bounds.x, raw_bounds.y, raw_bounds.width, raw_bounds.height)
+            if not all(math.isfinite(value) for value in values) or any(
+                value <= 0.0 for value in values[2:]
+            ):
+                raise Spine38NativeError(Spine38NativeCode.RUNTIME_FAILURE)
+            return Spine38Bounds(*values)
 
     def close(self) -> None:
-        if self._closed:
-            return
-        self._closed = True
-        self._finalizer.detach()
-        _destroy_unclosed_handle(self._library.sjtuclaw_spine38_destroy, self._handle)
+        with self._lock:
+            if self._closed:
+                return
+            self._closed = True
+            self._finalizer()
 
     def _animation_info(
         self,
         handle: ctypes.c_void_p,
         index: int,
     ) -> Spine38AnimationInfo:
-        capacity = int(
-            cast(int, self._library.sjtuclaw_spine38_animation_name_size(handle, index))
+        capacity = _bounded_native_size(
+            self._library.sjtuclaw_spine38_animation_name_size(handle, index),
+            minimum=2,
+            maximum=self._catalog_name_limit,
         )
         name_buffer = _name_buffer(capacity)
         duration = ctypes.c_float()
@@ -267,7 +307,11 @@ class _Spine38CatalogNativeHandle:
         return Spine38AnimationInfo(_decode_name(name_buffer), value)
 
     def _skin_info(self, handle: ctypes.c_void_p, index: int) -> str:
-        capacity = int(cast(int, self._library.sjtuclaw_spine38_skin_name_size(handle, index)))
+        capacity = _bounded_native_size(
+            self._library.sjtuclaw_spine38_skin_name_size(handle, index),
+            minimum=2,
+            maximum=self._catalog_name_limit,
+        )
         name_buffer = _name_buffer(capacity)
         _require_ok(
             self._library.sjtuclaw_spine38_skin_info(
@@ -296,15 +340,28 @@ def _require_ok(raw_code: object) -> None:
         raise Spine38NativeError(code)
 
 
-def _name_buffer(capacity: int) -> ctypes.Array[ctypes.c_char]:
-    if capacity <= 1:
+def _bounded_native_size(raw_size: object, *, minimum: int, maximum: int) -> int:
+    try:
+        size = int(cast(int, raw_size))
+    except (MemoryError, OverflowError, TypeError, ValueError):
+        raise Spine38NativeError(Spine38NativeCode.RUNTIME_FAILURE) from None
+    if size < minimum or size > maximum:
         raise Spine38NativeError(Spine38NativeCode.RUNTIME_FAILURE)
-    return (ctypes.c_char * capacity)()
+    return size
+
+
+def _name_buffer(capacity: int) -> ctypes.Array[ctypes.c_char]:
+    try:
+        buffer = (ctypes.c_char * capacity)()
+        ctypes.memset(buffer, 0xFF, capacity)
+    except (MemoryError, OverflowError):
+        raise Spine38NativeError(Spine38NativeCode.RUNTIME_FAILURE) from None
+    return buffer
 
 
 def _decode_name(buffer: ctypes.Array[ctypes.c_char]) -> str:
     raw = bytes(buffer)
-    if not raw or raw[-1] != 0:
+    if len(raw) < 2 or raw[-1] != 0 or b"\0" in raw[:-1]:
         raise Spine38NativeError(Spine38NativeCode.RUNTIME_FAILURE)
     try:
         name = raw[:-1].decode("utf-8")

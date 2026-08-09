@@ -7,10 +7,13 @@ import gc
 import importlib
 import inspect
 import math
+import threading
+import traceback
 import weakref
 from collections.abc import Callable
+from contextlib import suppress
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, NoReturn, cast
 
 import pytest
 
@@ -40,8 +43,22 @@ class FakeLibrary:
         self.bounds_code = 0
         self.animations = (("idle-猫", 1.25),)
         self.skins = ("default",)
+        self.animation_count_override: object | None = None
+        self.skin_count_override: object | None = None
+        self.animation_capacity_override: object | None = None
+        self.skin_capacity_override: object | None = None
+        self.animation_name_bytes_override: bytes | None = None
+        self.skin_name_bytes_override: bytes | None = None
         self.bounds = (-2.0, 3.0, 4.0, 5.0)
         self.destroy_count = 0
+        self.animation_info_calls = 0
+        self.skin_info_calls = 0
+        self.reject_animation_name_size_call = False
+        self.reject_skin_name_size_call = False
+        self.native_calls_after_destroy = 0
+        self.destroyed = threading.Event()
+        self.animation_count_started: threading.Event | None = None
+        self.animation_count_release: threading.Event | None = None
         self.create_inputs: tuple[bytes, bytes] | None = None
         self.sjtuclaw_spine38_abi_version = FakeFunction(self._abi_version)
         self.sjtuclaw_spine38_create = FakeFunction(self._create)
@@ -80,14 +97,25 @@ class FakeLibrary:
     def _destroy(self, handle: object) -> None:
         assert ctypes.cast(cast(Any, handle), ctypes.c_void_p).value == 101
         self.destroy_count += 1
+        self.destroyed.set()
 
-    def _animation_count(self, handle: object) -> int:
+    def _animation_count(self, handle: object) -> object:
         self._assert_handle(handle)
+        if self.animation_count_started is not None:
+            self.animation_count_started.set()
+            assert self.animation_count_release is not None
+            assert self.animation_count_release.wait(timeout=5)
+        if self.animation_count_override is not None:
+            return self.animation_count_override
         return len(self.animations)
 
-    def _animation_name_size(self, handle: object, index: object) -> int:
+    def _animation_name_size(self, handle: object, index: object) -> object:
         self._assert_handle(handle)
-        name, _ = self.animations[cast(int, index)]
+        if self.reject_animation_name_size_call:
+            raise AssertionError("animation count was not rejected before iteration")
+        if self.animation_capacity_override is not None:
+            return self.animation_capacity_override
+        name, _ = self.animations[cast(int, index) % len(self.animations)]
         return len(name.encode("utf-8")) + 1
 
     def _animation_info(
@@ -99,22 +127,31 @@ class FakeLibrary:
         duration: object,
     ) -> int:
         self._assert_handle(handle)
+        self.animation_info_calls += 1
         if self.animation_info_code != 0:
             return self.animation_info_code
-        animation_name, value = self.animations[cast(int, index)]
-        encoded = animation_name.encode("utf-8") + b"\0"
-        assert cast(int, capacity) == len(encoded)
+        animation_name, value = self.animations[cast(int, index) % len(self.animations)]
+        encoded = self.animation_name_bytes_override
+        if encoded is None:
+            encoded = animation_name.encode("utf-8") + b"\0"
+        assert len(encoded) <= cast(int, capacity)
         ctypes.memmove(cast(Any, name), encoded, len(encoded))
         ctypes.cast(cast(Any, duration), ctypes.POINTER(ctypes.c_float))[0] = value
         return 0
 
-    def _skin_count(self, handle: object) -> int:
+    def _skin_count(self, handle: object) -> object:
         self._assert_handle(handle)
+        if self.skin_count_override is not None:
+            return self.skin_count_override
         return len(self.skins)
 
-    def _skin_name_size(self, handle: object, index: object) -> int:
+    def _skin_name_size(self, handle: object, index: object) -> object:
         self._assert_handle(handle)
-        return len(self.skins[cast(int, index)].encode("utf-8")) + 1
+        if self.reject_skin_name_size_call:
+            raise AssertionError("skin count was not rejected before iteration")
+        if self.skin_capacity_override is not None:
+            return self.skin_capacity_override
+        return len(self.skins[cast(int, index) % len(self.skins)].encode("utf-8")) + 1
 
     def _skin_info(
         self,
@@ -124,10 +161,13 @@ class FakeLibrary:
         capacity: object,
     ) -> int:
         self._assert_handle(handle)
+        self.skin_info_calls += 1
         if self.skin_info_code != 0:
             return self.skin_info_code
-        encoded = self.skins[cast(int, index)].encode("utf-8") + b"\0"
-        assert cast(int, capacity) == len(encoded)
+        encoded = self.skin_name_bytes_override
+        if encoded is None:
+            encoded = self.skins[cast(int, index) % len(self.skins)].encode("utf-8") + b"\0"
+        assert len(encoded) <= cast(int, capacity)
         ctypes.memmove(cast(Any, name), encoded, len(encoded))
         return 0
 
@@ -139,9 +179,30 @@ class FakeLibrary:
         output.x, output.y, output.width, output.height = self.bounds
         return 0
 
-    @staticmethod
-    def _assert_handle(handle: object) -> None:
+    def _assert_handle(self, handle: object) -> None:
         assert ctypes.cast(cast(Any, handle), ctypes.c_void_p).value == 101
+        if self.destroyed.is_set():
+            self.native_calls_after_destroy += 1
+
+
+class _ExplodingInteger:
+    def __init__(self, error_type: type[MemoryError] | type[OverflowError]) -> None:
+        self._error_type = error_type
+
+    def __int__(self) -> int:
+        raise self._error_type("sensitive-native-size")
+
+
+class _TwoThreadFalseGate:
+    """Makes the pre-lock implementation's two close checks overlap."""
+
+    def __init__(self) -> None:
+        self._barrier = threading.Barrier(2)
+
+    def __bool__(self) -> bool:
+        with suppress(threading.BrokenBarrierError):
+            self._barrier.wait(timeout=0.2)
+        return False
 
 
 class FakeBounds(ctypes.Structure):
@@ -162,6 +223,14 @@ def fake_library() -> FakeLibrary:
 def snapshot() -> ExternalPetAssetSnapshot:
     return ExternalPetAssetSnapshot(
         skeleton_bytes=b"skeleton-bytes",
+        atlas_bytes=b"page.png\nsize: 1,1\n",
+        texture_bytes=b"texture-not-used-by-the-bridge",
+    )
+
+
+def _snapshot_with_skeleton_size(size: int) -> ExternalPetAssetSnapshot:
+    return ExternalPetAssetSnapshot(
+        skeleton_bytes=b"s" * size,
         atlas_bytes=b"page.png\nsize: 1,1\n",
         texture_bytes=b"texture-not-used-by-the-bridge",
     )
@@ -278,6 +347,28 @@ def test_native_binding_rejects_missing_dll_path(tmp_path: Path) -> None:
     assert caught.value.code is native.Spine38NativeCode.DLL_PATH_INVALID
 
 
+def test_native_binding_discards_dll_loader_diagnostics(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    native = importlib.import_module("sjtuclaw.infrastructure.spine38_native")
+    dll_path = tmp_path / "sentinel-private-path.dll"
+    dll_path.write_bytes(b"not-a-dll")
+
+    def fail_load(path: str) -> NoReturn:
+        raise OSError(f"native loader exposed {path}")
+
+    monkeypatch.setattr(native.ctypes, "CDLL", fail_load)
+
+    with pytest.raises(native.Spine38NativeError) as caught:
+        native.Spine38NativeLibrary.from_dll_path(dll_path)
+
+    assert caught.value.code is native.Spine38NativeCode.DLL_PATH_INVALID
+    rendered = "".join(traceback.format_exception(caught.value))
+    assert "sentinel-private-path" not in rendered
+    assert caught.value.__cause__ is None
+
+
 @pytest.mark.parametrize("native_code", [2, 6, 999])
 def test_native_binding_never_leaks_unknown_native_codes(
     fake_library: FakeLibrary,
@@ -327,6 +418,257 @@ def test_native_binding_rejects_invalid_catalog_values(
     assert caught.value.code is native.Spine38NativeCode.RUNTIME_FAILURE
 
 
+@pytest.mark.parametrize(
+    ("method_name", "count_attribute"),
+    [("catalog", "animation_count_override"), ("skins", "skin_count_override")],
+)
+def test_native_binding_accepts_zero_catalog_counts(
+    fake_library: FakeLibrary,
+    snapshot: ExternalPetAssetSnapshot,
+    method_name: str,
+    count_attribute: str,
+) -> None:
+    native = importlib.import_module("sjtuclaw.infrastructure.spine38_native")
+    setattr(fake_library, count_attribute, 0)
+    port = native.Spine38NativeLibrary(fake_library).create(snapshot)
+
+    assert getattr(port, method_name)() == ()
+
+
+@pytest.mark.parametrize(
+    ("method_name", "count_attribute"),
+    [("catalog", "animation_count_override"), ("skins", "skin_count_override")],
+)
+def test_native_binding_accepts_catalog_count_at_policy_boundary(
+    fake_library: FakeLibrary,
+    method_name: str,
+    count_attribute: str,
+) -> None:
+    native = importlib.import_module("sjtuclaw.infrastructure.spine38_native")
+    setattr(fake_library, count_attribute, 4096)
+    port = native.Spine38NativeLibrary(fake_library).create(
+        _snapshot_with_skeleton_size(4096)
+    )
+
+    assert len(getattr(port, method_name)()) == 4096
+
+
+@pytest.mark.parametrize(
+    ("method_name", "count_attribute", "reject_size_call_attribute"),
+    [
+        ("catalog", "animation_count_override", "reject_animation_name_size_call"),
+        ("skins", "skin_count_override", "reject_skin_name_size_call"),
+    ],
+)
+@pytest.mark.parametrize("count", [-1, 4097, ctypes.c_size_t(-1).value])
+def test_native_binding_rejects_invalid_or_excessive_catalog_counts_before_iteration(
+    fake_library: FakeLibrary,
+    method_name: str,
+    count_attribute: str,
+    reject_size_call_attribute: str,
+    count: int,
+) -> None:
+    native = importlib.import_module("sjtuclaw.infrastructure.spine38_native")
+    setattr(fake_library, count_attribute, count)
+    setattr(fake_library, reject_size_call_attribute, True)
+    port = native.Spine38NativeLibrary(fake_library).create(
+        _snapshot_with_skeleton_size(4097)
+    )
+
+    with pytest.raises(native.Spine38NativeError) as caught:
+        getattr(port, method_name)()
+
+    assert caught.value.code is native.Spine38NativeCode.RUNTIME_FAILURE
+
+
+@pytest.mark.parametrize(
+    ("method_name", "count_attribute"),
+    [("catalog", "animation_count_override"), ("skins", "skin_count_override")],
+)
+def test_native_binding_bounds_catalog_count_by_verified_skeleton_size(
+    fake_library: FakeLibrary,
+    method_name: str,
+    count_attribute: str,
+) -> None:
+    native = importlib.import_module("sjtuclaw.infrastructure.spine38_native")
+    setattr(fake_library, count_attribute, 9)
+    port = native.Spine38NativeLibrary(fake_library).create(
+        _snapshot_with_skeleton_size(8)
+    )
+
+    with pytest.raises(native.Spine38NativeError) as caught:
+        getattr(port, method_name)()
+
+    assert caught.value.code is native.Spine38NativeCode.RUNTIME_FAILURE
+
+
+@pytest.mark.parametrize(
+    ("method_name", "capacity_attribute", "payload_attribute"),
+    [
+        ("catalog", "animation_capacity_override", "animation_name_bytes_override"),
+        ("skins", "skin_capacity_override", "skin_name_bytes_override"),
+    ],
+)
+@pytest.mark.parametrize("capacity", [2, 4096])
+def test_native_binding_accepts_name_capacity_at_safe_boundaries(
+    fake_library: FakeLibrary,
+    method_name: str,
+    capacity_attribute: str,
+    payload_attribute: str,
+    capacity: int,
+) -> None:
+    native = importlib.import_module("sjtuclaw.infrastructure.spine38_native")
+    setattr(fake_library, capacity_attribute, capacity)
+    setattr(fake_library, payload_attribute, b"a" * (capacity - 1) + b"\0")
+    port = native.Spine38NativeLibrary(fake_library).create(
+        _snapshot_with_skeleton_size(4096)
+    )
+
+    result = getattr(port, method_name)()
+
+    value = result[0].name if method_name == "catalog" else result[0]
+    assert value == "a" * (capacity - 1)
+
+
+@pytest.mark.parametrize(
+    ("method_name", "capacity_attribute", "info_calls_attribute"),
+    [
+        ("catalog", "animation_capacity_override", "animation_info_calls"),
+        ("skins", "skin_capacity_override", "skin_info_calls"),
+    ],
+)
+@pytest.mark.parametrize("capacity", [-1, 0, 1, 4097, ctypes.c_size_t(-1).value])
+def test_native_binding_rejects_invalid_or_excessive_name_capacities_before_allocation(
+    fake_library: FakeLibrary,
+    method_name: str,
+    capacity_attribute: str,
+    info_calls_attribute: str,
+    capacity: int,
+) -> None:
+    native = importlib.import_module("sjtuclaw.infrastructure.spine38_native")
+    setattr(fake_library, capacity_attribute, capacity)
+    port = native.Spine38NativeLibrary(fake_library).create(
+        _snapshot_with_skeleton_size(4097)
+    )
+
+    with pytest.raises(native.Spine38NativeError) as caught:
+        getattr(port, method_name)()
+
+    assert caught.value.code is native.Spine38NativeCode.RUNTIME_FAILURE
+    assert caught.value.__cause__ is None
+    assert getattr(fake_library, info_calls_attribute) == 0
+
+
+@pytest.mark.parametrize(
+    ("method_name", "capacity_attribute"),
+    [
+        ("catalog", "animation_capacity_override"),
+        ("skins", "skin_capacity_override"),
+    ],
+)
+def test_native_binding_bounds_name_capacity_by_verified_skeleton_size(
+    fake_library: FakeLibrary,
+    method_name: str,
+    capacity_attribute: str,
+) -> None:
+    native = importlib.import_module("sjtuclaw.infrastructure.spine38_native")
+    setattr(fake_library, capacity_attribute, 9)
+    port = native.Spine38NativeLibrary(fake_library).create(
+        _snapshot_with_skeleton_size(8)
+    )
+
+    with pytest.raises(native.Spine38NativeError) as caught:
+        getattr(port, method_name)()
+
+    assert caught.value.code is native.Spine38NativeCode.RUNTIME_FAILURE
+
+
+@pytest.mark.parametrize(
+    ("method_name", "capacity_attribute"),
+    [
+        ("catalog", "animation_capacity_override"),
+        ("skins", "skin_capacity_override"),
+    ],
+)
+@pytest.mark.parametrize("error_type", [MemoryError, OverflowError])
+def test_native_binding_normalizes_native_size_conversion_failures(
+    fake_library: FakeLibrary,
+    snapshot: ExternalPetAssetSnapshot,
+    method_name: str,
+    capacity_attribute: str,
+    error_type: type[MemoryError] | type[OverflowError],
+) -> None:
+    native = importlib.import_module("sjtuclaw.infrastructure.spine38_native")
+    setattr(fake_library, capacity_attribute, _ExplodingInteger(error_type))
+    port = native.Spine38NativeLibrary(fake_library).create(snapshot)
+
+    with pytest.raises(native.Spine38NativeError) as caught:
+        getattr(port, method_name)()
+
+    assert caught.value.code is native.Spine38NativeCode.RUNTIME_FAILURE
+    assert caught.value.__cause__ is None
+
+
+@pytest.mark.parametrize("error_type", [MemoryError, OverflowError])
+def test_native_binding_normalizes_name_buffer_allocation_failures(
+    fake_library: FakeLibrary,
+    snapshot: ExternalPetAssetSnapshot,
+    monkeypatch: pytest.MonkeyPatch,
+    error_type: type[MemoryError] | type[OverflowError],
+) -> None:
+    native = importlib.import_module("sjtuclaw.infrastructure.spine38_native")
+
+    def fail_buffer_fill(*args: object) -> NoReturn:
+        raise error_type("sensitive-allocation-detail")
+
+    monkeypatch.setattr(native.ctypes, "memset", fail_buffer_fill)
+    port = native.Spine38NativeLibrary(fake_library).create(snapshot)
+
+    with pytest.raises(native.Spine38NativeError) as caught:
+        port.catalog()
+
+    assert caught.value.code is native.Spine38NativeCode.RUNTIME_FAILURE
+    assert caught.value.__cause__ is None
+
+
+@pytest.mark.parametrize(
+    ("method_name", "capacity_attribute", "payload_attribute"),
+    [
+        ("catalog", "animation_capacity_override", "animation_name_bytes_override"),
+        ("skins", "skin_capacity_override", "skin_name_bytes_override"),
+    ],
+)
+@pytest.mark.parametrize(
+    ("capacity", "payload"),
+    [
+        (4, b"a\0b\0"),
+        (4, b"a\0"),
+        (4, b"abcd"),
+        (1, b"\0"),
+        (2, b"\xff\0"),
+    ],
+    ids=["embedded-nul", "unwritten-tail", "missing-terminator", "empty", "invalid-utf8"],
+)
+def test_native_binding_rejects_malformed_native_names(
+    fake_library: FakeLibrary,
+    snapshot: ExternalPetAssetSnapshot,
+    method_name: str,
+    capacity_attribute: str,
+    payload_attribute: str,
+    capacity: int,
+    payload: bytes,
+) -> None:
+    native = importlib.import_module("sjtuclaw.infrastructure.spine38_native")
+    setattr(fake_library, capacity_attribute, capacity)
+    setattr(fake_library, payload_attribute, payload)
+    port = native.Spine38NativeLibrary(fake_library).create(snapshot)
+
+    with pytest.raises(native.Spine38NativeError) as caught:
+        getattr(port, method_name)()
+
+    assert caught.value.code is native.Spine38NativeCode.RUNTIME_FAILURE
+
+
 def test_native_binding_close_is_idempotent_and_closed_ports_fail(
     fake_library: FakeLibrary,
     snapshot: ExternalPetAssetSnapshot,
@@ -356,6 +698,79 @@ def test_native_binding_finalizer_destroys_an_unclosed_handle_once(
 
     assert port_reference() is None
     assert fake_library.destroy_count == 1
+
+
+def test_native_binding_concurrent_close_calls_destroy_once(
+    fake_library: FakeLibrary,
+    snapshot: ExternalPetAssetSnapshot,
+) -> None:
+    native = importlib.import_module("sjtuclaw.infrastructure.spine38_native")
+    port = native.Spine38NativeLibrary(fake_library).create(snapshot)
+    port._closed = _TwoThreadFalseGate()
+    failures: list[BaseException] = []
+
+    def close_port() -> None:
+        try:
+            port.close()
+        except BaseException as error:
+            failures.append(error)
+
+    threads = [threading.Thread(target=close_port) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=2)
+
+    assert not failures
+    assert all(not thread.is_alive() for thread in threads)
+    assert fake_library.destroy_count == 1
+
+
+def test_native_binding_close_waits_for_complete_catalog_operation(
+    fake_library: FakeLibrary,
+    snapshot: ExternalPetAssetSnapshot,
+) -> None:
+    native = importlib.import_module("sjtuclaw.infrastructure.spine38_native")
+    fake_library.animation_count_started = threading.Event()
+    fake_library.animation_count_release = threading.Event()
+    port = native.Spine38NativeLibrary(fake_library).create(snapshot)
+    catalog_results: list[object] = []
+    failures: list[BaseException] = []
+
+    def read_catalog() -> None:
+        try:
+            catalog_results.append(port.catalog())
+        except BaseException as error:
+            failures.append(error)
+
+    def close_port() -> None:
+        try:
+            port.close()
+        except BaseException as error:
+            failures.append(error)
+
+    catalog_thread = threading.Thread(target=read_catalog)
+    catalog_thread.start()
+    assert fake_library.animation_count_started.wait(timeout=2)
+    close_thread = threading.Thread(target=close_port)
+    close_thread.start()
+
+    destroyed_before_catalog_release = fake_library.destroyed.wait(timeout=0.2)
+    fake_library.animation_count_release.set()
+    catalog_thread.join(timeout=2)
+    close_thread.join(timeout=2)
+
+    assert not failures
+    assert not catalog_thread.is_alive()
+    assert not close_thread.is_alive()
+    assert not destroyed_before_catalog_release
+    assert len(catalog_results) == 1
+    assert fake_library.destroy_count == 1
+    assert fake_library.native_calls_after_destroy == 0
+    with pytest.raises(native.Spine38NativeError) as caught:
+        port.catalog()
+    assert caught.value.code is native.Spine38NativeCode.CLOSED
+    assert fake_library.native_calls_after_destroy == 0
 
 
 def test_native_module_has_no_agent_imports() -> None:
