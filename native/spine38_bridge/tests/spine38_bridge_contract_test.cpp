@@ -303,33 +303,38 @@ void append_region_attachment(
     append_color(bytes, 255, 255, 255, 255);
 }
 
-void append_mesh_attachment(std::vector<uint8_t>& bytes) {
-    append_varint(bytes, 2);  // attachment key
+void append_mesh_attachment(
+    std::vector<uint8_t>& bytes,
+    uint32_t attachment_key = 2u,
+    uint16_t third_triangle_index = 2u,
+    size_t triangle_repetitions = 1u,
+    uint32_t vertex_count = 3u) {
+    append_varint(bytes, attachment_key);
     append_varint(bytes, 0);  // attachment name uses key
     bytes.push_back(2);       // mesh attachment
     append_varint(bytes, 0);  // path uses name
     append_color(bytes, 255, 255, 255, 255);
-    append_varint(bytes, 3);  // vertex count
-    append_float(bytes, 0.0f);
-    append_float(bytes, 0.0f);
-    append_float(bytes, 1.0f);
-    append_float(bytes, 0.0f);
-    append_float(bytes, 0.0f);
-    append_float(bytes, 1.0f);
-    append_varint(bytes, 3);  // triangle index count
-    bytes.push_back(0);
-    bytes.push_back(0);
-    bytes.push_back(0);
-    bytes.push_back(1);
-    bytes.push_back(0);
-    bytes.push_back(2);
+    append_varint(bytes, vertex_count);
+    for (uint32_t vertex = 0u; vertex < vertex_count; ++vertex) {
+        append_float(bytes, vertex == 1u ? 1.0f : 0.0f);
+        append_float(bytes, vertex == 2u ? 1.0f : 0.0f);
+    }
+    append_varint(
+        bytes, static_cast<uint32_t>(triangle_repetitions * 3u));
+    for (size_t triangle = 0u; triangle < triangle_repetitions; ++triangle) {
+        bytes.push_back(0);
+        bytes.push_back(0);
+        bytes.push_back(0);
+        bytes.push_back(1);
+        bytes.push_back(
+            static_cast<uint8_t>((third_triangle_index >> 8u) & 0xffu));
+        bytes.push_back(static_cast<uint8_t>(third_triangle_index & 0xffu));
+    }
     bytes.push_back(0);  // unweighted vertices
-    append_float(bytes, 0.0f);
-    append_float(bytes, 0.0f);
-    append_float(bytes, 2.0f);
-    append_float(bytes, 0.0f);
-    append_float(bytes, 0.0f);
-    append_float(bytes, 2.0f);
+    for (uint32_t vertex = 0u; vertex < vertex_count; ++vertex) {
+        append_float(bytes, vertex == 1u ? 2.0f : 0.0f);
+        append_float(bytes, vertex == 2u ? 2.0f : 0.0f);
+    }
     append_varint(bytes, 3);  // hull vertex count
 }
 
@@ -410,7 +415,13 @@ std::vector<uint8_t> make_mesh_blend_skeleton() {
 
 std::vector<uint8_t> make_clipping_skeleton(
     bool unsupported_attachment,
-    float region_x = 0.0f) {
+    float region_x = 0.0f,
+    bool mesh_attachment = false,
+    uint16_t mesh_third_triangle_index = 2u,
+    size_t mesh_triangle_repetitions = 1u,
+    float clip_extent = 0.5f,
+    uint32_t mesh_vertex_count = 3u,
+    uint32_t clip_vertex_count = 4u) {
     std::vector<uint8_t> bytes;
     append_string(bytes, "clipping-contract-fixture");
     append_string(bytes, "3.8.99");
@@ -464,6 +475,142 @@ std::vector<uint8_t> make_clipping_skeleton(
     if (!unsupported_attachment) {
         append_varint(bytes, 1);  // clipping ends after region slot
     }
+    append_varint(bytes, clip_vertex_count);
+    bytes.push_back(0);       // unweighted vertices
+    constexpr float x_signs[] = {-1.0f, -1.0f, 1.0f, 1.0f};
+    constexpr float y_signs[] = {-1.0f, 1.0f, 1.0f, -1.0f};
+    for (uint32_t vertex = 0u; vertex < clip_vertex_count; ++vertex) {
+        append_float(bytes, x_signs[vertex % 4u] * clip_extent);
+        append_float(bytes, y_signs[vertex % 4u] * clip_extent);
+    }
+
+    append_varint(bytes, 1);  // region slot
+    append_varint(bytes, 1);  // attachments in slot
+    if (mesh_attachment) {
+        append_mesh_attachment(
+            bytes, 1u, mesh_third_triangle_index,
+            mesh_triangle_repetitions, mesh_vertex_count);
+    } else {
+        append_varint(bytes, 1);  // fixture-region key
+        append_varint(bytes, 0);  // attachment name uses key
+        bytes.push_back(0);       // region attachment
+        append_varint(bytes, 0);  // path uses name
+        append_float(bytes, 0.0f);  // rotation
+        append_float(bytes, region_x);
+        append_float(bytes, 0.0f);  // y
+        append_float(bytes, 1.0f);  // scale x
+        append_float(bytes, 1.0f);  // scale y
+        append_float(bytes, 2.0f);  // width
+        append_float(bytes, 2.0f);  // height
+        append_color(bytes, 255, 255, 255, 255);
+    }
+
+    append_varint(bytes, 0);  // additional skins
+    append_varint(bytes, 0);  // events
+    append_varint(bytes, 1);  // animations
+    append_string(bytes, animation_name_fixture);
+    append_varint(bytes, 0);  // slot timelines
+    append_varint(bytes, 1);  // bone timeline groups
+    append_varint(bytes, 0);  // root bone index
+    append_varint(bytes, 1);  // root timeline count
+    bytes.push_back(0);       // rotate timeline
+    append_varint(bytes, 2);  // frames
+    append_float(bytes, 0.0f);
+    append_float(bytes, 0.0f);
+    bytes.push_back(0);  // linear curve
+    append_float(bytes, 1.25f);
+    append_float(bytes, 0.0f);
+    append_varint(bytes, 0);  // IK timelines
+    append_varint(bytes, 0);  // transform timelines
+    append_varint(bytes, 0);  // path timelines
+    append_varint(bytes, 0);  // deform timelines
+    append_varint(bytes, 0);  // draw-order timeline frames
+    append_varint(bytes, 0);  // event timeline frames
+    return bytes;
+}
+
+std::vector<uint8_t> make_malformed_clipping_skeleton(
+    uint32_t clip_vertex_count) {
+    return make_clipping_skeleton(
+        false, 0.0f, false, 2u, 1u, 0.5f, 3u, clip_vertex_count);
+}
+
+std::vector<uint8_t> make_inactive_bone_skeleton() {
+    std::vector<uint8_t> bytes;
+    append_string(bytes, "inactive-bone-contract-fixture");
+    append_string(bytes, "3.8.99");
+    append_float(bytes, -2.0f);
+    append_float(bytes, -2.0f);
+    append_float(bytes, 8.0f);
+    append_float(bytes, 4.0f);
+    bytes.push_back(0);  // nonessential
+
+    append_varint(bytes, 2);  // string table
+    append_string(bytes, "fixture-clip");
+    append_string(bytes, "fixture-region");
+
+    append_varint(bytes, 2);  // bones
+    append_string(bytes, "root");
+    append_float(bytes, 0.0f);  // rotation
+    append_float(bytes, 0.0f);  // x
+    append_float(bytes, 0.0f);  // y
+    append_float(bytes, 1.0f);  // scale x
+    append_float(bytes, 1.0f);  // scale y
+    append_float(bytes, 0.0f);  // shear x
+    append_float(bytes, 0.0f);  // shear y
+    append_float(bytes, 0.0f);  // length
+    append_varint(bytes, 0);    // transform mode
+    bytes.push_back(0);         // skin required
+    append_string(bytes, "inactive-child");
+    append_varint(bytes, 0);    // root parent
+    append_float(bytes, 0.0f);  // rotation
+    append_float(bytes, 0.0f);  // x
+    append_float(bytes, 0.0f);  // y
+    append_float(bytes, 1.0f);  // scale x
+    append_float(bytes, 1.0f);  // scale y
+    append_float(bytes, 0.0f);  // shear x
+    append_float(bytes, 0.0f);  // shear y
+    append_float(bytes, 0.0f);  // length
+    append_varint(bytes, 0);    // transform mode
+    bytes.push_back(1);         // skin required and absent from current skin
+
+    append_varint(bytes, 4);  // slots
+    append_string(bytes, "clip-slot");
+    append_varint(bytes, 0);  // root bone
+    append_color(bytes, 255, 255, 255, 255);
+    append_color(bytes, 255, 255, 255, 255);
+    append_varint(bytes, 1);  // fixture-clip
+    append_varint(bytes, 0);  // normal blend
+    append_string(bytes, "inactive-end-region-slot");
+    append_varint(bytes, 1);  // inactive child bone
+    append_color(bytes, 255, 255, 255, 255);
+    append_color(bytes, 255, 255, 255, 255);
+    append_varint(bytes, 2);  // fixture-region
+    append_varint(bytes, 0);  // normal blend
+    append_string(bytes, "inactive-unsupported-slot");
+    append_varint(bytes, 1);  // inactive child bone
+    append_color(bytes, 255, 255, 255, 255);
+    append_color(bytes, 255, 255, 255, 255);
+    append_varint(bytes, 1);  // fixture-clip
+    append_varint(bytes, 0);  // normal blend
+    append_string(bytes, "active-region-slot");
+    append_varint(bytes, 0);  // root bone
+    append_color(bytes, 255, 255, 255, 255);
+    append_color(bytes, 255, 255, 255, 255);
+    append_varint(bytes, 2);  // fixture-region
+    append_varint(bytes, 0);  // normal blend
+
+    append_varint(bytes, 0);  // IK constraints
+    append_varint(bytes, 0);  // transform constraints
+    append_varint(bytes, 0);  // path constraints
+
+    append_varint(bytes, 4);  // default skin slots
+    append_varint(bytes, 0);  // clip slot
+    append_varint(bytes, 1);  // attachments in slot
+    append_varint(bytes, 1);  // fixture-clip key
+    append_varint(bytes, 0);  // attachment name uses key
+    bytes.push_back(6);       // clipping attachment
+    append_varint(bytes, 1);  // ends at inactive region slot
     append_varint(bytes, 4);  // polygon vertex count
     bytes.push_back(0);       // unweighted vertices
     append_float(bytes, -0.5f);
@@ -475,20 +622,27 @@ std::vector<uint8_t> make_clipping_skeleton(
     append_float(bytes, 0.5f);
     append_float(bytes, -0.5f);
 
-    append_varint(bytes, 1);  // region slot
+    append_varint(bytes, 1);  // inactive region slot
     append_varint(bytes, 1);  // attachments in slot
-    append_varint(bytes, 1);  // fixture-region key
+    append_region_attachment(bytes, 0.0f, 0.0f);
+
+    append_varint(bytes, 2);  // inactive unsupported slot
+    append_varint(bytes, 1);  // attachments in slot
+    append_varint(bytes, 1);  // fixture-clip key
     append_varint(bytes, 0);  // attachment name uses key
-    bytes.push_back(0);       // region attachment
-    append_varint(bytes, 0);  // path uses name
-    append_float(bytes, 0.0f);  // rotation
-    append_float(bytes, region_x);
-    append_float(bytes, 0.0f);  // y
-    append_float(bytes, 1.0f);  // scale x
-    append_float(bytes, 1.0f);  // scale y
-    append_float(bytes, 2.0f);  // width
-    append_float(bytes, 2.0f);  // height
-    append_color(bytes, 255, 255, 255, 255);
+    bytes.push_back(1);       // bounding box attachment
+    append_varint(bytes, 3);  // vertex count
+    bytes.push_back(0);       // unweighted vertices
+    append_float(bytes, -1.0f);
+    append_float(bytes, -1.0f);
+    append_float(bytes, 0.0f);
+    append_float(bytes, 1.0f);
+    append_float(bytes, 1.0f);
+    append_float(bytes, -1.0f);
+
+    append_varint(bytes, 3);  // active region slot
+    append_varint(bytes, 1);  // attachments in slot
+    append_region_attachment(bytes, 4.0f, 0.0f);
 
     append_varint(bytes, 0);  // additional skins
     append_varint(bytes, 0);  // events
@@ -897,6 +1051,95 @@ void check_clipping_is_applied_inside_the_abi() {
     sjtuclaw_spine38_destroy(handle);
 }
 
+void check_malformed_clipped_mesh_index_fails_closed() {
+    const auto skeleton = make_clipping_skeleton(
+        false, 0.0f, true, 32768u, 1u, 1.0e15f, 32768u);
+    SjtuclawSpine38Handle* handle = nullptr;
+    CHECK(sjtuclaw_spine38_create(
+              skeleton.data(), skeleton.size(), region_atlas_fixture,
+              sizeof(region_atlas_fixture) - 1u, &handle) ==
+          SJTUCLAW_SPINE38_OK);
+    CHECK(handle != nullptr);
+    if (handle == nullptr) {
+        return;
+    }
+
+    CHECK(sjtuclaw_spine38_update(handle, 0.0f) ==
+          SJTUCLAW_SPINE38_RUNTIME_FAILURE);
+    CHECK(sjtuclaw_spine38_draw_count(handle) == 0u);
+    sjtuclaw_spine38_destroy(handle);
+}
+
+void check_unrepresentable_clipped_mesh_fails_closed() {
+    constexpr size_t triangle_repetitions = 21846u;
+    const auto skeleton = make_clipping_skeleton(
+        false, 0.0f, true, 2u, triangle_repetitions, 1.0e15f);
+    SjtuclawSpine38Handle* handle = nullptr;
+    CHECK(sjtuclaw_spine38_create(
+              skeleton.data(), skeleton.size(), region_atlas_fixture,
+              sizeof(region_atlas_fixture) - 1u, &handle) ==
+          SJTUCLAW_SPINE38_OK);
+    CHECK(handle != nullptr);
+    if (handle == nullptr) {
+        return;
+    }
+
+    CHECK(sjtuclaw_spine38_update(handle, 0.0f) ==
+          SJTUCLAW_SPINE38_RUNTIME_FAILURE);
+    CHECK(sjtuclaw_spine38_draw_count(handle) == 0u);
+    sjtuclaw_spine38_destroy(handle);
+}
+
+void check_malformed_clipping_polygon_fails_closed() {
+    for (uint32_t clip_vertex_count : {0u, 1u, 2u}) {
+        const auto skeleton =
+            make_malformed_clipping_skeleton(clip_vertex_count);
+        SjtuclawSpine38Handle* handle = nullptr;
+        CHECK(sjtuclaw_spine38_create(
+                  skeleton.data(), skeleton.size(), region_atlas_fixture,
+                  sizeof(region_atlas_fixture) - 1u, &handle) ==
+              SJTUCLAW_SPINE38_OK);
+        CHECK(handle != nullptr);
+        if (handle == nullptr) {
+            continue;
+        }
+
+        CHECK(sjtuclaw_spine38_update(handle, 0.0f) ==
+              SJTUCLAW_SPINE38_RUNTIME_FAILURE);
+        CHECK(sjtuclaw_spine38_draw_count(handle) == 0u);
+        sjtuclaw_spine38_destroy(handle);
+    }
+}
+
+void check_inactive_bone_slots_are_skipped_and_end_clipping() {
+    const auto skeleton = make_inactive_bone_skeleton();
+    SjtuclawSpine38Handle* handle = nullptr;
+    CHECK(sjtuclaw_spine38_create(
+              skeleton.data(), skeleton.size(), region_atlas_fixture,
+              sizeof(region_atlas_fixture) - 1u, &handle) ==
+          SJTUCLAW_SPINE38_OK);
+    CHECK(handle != nullptr);
+    if (handle == nullptr) {
+        return;
+    }
+
+    CHECK(sjtuclaw_spine38_update(handle, 0.0f) == SJTUCLAW_SPINE38_OK);
+    CHECK(sjtuclaw_spine38_draw_count(handle) == 1u);
+    SjtuclawSpine38DrawView view{};
+    CHECK(sjtuclaw_spine38_draw_view(
+              handle, 0u, &view, sizeof(view)) == SJTUCLAW_SPINE38_OK);
+    CHECK(view.draw_order == 3);
+    CHECK(view.vertex_count == 4u);
+    CHECK(view.index_count == 6u);
+    if (view.vertices != nullptr && view.vertex_count == 4u) {
+        for (size_t vertex = 0u; vertex < view.vertex_count; ++vertex) {
+            CHECK(view.vertices[vertex].x >= 2.99999f);
+            CHECK(view.vertices[vertex].x <= 5.00001f);
+        }
+    }
+    sjtuclaw_spine38_destroy(handle);
+}
+
 void check_unsupported_active_attachment_fails_closed() {
     const auto skeleton = make_clipping_skeleton(true);
     SjtuclawSpine38Handle* handle = nullptr;
@@ -1129,6 +1372,10 @@ int main() {
     check_region_draw_view_is_materialized();
     check_mesh_blend_modes_and_draw_order_are_materialized();
     check_clipping_is_applied_inside_the_abi();
+    check_malformed_clipped_mesh_index_fails_closed();
+    check_unrepresentable_clipped_mesh_fails_closed();
+    check_malformed_clipping_polygon_fails_closed();
+    check_inactive_bone_slots_are_skipped_and_end_clipping();
     check_unsupported_active_attachment_fails_closed();
     check_fully_clipped_attachment_is_a_valid_empty_draw();
     check_invalid_inputs_do_not_escape_exceptions();

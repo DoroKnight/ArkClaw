@@ -564,6 +564,10 @@ SjtuclawSpine38Code sjtuclaw_spine38_update(
             if (slot == nullptr) {
                 return SJTUCLAW_SPINE38_RUNTIME_FAILURE;
             }
+            if (!slot->getBone().isActive()) {
+                clipper.clipEnd(*slot);
+                continue;
+            }
             spine::Attachment* attachment = slot->getAttachment();
             if (attachment == nullptr) {
                 clipper.clipEnd(*slot);
@@ -571,8 +575,23 @@ SjtuclawSpine38Code sjtuclaw_spine38_update(
             }
             if (attachment->getRTTI().isExactly(
                     spine::ClippingAttachment::rtti)) {
+                auto* clipping_attachment =
+                    static_cast<spine::ClippingAttachment*>(attachment);
+                const int world_vertex_values =
+                    clipping_attachment->getWorldVerticesLength();
+                constexpr size_t max_clipping_world_vertex_values =
+                    (static_cast<size_t>(
+                         std::numeric_limits<unsigned short>::max()) +
+                     1u) *
+                    2u;
+                if (world_vertex_values < 6 ||
+                    (world_vertex_values & 1) != 0 ||
+                    static_cast<size_t>(world_vertex_values) >
+                        max_clipping_world_vertex_values) {
+                    return SJTUCLAW_SPINE38_RUNTIME_FAILURE;
+                }
                 clipper.clipStart(
-                    *slot, static_cast<spine::ClippingAttachment*>(attachment));
+                    *slot, clipping_attachment);
                 continue;
             }
             std::vector<float> world_vertices;
@@ -630,6 +649,12 @@ SjtuclawSpine38Code sjtuclaw_spine38_update(
                             std::numeric_limits<int32_t>::max())) {
                 return SJTUCLAW_SPINE38_RUNTIME_FAILURE;
             }
+            const size_t source_vertex_count = world_vertices.size() / 2u;
+            for (unsigned short source_index : source_indices) {
+                if (source_index >= source_vertex_count) {
+                    return SJTUCLAW_SPINE38_RUNTIME_FAILURE;
+                }
+            }
 
             const float* output_vertices = world_vertices.data();
             const float* output_uvs = uvs->buffer();
@@ -646,7 +671,13 @@ SjtuclawSpine38Code sjtuclaw_spine38_update(
                 output_vertex_values =
                     clipper.getClippedVertices().size();
                 output_index_count = clipper.getClippedTriangles().size();
-                if (clipper.getClippedUVs().size() != output_vertex_values) {
+                constexpr size_t max_clipped_vertex_count =
+                    static_cast<size_t>(
+                        std::numeric_limits<unsigned short>::max()) +
+                    1u;
+                if (clipper.getClippedUVs().size() != output_vertex_values ||
+                    (output_vertex_values % 2u) != 0u ||
+                    output_vertex_values / 2u > max_clipped_vertex_count) {
                     return SJTUCLAW_SPINE38_RUNTIME_FAILURE;
                 }
                 if (output_vertex_values == 0u && output_index_count == 0u) {
