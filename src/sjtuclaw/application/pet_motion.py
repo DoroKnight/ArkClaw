@@ -48,6 +48,7 @@ class PetMotionSnapshot:
     state: PetLayeredState
     position: Point
     vertical_velocity: float
+    horizontal_velocity: float
 
 
 class PetMotionModel:
@@ -66,7 +67,9 @@ class PetMotionModel:
         self._config = config or PetMotionConfig()
         self._states = states or PetLayeredStateMachine()
         self._vertical_velocity = 0.0
+        self._horizontal_velocity = 0.0
         self._landing_elapsed = 0.0
+        self._pending_direction_turn: PetFacing | None = None
 
     @property
     def state(self) -> PetLayeredState:
@@ -84,6 +87,12 @@ class PetMotionModel:
 
         self._states.commit(proposal)
         target = proposal.target_state
+        if target.motion is PetMotionState.WALKING_LEFT:
+            self._horizontal_velocity = -self._config.walking_speed
+        elif target.motion is PetMotionState.WALKING_RIGHT:
+            self._horizontal_velocity = self._config.walking_speed
+        else:
+            self._horizontal_velocity = 0.0
         if (
             target.lifecycle is not PetLifecycleState.ACTIVE
             or target.motion in {PetMotionState.DRAGGING, PetMotionState.FALLING}
@@ -109,6 +118,7 @@ class PetMotionModel:
             state=self.state,
             position=self._position,
             vertical_velocity=self._vertical_velocity,
+            horizontal_velocity=self._horizontal_velocity,
         )
 
     @property
@@ -120,6 +130,7 @@ class PetMotionModel:
             raise PetStateTransitionError
         self._states.start_dragging()
         self._vertical_velocity = 0.0
+        self._horizontal_velocity = 0.0
         self._landing_elapsed = 0.0
 
     def drag_to(
@@ -140,14 +151,17 @@ class PetMotionModel:
     def release_drag(self) -> None:
         self._states.release_drag()
         self._vertical_velocity = 0.0
+        self._horizontal_velocity = 0.0
 
     def start_falling(self) -> None:
         self._states.start_falling()
         self._vertical_velocity = 0.0
+        self._horizontal_velocity = 0.0
 
     def pause(self) -> None:
         self._states.pause()
         self._vertical_velocity = 0.0
+        self._horizontal_velocity = 0.0
 
     def resume(self) -> None:
         self._states.resume()
@@ -155,15 +169,29 @@ class PetMotionModel:
     def begin_closing(self) -> None:
         self._states.begin_closing()
         self._vertical_velocity = 0.0
+        self._horizontal_velocity = 0.0
 
     def recover_failed_close(self) -> None:
         self._states.recover_failed_close()
 
     def start_walking(self, direction: PetFacing) -> None:
         self._states.start_walking(direction)
+        self._horizontal_velocity = (
+            -self._config.walking_speed
+            if direction is PetFacing.LEFT
+            else self._config.walking_speed
+        )
 
     def stop_walking(self) -> None:
         self._states.stop_walking()
+        self._horizontal_velocity = 0.0
+
+    def take_pending_direction_turn(self) -> PetFacing | None:
+        """Consume one contained workspace-boundary direction proposal."""
+
+        direction = self._pending_direction_turn
+        self._pending_direction_turn = None
+        return direction
 
     def constrain(self, workspaces: tuple[Rect, ...]) -> PetMotionSnapshot:
         workspace = select_workspace(
@@ -196,6 +224,7 @@ class PetMotionModel:
             workspace,
         )
         self._vertical_velocity = 0.0
+        self._horizontal_velocity = 0.0
         self._landing_elapsed = 0.0
         return self.snapshot
 
@@ -267,10 +296,8 @@ class PetMotionModel:
             workspaces,
         )
         moving_left = self.state.motion is PetMotionState.WALKING_LEFT
-        direction = -1.0 if moving_left else 1.0
         candidate = Point(
-            self._position.x
-            + direction * self._config.walking_speed * elapsed_seconds,
+            self._position.x + self._horizontal_velocity * elapsed_seconds,
             self._position.y,
         )
         clamped = clamp_window_position(
@@ -280,7 +307,8 @@ class PetMotionModel:
         )
         self._position = clamped
         if clamped.x != candidate.x:
-            self._states.start_walking(
+            self._horizontal_velocity = 0.0
+            self._pending_direction_turn = (
                 PetFacing.RIGHT if moving_left else PetFacing.LEFT
             )
         return self.snapshot

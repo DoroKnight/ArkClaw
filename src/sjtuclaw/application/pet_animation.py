@@ -470,6 +470,18 @@ class PetAnimationEngine:
         if outcome is not ActionOutcome.ACCEPTED:
             self._execution_mode = AutonomousExecutionMode.SUSPENDED
             self._active_production_action = None
+            if intent.action in {
+                ProductionAction.MOVE_LEFT,
+                ProductionAction.MOVE_RIGHT,
+            }:
+                relax = semantic_target(ProductionAction.RELAX)
+                self._motion.commit_state_transition(
+                    self._motion.states.propose(
+                        motion=relax.motion,
+                        activity=relax.activity,
+                        facing=relax.facing,
+                    )
+                )
             self._assert_transaction_compatible()
             return outcome
 
@@ -955,7 +967,36 @@ class PetAnimationEngine:
         self._advance_blink(applied)
         self._advance_random_action(applied)
         motion = self._motion.update(applied, workspaces)
+        direction_turn = self._motion.take_pending_direction_turn()
+        if direction_turn is not None:
+            if self._active_production_action in {
+                ProductionAction.MOVE_LEFT,
+                ProductionAction.MOVE_RIGHT,
+            }:
+                self._commit_workspace_boundary_turn(direction_turn)
+            else:
+                self._motion.start_walking(direction_turn)
+            motion = self._motion.snapshot
         return self._snapshot(motion)
+
+    def _commit_workspace_boundary_turn(self, direction: PetFacing) -> None:
+        self._clear_protected_continuation()
+        self._execution_mode = AutonomousExecutionMode.SUSPENDED
+        action = (
+            ProductionAction.MOVE_LEFT
+            if direction is PetFacing.LEFT
+            else ProductionAction.MOVE_RIGHT
+        )
+        outcome = self._submit_production_intent(
+            ActionIntent(
+                action,
+                ActionOrigin.SYSTEM,
+                ActionSource.MOTION,
+                object(),
+            )
+        )
+        if outcome is ActionOutcome.ACCEPTED:
+            self._activate_autonomous(action)
 
     def request_walk(self, direction: PetFacing) -> ActionOutcome:
         if self._production_sequencing_enabled:
