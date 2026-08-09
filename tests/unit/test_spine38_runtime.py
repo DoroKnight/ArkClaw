@@ -614,6 +614,253 @@ def test_visible_mode_closes_raw_native_port_if_runtime_construction_fails(
     ]
 
 
+def test_visible_mode_reports_safe_delegate_close_failure_after_success(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    script = importlib.import_module("scripts.qt_spine38_vertical_slice")
+    qt_widgets = importlib.import_module("PySide6.QtWidgets")
+    pet_window = importlib.import_module(
+        "sjtuclaw.presentation.qt.pet_window"
+    )
+    spine_renderer = importlib.import_module(
+        "sjtuclaw.presentation.qt.spine38_renderer"
+    )
+    bridge_dll = tmp_path / "private-bridge.dll"
+    bridge_dll.write_bytes(b"fixture")
+    _write_valid_build_manifest(tmp_path)
+    asset_root = tmp_path / "private-assets"
+    asset_root.mkdir()
+    events: list[str] = []
+
+    class FakeBundle:
+        snapshot = SimpleNamespace(texture_bytes=b"verified")
+        metadata = SimpleNamespace(
+            atlas=SimpleNamespace(page_width=2, page_height=2)
+        )
+
+        def close(self) -> None:
+            events.append("bundle.close")
+
+    class FakeLoader:
+        def __init__(self, filesystem: object) -> None:
+            del filesystem
+
+        def load(self, descriptor: object) -> object:
+            del descriptor
+            events.append("assets.load")
+            return SimpleNamespace(succeeded=True, bundle=FakeBundle())
+
+    class FakePort:
+        pass
+
+    class FakeLibrary:
+        @classmethod
+        def from_dll_path(cls, path: Path) -> FakeLibrary:
+            assert path == bridge_dll.resolve()
+            events.append("dll.load")
+            return cls()
+
+        def create(self, snapshot: object) -> FakePort:
+            del snapshot
+            events.append("native.create")
+            return FakePort()
+
+    class FakeRuntime:
+        catalog = SimpleNamespace(
+            require_animation=lambda name: events.append(
+                f"catalog.require:{name}"
+            )
+        )
+
+        def __init__(self, native_port: object, *, atlas_size: Size) -> None:
+            del native_port
+            assert atlas_size == Size(2, 2)
+
+        def close(self) -> None:
+            events.append("runtime.close")
+
+    class FailingCloseRenderer:
+        def __init__(
+            self,
+            runtime: FakeRuntime,
+            texture_bytes: bytes,
+            *,
+            asset_owner: FakeBundle,
+        ) -> None:
+            assert texture_bytes == b"verified"
+            self._runtime = runtime
+            self._asset_owner = asset_owner
+
+        def close(self) -> None:
+            failed = False
+            try:
+                events.append("backend.close")
+                raise RuntimeError("sensitive-backend-path")
+            except Exception:
+                failed = True
+            self._runtime.close()
+            self._asset_owner.close()
+            if failed:
+                raise RuntimeError("sensitive-delegate-path")
+
+    class FakeSignal:
+        def connect(self, callback: object) -> None:
+            del callback
+            events.append("signal.connect")
+
+    class FakeWindow:
+        def __init__(self, *, renderer: object) -> None:
+            del renderer
+            self.safe_exit_requested = FakeSignal()
+            events.append("window.create")
+
+        def show(self) -> None:
+            events.append("window.show")
+
+    class FakeApplication:
+        @classmethod
+        def instance(cls) -> None:
+            return None
+
+        def __init__(self, arguments: list[str]) -> None:
+            assert arguments == []
+            events.append("application.create")
+
+        def setApplicationName(self, name: str) -> None:
+            del name
+
+        def quit(self) -> None:
+            return
+
+        def exec(self) -> int:
+            events.append("application.exec")
+            return 0
+
+    monkeypatch.setattr(script, "ExternalPetAssetLoader", FakeLoader)
+    monkeypatch.setattr(script, "WindowsExternalPetAssetFilesystem", object)
+    monkeypatch.setattr(script, "Spine38NativeLibrary", FakeLibrary)
+    monkeypatch.setattr(script, "Spine38Runtime", FakeRuntime)
+    monkeypatch.setattr(qt_widgets, "QApplication", FakeApplication)
+    monkeypatch.setattr(pet_window, "PetWindow", FakeWindow)
+    monkeypatch.setattr(
+        spine_renderer,
+        "Spine38PetRenderer",
+        FailingCloseRenderer,
+    )
+
+    exit_code = script.main(
+        [
+            "--bridge-dll",
+            str(bridge_dll),
+            "--asset-root",
+            str(asset_root),
+        ]
+    )
+
+    captured = capsys.readouterr()
+    rendered = captured.out + captured.err
+    assert exit_code == 1
+    assert captured.out == ""
+    assert captured.err == '{"status":"spine38_cleanup_failed"}\n'
+    assert "sensitive" not in rendered
+    assert str(bridge_dll) not in rendered
+    assert str(asset_root) not in rendered
+    assert events[-3:] == [
+        "backend.close",
+        "runtime.close",
+        "bundle.close",
+    ]
+    assert events.count("backend.close") == 1
+    assert events.count("runtime.close") == 1
+    assert events.count("bundle.close") == 1
+
+
+def test_visible_mode_reports_raw_cleanup_failure_and_keeps_closing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    script = importlib.import_module("scripts.qt_spine38_vertical_slice")
+    bridge_dll = tmp_path / "private-bridge.dll"
+    bridge_dll.write_bytes(b"fixture")
+    _write_valid_build_manifest(tmp_path)
+    asset_root = tmp_path / "private-assets"
+    asset_root.mkdir()
+    events: list[str] = []
+
+    class FakeBundle:
+        snapshot = object()
+        metadata = SimpleNamespace(
+            atlas=SimpleNamespace(page_width=2, page_height=2)
+        )
+
+        def close(self) -> None:
+            events.append("bundle.close")
+
+    class FakeLoader:
+        def __init__(self, filesystem: object) -> None:
+            del filesystem
+
+        def load(self, descriptor: object) -> object:
+            del descriptor
+            events.append("assets.load")
+            return SimpleNamespace(succeeded=True, bundle=FakeBundle())
+
+    class FailingPort:
+        def close(self) -> None:
+            events.append("native.close")
+            raise RuntimeError("sensitive-native-path")
+
+    class FakeLibrary:
+        @classmethod
+        def from_dll_path(cls, path: Path) -> FakeLibrary:
+            assert path == bridge_dll.resolve()
+            events.append("dll.load")
+            return cls()
+
+        def create(self, snapshot: object) -> FailingPort:
+            del snapshot
+            events.append("native.create")
+            return FailingPort()
+
+    class FailingRuntime:
+        def __init__(self, native_port: object, *, atlas_size: Size) -> None:
+            del native_port, atlas_size
+            raise RuntimeError("sensitive-runtime-path")
+
+    monkeypatch.setattr(script, "ExternalPetAssetLoader", FakeLoader)
+    monkeypatch.setattr(script, "WindowsExternalPetAssetFilesystem", object)
+    monkeypatch.setattr(script, "Spine38NativeLibrary", FakeLibrary)
+    monkeypatch.setattr(script, "Spine38Runtime", FailingRuntime)
+
+    exit_code = script.main(
+        [
+            "--bridge-dll",
+            str(bridge_dll),
+            "--asset-root",
+            str(asset_root),
+        ]
+    )
+
+    captured = capsys.readouterr()
+    rendered = captured.out + captured.err
+    assert exit_code == 1
+    assert captured.out == ""
+    assert captured.err == '{"status":"spine38_cleanup_failed"}\n'
+    assert "sensitive" not in rendered
+    assert str(bridge_dll) not in rendered
+    assert str(asset_root) not in rendered
+    assert events == [
+        "assets.load",
+        "dll.load",
+        "native.create",
+        "native.close",
+        "bundle.close",
+    ]
+
+
 def test_direct_cli_uses_worktree_source_and_emits_fixed_error() -> None:
     project_root = Path(__file__).resolve().parents[2]
 

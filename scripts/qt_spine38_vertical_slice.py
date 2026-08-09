@@ -332,66 +332,78 @@ def _run_visible(
     native_port = None
     runtime = None
     safe_renderer = None
+    exit_code = 1
+    status = "spine38_runtime_failure"
     try:
         loaded = ExternalPetAssetLoader(
             WindowsExternalPetAssetFilesystem()
         ).load(_descriptor(arguments.asset_root))
         if not loaded.succeeded or loaded.bundle is None:
-            return 1, loaded.status.value
-        bundle = loaded.bundle
-        native_port = Spine38NativeLibrary.from_dll_path(
-            arguments.bridge_dll
-        ).create(bundle.snapshot)
+            status = loaded.status.value
+        else:
+            bundle = loaded.bundle
+            native_port = Spine38NativeLibrary.from_dll_path(
+                arguments.bridge_dll
+            ).create(bundle.snapshot)
 
-        from PySide6.QtWidgets import QApplication
+            from PySide6.QtWidgets import QApplication
 
-        from sjtuclaw.application.pet_geometry import Size
-        from sjtuclaw.presentation.qt.pet_renderer import SafePetRenderer
-        from sjtuclaw.presentation.qt.pet_window import PetWindow
-        from sjtuclaw.presentation.qt.spine38_renderer import (
-            Spine38PetRenderer,
-        )
+            from sjtuclaw.application.pet_geometry import Size
+            from sjtuclaw.presentation.qt.pet_renderer import (
+                PetRendererSafeCode,
+                SafePetRenderer,
+            )
+            from sjtuclaw.presentation.qt.pet_window import PetWindow
+            from sjtuclaw.presentation.qt.spine38_renderer import (
+                Spine38PetRenderer,
+            )
 
-        runtime = Spine38Runtime(
-            native_port,
-            atlas_size=Size(
-                bundle.metadata.atlas.page_width,
-                bundle.metadata.atlas.page_height,
-            ),
-        )
-        native_port = None
-        runtime.catalog.require_animation("Relax")
-        renderer = Spine38PetRenderer(
-            runtime,
-            bundle.snapshot.texture_bytes,
-            asset_owner=bundle,
-        )
-        runtime = None
-        bundle = None
-        safe_renderer = SafePetRenderer(renderer)
-        existing = QApplication.instance()
-        application = (
-            existing
-            if isinstance(existing, QApplication)
-            else QApplication([])
-        )
-        application.setApplicationName("SJTUClaw Spine 3.8 Vertical Slice")
-        window = PetWindow(renderer=safe_renderer)
-        window.safe_exit_requested.connect(application.quit)
-        window.show()
-        application_exit_code = application.exec()
-        if safe_renderer.using_placeholder:
-            return 1, "spine38_renderer_fallback"
-        if application_exit_code != 0:
-            return 1, "spine38_runtime_failure"
-        return 0, "spine38_visible_complete"
+            runtime = Spine38Runtime(
+                native_port,
+                atlas_size=Size(
+                    bundle.metadata.atlas.page_width,
+                    bundle.metadata.atlas.page_height,
+                ),
+            )
+            native_port = None
+            runtime.catalog.require_animation("Relax")
+            renderer = Spine38PetRenderer(
+                runtime,
+                bundle.snapshot.texture_bytes,
+                asset_owner=bundle,
+            )
+            runtime = None
+            bundle = None
+            safe_renderer = SafePetRenderer(renderer)
+            existing = QApplication.instance()
+            application = (
+                existing
+                if isinstance(existing, QApplication)
+                else QApplication([])
+            )
+            application.setApplicationName(
+                "SJTUClaw Spine 3.8 Vertical Slice"
+            )
+            window = PetWindow(renderer=safe_renderer)
+            window.safe_exit_requested.connect(application.quit)
+            window.show()
+            application_exit_code = application.exec()
+            if safe_renderer.using_placeholder:
+                status = "spine38_renderer_fallback"
+            elif application_exit_code != 0:
+                status = "spine38_runtime_failure"
+            else:
+                exit_code = 0
+                status = "spine38_visible_complete"
     except Spine38CatalogError:
-        return 3, "spine38_relax_unconfirmed"
+        exit_code = 3
+        status = "spine38_relax_unconfirmed"
     except Spine38NativeError:
-        return 1, "spine38_native_failure"
+        status = "spine38_native_failure"
     except Exception:
-        return 1, "spine38_runtime_failure"
+        status = "spine38_runtime_failure"
     finally:
+        cleanup_failed = False
         for resource in (
             safe_renderer,
             runtime,
@@ -399,8 +411,19 @@ def _run_visible(
             bundle,
         ):
             if resource is not None:
-                with suppress(Exception):
+                try:
                     resource.close()
+                except Exception:
+                    cleanup_failed = True
+        if (
+            safe_renderer is not None
+            and safe_renderer.safe_code is PetRendererSafeCode.CLOSE_FAILED
+        ):
+            cleanup_failed = True
+        if cleanup_failed:
+            exit_code = 1
+            status = "spine38_cleanup_failed"
+    return exit_code, status
 
 
 def main(argv: Sequence[str] | None = None) -> int:
