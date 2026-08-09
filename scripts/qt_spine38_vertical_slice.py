@@ -3,15 +3,18 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
+import struct
 import sys
+import time
 import uuid
 from collections.abc import Sequence
 from contextlib import suppress
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any, NoReturn, TextIO
+from typing import Any, NoReturn, TextIO, cast
 
 if __package__ in {None, ""}:
     sys.path.insert(
@@ -19,7 +22,10 @@ if __package__ in {None, ""}:
         str(Path(__file__).resolve().parents[1] / "src"),
     )
 
-from sjtuclaw.application.pet_external_assets import ExternalPetAssetLoader
+from sjtuclaw.application.pet_external_assets import (
+    ExternalPetAssetLoader,
+    ExternalPetAssetStatus,
+)
 from sjtuclaw.application.pet_renderer_model import (
     ExternalPetAssetDescriptor,
     ExternalPetAssetHashes,
@@ -53,6 +59,19 @@ _EVIDENCE_PATH = (
     / "evidence"
     / "schwarz-catalog.json"
 )
+_SMOKE_EVIDENCE_PATH = _EVIDENCE_PATH.with_name("schwarz-smoke.json")
+_SMOKE_SAMPLE_TARGETS = (
+    ("loop_1_start", 0.02),
+    ("loop_1_mid", 0.5),
+    ("loop_1_before_end", 0.98),
+    ("loop_2_after_start", 1.02),
+    ("loop_2_mid", 1.5),
+    ("loop_2_before_end", 1.98),
+    ("loop_3_after_start", 2.02),
+    ("loop_3_mid", 2.5),
+    ("loop_3_before_end", 2.98),
+    ("loop_3_after_end", 3.02),
+)
 
 
 class _CliArgumentError(Exception):
@@ -74,6 +93,8 @@ class _Arguments:
     list_only: bool
     bridge_dll: Path
     asset_root: Path
+    animation: str | None
+    loops: int | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,6 +110,8 @@ def _parse_arguments(argv: Sequence[str] | None) -> _Arguments:
     parser.add_argument("--list-only", action="store_true")
     parser.add_argument("--bridge-dll", required=True)
     parser.add_argument("--asset-root", required=True)
+    parser.add_argument("--animation")
+    parser.add_argument("--loops", type=int)
     parsed = parser.parse_args(argv)
     try:
         bridge_dll = Path(str(parsed.bridge_dll)).resolve(strict=True)
@@ -97,7 +120,19 @@ def _parse_arguments(argv: Sequence[str] | None) -> _Arguments:
         raise _CliArgumentError from None
     if not bridge_dll.is_file() or not asset_root.is_dir():
         raise _CliArgumentError
-    return _Arguments(bool(parsed.list_only), bridge_dll, asset_root)
+    animation = cast(str | None, parsed.animation)
+    loops = cast(int | None, parsed.loops)
+    if (animation is None) != (loops is None):
+        raise _CliArgumentError
+    if animation is not None and (animation != "Relax" or loops != 3):
+        raise _CliArgumentError
+    return _Arguments(
+        bool(parsed.list_only),
+        bridge_dll,
+        asset_root,
+        animation,
+        loops,
+    )
 
 
 def _manifest_object(
@@ -265,6 +300,142 @@ def _emit_status(status: str, stream: TextIO) -> None:
     stream.write(json.dumps({"status": status}, separators=(",", ":")) + "\n")
 
 
+def _emit_json(value: dict[str, Any], stream: TextIO) -> None:
+    stream.write(
+        json.dumps(
+            value,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        )
+        + "\n"
+    )
+
+
+def _forced_hash_failure_evidence(asset_root: Path) -> dict[str, Any]:
+    from sjtuclaw.application.pet_geometry import Size
+    from sjtuclaw.presentation.qt.pet_renderer import (
+        PetRendererSafeCode,
+        PlaceholderPetRenderer,
+        SafePetRenderer,
+    )
+
+    descriptor = _descriptor(asset_root)
+    wrong_descriptor = replace(
+        descriptor,
+        expected_sha256=ExternalPetAssetHashes(
+            skeleton_sha256="0" * 64,
+            atlas_sha256=_ATLAS_SHA256,
+            texture_sha256=_TEXTURE_SHA256,
+        ),
+    )
+    loaded = ExternalPetAssetLoader(
+        WindowsExternalPetAssetFilesystem()
+    ).load(wrong_descriptor)
+    if loaded.bundle is not None:
+        loaded.bundle.close()
+        raise RuntimeError
+    if loaded.status is not ExternalPetAssetStatus.HASH_MISMATCH:
+        raise RuntimeError
+    fallback = SafePetRenderer(
+        PlaceholderPetRenderer(),
+        initial_safe_code=PetRendererSafeCode.CONSTRUCTION_FAILED,
+    )
+    fallback.initialize(Size(160, 180))
+    evidence = {
+        "bridge_constructed": False,
+        "loader_status": loaded.status.value,
+        "renderer_safe_code": fallback.safe_code.value,
+        "using_placeholder": fallback.using_placeholder,
+    }
+    fallback.close()
+    return evidence
+
+
+def _alpha_bounds(image: Any) -> dict[str, int]:
+    from PySide6.QtGui import QImage
+
+    converted = image.convertToFormat(QImage.Format.Format_RGBA8888)
+    width = converted.width()
+    height = converted.height()
+    bytes_per_line = converted.bytesPerLine()
+    rgba = bytes(converted.constBits()[: converted.sizeInBytes()])
+    minimum_x = width
+    minimum_y = height
+    maximum_x = -1
+    maximum_y = -1
+    nonzero_pixels = 0
+    for y in range(height):
+        row = y * bytes_per_line
+        for x in range(width):
+            if rgba[row + x * 4 + 3] == 0:
+                continue
+            nonzero_pixels += 1
+            minimum_x = min(minimum_x, x)
+            minimum_y = min(minimum_y, y)
+            maximum_x = max(maximum_x, x)
+            maximum_y = max(maximum_y, y)
+    if nonzero_pixels == 0:
+        raise RuntimeError
+    return {
+        "x": minimum_x,
+        "y": minimum_y,
+        "width": maximum_x - minimum_x + 1,
+        "height": maximum_y - minimum_y + 1,
+        "nonzero_pixels": nonzero_pixels,
+    }
+
+
+def _vertex_checksum(runtime: Spine38Runtime) -> str:
+    digest = hashlib.sha256()
+    vertex_count = 0
+    for command in runtime.draw_commands()[:8]:
+        digest.update(struct.pack("<ii", command.draw_order, command.texture_page))
+        for vertex in command.vertices[:8]:
+            digest.update(
+                struct.pack(
+                    "<ffffBBBB",
+                    vertex.x,
+                    vertex.y,
+                    vertex.u,
+                    vertex.v,
+                    vertex.r,
+                    vertex.g,
+                    vertex.b,
+                    vertex.a,
+                )
+            )
+            vertex_count += 1
+    if vertex_count == 0:
+        raise RuntimeError
+    return digest.hexdigest()[:16]
+
+
+def _smoke_sample(
+    window: Any,
+    runtime: Spine38Runtime,
+    *,
+    label: str,
+    target_seconds: float,
+    started_at: float,
+) -> dict[str, Any]:
+    from PySide6.QtGui import QImage
+
+    image = QImage(160, 180, QImage.Format.Format_RGBA8888)
+    image.fill(0)
+    window.render(image)
+    return {
+        "label": label,
+        "target_elapsed_seconds": round(target_seconds, 6),
+        "observed_elapsed_seconds": round(
+            time.perf_counter() - started_at,
+            6,
+        ),
+        "alpha_bounds": _alpha_bounds(image),
+        "vertex_checksum": _vertex_checksum(runtime),
+    }
+
+
 def _run_list_only(
     arguments: _Arguments,
     manifest: _BuildManifest,
@@ -321,6 +492,206 @@ def _run_list_only(
             status = "spine38_cleanup_failed"
             exit_code = 1
     return exit_code, status
+
+
+def _run_three_loop_smoke(
+    arguments: _Arguments,
+    manifest: _BuildManifest,
+) -> tuple[int, str, dict[str, Any] | None]:
+    del manifest
+    bundle = None
+    native_port = None
+    runtime = None
+    safe_renderer = None
+    exit_code = 1
+    status = "spine38_runtime_failure"
+    evidence: dict[str, Any] | None = None
+    try:
+        if arguments.animation != "Relax" or arguments.loops != 3:
+            raise RuntimeError
+        forced_hash_failure = _forced_hash_failure_evidence(
+            arguments.asset_root
+        )
+        loaded = ExternalPetAssetLoader(
+            WindowsExternalPetAssetFilesystem()
+        ).load(_descriptor(arguments.asset_root))
+        if not loaded.succeeded or loaded.bundle is None:
+            status = loaded.status.value
+        else:
+            bundle = loaded.bundle
+            native_port = Spine38NativeLibrary.from_dll_path(
+                arguments.bridge_dll
+            ).create(bundle.snapshot)
+
+            from PySide6.QtCore import Qt, QTimer
+            from PySide6.QtWidgets import QApplication
+
+            from sjtuclaw.application.pet_geometry import Size
+            from sjtuclaw.presentation.qt.pet_renderer import (
+                PetRendererSafeCode,
+                SafePetRenderer,
+            )
+            from sjtuclaw.presentation.qt.pet_window import PetWindow
+            from sjtuclaw.presentation.qt.spine38_renderer import (
+                Spine38PetRenderer,
+            )
+
+            runtime = Spine38Runtime(
+                native_port,
+                atlas_size=Size(
+                    bundle.metadata.atlas.page_width,
+                    bundle.metadata.atlas.page_height,
+                ),
+            )
+            native_port = None
+            animation = runtime.catalog.require_animation(arguments.animation)
+            duration_seconds = animation.duration_seconds
+            runtime_probe = runtime
+            renderer = Spine38PetRenderer(
+                runtime,
+                bundle.snapshot.texture_bytes,
+                asset_owner=bundle,
+            )
+            runtime = None
+            bundle = None
+            safe_renderer = SafePetRenderer(renderer)
+            existing = QApplication.instance()
+            application = (
+                existing
+                if isinstance(existing, QApplication)
+                else QApplication([])
+            )
+            application.setApplicationName(
+                "SJTUClaw Spine 3.8 Vertical Slice"
+            )
+            window = PetWindow(renderer=safe_renderer)
+            window.safe_exit_requested.connect(application.quit)
+            window.show()
+            application.processEvents()
+            window_transparent = window.testAttribute(
+                Qt.WidgetAttribute.WA_TranslucentBackground
+            )
+            window_count = sum(
+                isinstance(widget, PetWindow)
+                for widget in QApplication.topLevelWidgets()
+            )
+            samples: list[dict[str, Any]] = []
+            sample_failed = False
+            started_at = time.perf_counter()
+
+            def collect_sample(
+                label: str,
+                target_multiple: float,
+                final: bool,
+            ) -> None:
+                nonlocal sample_failed
+                target_seconds = target_multiple * duration_seconds
+                try:
+                    samples.append(
+                        _smoke_sample(
+                            window,
+                            runtime_probe,
+                            label=label,
+                            target_seconds=target_seconds,
+                            started_at=started_at,
+                        )
+                    )
+                except Exception:
+                    sample_failed = True
+                if final:
+                    application.quit()
+
+            for index, (label, target_multiple) in enumerate(
+                _SMOKE_SAMPLE_TARGETS
+            ):
+                final = index == len(_SMOKE_SAMPLE_TARGETS) - 1
+                delay_milliseconds = max(
+                    1,
+                    round(target_multiple * duration_seconds * 1000.0),
+                )
+                QTimer.singleShot(
+                    delay_milliseconds,
+                    lambda label=label,
+                    target_multiple=target_multiple,
+                    final=final: collect_sample(
+                        label,
+                        target_multiple,
+                        final,
+                    ),
+                )
+            application_exit_code = application.exec()
+            observed_duration = time.perf_counter() - started_at
+            if (
+                safe_renderer.using_placeholder
+                or safe_renderer.safe_code is not PetRendererSafeCode.NONE
+            ):
+                status = "spine38_renderer_fallback"
+            elif (
+                application_exit_code != 0
+                or sample_failed
+                or len(samples) != len(_SMOKE_SAMPLE_TARGETS)
+                or observed_duration < arguments.loops * duration_seconds
+            ):
+                status = "spine38_runtime_failure"
+            else:
+                status = "visual_review_required"
+                exit_code = 0
+                evidence = {
+                    "schema_version": 1,
+                    "status": status,
+                    "animation": arguments.animation,
+                    "loops_requested": arguments.loops,
+                    "duration_seconds": duration_seconds,
+                    "completed_elapsed_seconds": round(
+                        observed_duration,
+                        6,
+                    ),
+                    "window_count": window_count,
+                    "window_transparent": window_transparent,
+                    "renderer_safe_code": safe_renderer.safe_code.value,
+                    "sampled_nontransparent_frames": len(samples),
+                    "samples": samples,
+                    "forced_hash_failure": forced_hash_failure,
+                    "agent_modules_imported": (
+                        "sjtuclaw.application.agent_loop" in sys.modules
+                    ),
+                    "visual_review_required": True,
+                }
+    except Spine38CatalogError:
+        exit_code = 3
+        status = "spine38_relax_unconfirmed"
+    except Spine38NativeError:
+        status = "spine38_native_failure"
+    except Exception:
+        status = "spine38_runtime_failure"
+    finally:
+        cleanup_failed = False
+        for resource in (
+            safe_renderer,
+            runtime,
+            native_port,
+            bundle,
+        ):
+            if resource is not None:
+                try:
+                    resource.close()
+                except Exception:
+                    cleanup_failed = True
+        if (
+            safe_renderer is not None
+            and safe_renderer.safe_code is PetRendererSafeCode.CLOSE_FAILED
+        ):
+            cleanup_failed = True
+        if cleanup_failed:
+            exit_code = 1
+            status = "spine38_cleanup_failed"
+            evidence = None
+    if exit_code == 0 and evidence is not None:
+        try:
+            _write_atomic_json(_SMOKE_EVIDENCE_PATH, evidence)
+        except OSError:
+            return 1, "spine38_evidence_write_failed", None
+    return exit_code, status, evidence
 
 
 def _run_visible(
@@ -439,9 +810,20 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 1
     if arguments.list_only:
         exit_code, status = _run_list_only(arguments, manifest)
+        evidence = None
+    elif arguments.animation is not None:
+        exit_code, status, evidence = _run_three_loop_smoke(
+            arguments,
+            manifest,
+        )
     else:
         exit_code, status = _run_visible(arguments, manifest)
-    _emit_status(status, sys.stdout if exit_code == 0 else sys.stderr)
+        evidence = None
+    stream = sys.stdout if exit_code == 0 else sys.stderr
+    if evidence is None:
+        _emit_status(status, stream)
+    else:
+        _emit_json(evidence, stream)
     return exit_code
 
 
