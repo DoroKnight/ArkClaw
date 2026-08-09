@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import random
-from typing import TYPE_CHECKING
+from typing import Protocol
 
-from PySide6.QtCore import QSignalBlocker, Qt, QTimer, Signal
+from PySide6.QtCore import QSignalBlocker, Qt, QTimer, Signal, SignalInstance
 from PySide6.QtGui import (
     QAction,
     QCloseEvent,
@@ -47,10 +47,26 @@ from sjtuclaw.presentation.qt.pet_renderer import (
     SafePetRenderer,
 )
 
-if TYPE_CHECKING:
-    from sjtuclaw.presentation.qt.autostart_controller import (
-        AutostartUiController,
-    )
+
+class _AutostartUiController(Protocol):
+    @property
+    def state_changed(self) -> SignalInstance: ...
+
+    @property
+    def snapshot(self) -> AutostartSnapshot: ...
+
+    @property
+    def display_message(self) -> str: ...
+
+    @property
+    def user_toggle_allowed(self) -> bool: ...
+
+    def set_enabled(
+        self,
+        enabled: bool,
+        *,
+        origin: AutostartOperationOrigin,
+    ) -> str | None: ...
 
 _PET_WIDTH = 160
 _PET_HEIGHT = 180
@@ -72,7 +88,7 @@ class PetWindow(QWidget):
         clock: MonotonicClock | None = None,
         rng: random.Random | None = None,
         animation_config: PetAnimationConfig | None = None,
-        autostart_controller: AutostartUiController | None = None,
+        autostart_controller: _AutostartUiController | None = None,
     ) -> None:
         super().__init__()
         self._always_on_top = always_on_top

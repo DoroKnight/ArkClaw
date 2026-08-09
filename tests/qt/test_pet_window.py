@@ -83,10 +83,13 @@ def test_pet_window_import_does_not_import_agent_loop() -> None:
             sys.executable,
             "-c",
             (
-                "import sys; "
-                "import sjtuclaw.presentation.qt.pet_window; "
+                "import sys, typing; "
+                "from sjtuclaw.presentation.qt.pet_window import PetWindow; "
                 "print('agent_loop_imported=' + "
                 "str('sjtuclaw.application.agent_loop' in sys.modules).lower()); "
+                "hints = typing.get_type_hints(PetWindow.__init__); "
+                "print('autostart_hint_resolved=' + "
+                "str('autostart_controller' in hints).lower()); "
                 "from sjtuclaw.presentation.qt import QtRuntimeBridge; "
                 "print('runtime_bridge=' + QtRuntimeBridge.__module__ + '.' + "
                 "QtRuntimeBridge.__name__)"
@@ -105,6 +108,7 @@ def test_pet_window_import_does_not_import_agent_loop() -> None:
     assert completed.stderr == ""
     assert completed.stdout == (
         "agent_loop_imported=false\n"
+        "autostart_hint_resolved=true\n"
         "runtime_bridge=sjtuclaw.presentation.qt.runtime_bridge."
         "QtRuntimeBridge\n"
     )
