@@ -18,6 +18,7 @@ from sjtuclaw.application.pet_state import (
     PetLifecycleState,
     PetMotionState,
     PetStateTransitionError,
+    ProposedStateTransition,
 )
 
 
@@ -74,6 +75,21 @@ class PetMotionModel:
     @property
     def states(self) -> PetLayeredStateMachine:
         return self._states
+
+    def commit_state_transition(
+        self,
+        proposal: ProposedStateTransition,
+    ) -> None:
+        """Commit state authority output and synchronize motion-local facts."""
+
+        self._states.commit(proposal)
+        target = proposal.target_state
+        if (
+            target.lifecycle is not PetLifecycleState.ACTIVE
+            or target.motion in {PetMotionState.DRAGGING, PetMotionState.FALLING}
+        ):
+            self._vertical_velocity = 0.0
+            self._landing_elapsed = 0.0
 
     @property
     def position(self) -> Point:

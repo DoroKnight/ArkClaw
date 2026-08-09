@@ -190,6 +190,12 @@ class _FakeRenderer:
             self._events.append("renderer")
 
 
+class _FailingStateRenderer(_FakeRenderer):
+    def set_state(self, request: PetRendererActionRequest) -> None:
+        del request
+        raise RuntimeError("controlled animation state failure")
+
+
 class _FakeTrayView:
     def __init__(
         self,
@@ -409,6 +415,26 @@ def test_replaceable_renderer_captures_non_sensitive_frames(
 
     window.complete_safe_close()
     assert renderer.closed
+
+
+def test_animation_failure_does_not_close_restart_or_wake_agent(
+    qt_application: QApplication,
+) -> None:
+    del qt_application
+    renderer = _FailingStateRenderer()
+    window = PetWindow(renderer=renderer)
+    open_agent_spy = QSignalSpy(window.open_agent_requested)
+    safe_exit_spy = QSignalSpy(window.safe_exit_requested)
+
+    window.request_thinking_animation()
+    window.physics_timer.timeout.emit()
+
+    assert window.lifecycle_state is PetLifecycleState.ACTIVE
+    assert window.physics_timer.isActive()
+    assert open_agent_spy.count() == 0
+    assert safe_exit_spy.count() == 0
+    assert window.renderer_safe_code.value == "pet_renderer_state_failed"
+    window.complete_safe_close()
 
 
 def test_breathing_transform_keeps_foot_baseline_fixed(

@@ -15,6 +15,7 @@ from sjtuclaw.application.pet_motion import (
     PetMotionModel,
 )
 from sjtuclaw.application.pet_state import (
+    PetActivityState,
     PetBehaviorState,
     PetFacing,
     PetLayeredState,
@@ -37,7 +38,26 @@ def test_layered_state_starts_active_idle_and_breathing() -> None:
         motion=PetMotionState.IDLE,
         behaviors=frozenset({PetBehaviorState.BREATHING}),
         facing=PetFacing.RIGHT,
+        activity=PetActivityState.NONE,
     )
+
+
+def test_running_motion_values_are_available_without_changing_walk_api() -> None:
+    assert PetMotionState.RUNNING_LEFT.value == "running_left"
+    assert PetMotionState.RUNNING_RIGHT.value == "running_right"
+
+
+def test_thinking_and_reminding_use_activity_with_legacy_behavior_projection() -> None:
+    machine = PetLayeredStateMachine()
+
+    machine.start_thinking()
+    assert machine.activity is PetActivityState.THINKING
+    assert PetBehaviorState.THINKING in machine.behaviors
+
+    reminding_machine = PetLayeredStateMachine()
+    reminding_machine.start_reminding()
+    assert reminding_machine.activity is PetActivityState.REMINDING
+    assert reminding_machine.behaviors == frozenset({PetBehaviorState.REMINDING})
 
 
 def test_layered_state_priority_places_close_above_drag_and_idle() -> None:
@@ -78,9 +98,7 @@ def test_dragging_does_not_advance_falling_physics() -> None:
     after = model.update(1.0, (_WORKSPACE,))
 
     assert after.state.motion is PetMotionState.DRAGGING
-    assert after.state.behaviors == frozenset(
-        {PetBehaviorState.DRAG_STRUGGLE}
-    )
+    assert after.state.behaviors == frozenset({PetBehaviorState.DRAG_STRUGGLE})
     assert after.position == before.position
     assert after.vertical_velocity == 0
 
@@ -143,10 +161,7 @@ def test_physical_workspace_conversion_respects_display_scale(
     scale: float,
     expected: Rect,
 ) -> None:
-    assert (
-        physical_to_logical_rect(Rect(0, 0, 1920, 1080), scale)
-        == expected
-    )
+    assert physical_to_logical_rect(Rect(0, 0, 1920, 1080), scale) == expected
 
 
 def test_workspace_selection_prefers_greatest_overlap() -> None:
