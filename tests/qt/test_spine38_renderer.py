@@ -75,10 +75,10 @@ class _FakeRuntime:
         self.set_animation_calls.append((track, name, loop))
 
     def update(self, delta_seconds: float) -> None:
-        if self.fail_update or (
-            self.fail_zero_delta_update and delta_seconds == 0.0
-        ):
+        if self.fail_update:
             raise RuntimeError("sensitive-native-detail")
+        if self.fail_zero_delta_update and delta_seconds == 0.0:
+            raise Spine38FrameError
         self.update_calls.append(delta_seconds)
 
     def visible_bounds(self) -> Spine38Bounds:
@@ -126,7 +126,13 @@ class _FakeRuntime:
             )
             for command in self.draw_commands()
         )
-        return PetMeshScene(160, 180, 160.0, (texture,), commands)
+        return PetMeshScene(
+            160,
+            180,
+            transform.foot_baseline_y,
+            (texture,),
+            commands,
+        )
 
     def close(self) -> None:
         self.close_count += 1
@@ -201,6 +207,7 @@ def test_renderer_sets_relax_once_and_only_advances_time(
     assert runtime.visible_bounds_calls == 1
     assert len(backends) == 1
     assert len(backends[0].scenes) == 2
+    assert backends[0].initial_scene.foot_baseline_y == pytest.approx(176.0)
     initial_vertices = backends[0].initial_scene.draw_commands[0].vertices
     assert min(vertex.position.y for vertex in initial_vertices) == pytest.approx(4.0)
     assert max(vertex.position.y for vertex in initial_vertices) == pytest.approx(176.0)
@@ -236,7 +243,7 @@ def test_renderer_keeps_visible_frame_transform_after_initialization(
 @pytest.mark.parametrize(
     ("failure", "expected_code"),
     [
-        ("zero_delta", "RUNTIME_FAILED"),
+        ("zero_delta", "MESH_INVALID"),
         ("visible_bounds", "MESH_INVALID"),
     ],
 )
