@@ -71,6 +71,7 @@ class _SafeArgumentParser(argparse.ArgumentParser):
 
 @dataclass(frozen=True, slots=True)
 class _Arguments:
+    list_only: bool
     bridge_dll: Path
     asset_root: Path
 
@@ -89,8 +90,6 @@ def _parse_arguments(argv: Sequence[str] | None) -> _Arguments:
     parser.add_argument("--bridge-dll", required=True)
     parser.add_argument("--asset-root", required=True)
     parsed = parser.parse_args(argv)
-    if not parsed.list_only:
-        raise _CliArgumentError
     try:
         bridge_dll = Path(str(parsed.bridge_dll)).resolve(strict=True)
         asset_root = Path(str(parsed.asset_root)).resolve(strict=True)
@@ -98,7 +97,7 @@ def _parse_arguments(argv: Sequence[str] | None) -> _Arguments:
         raise _CliArgumentError from None
     if not bridge_dll.is_file() or not asset_root.is_dir():
         raise _CliArgumentError
-    return _Arguments(bridge_dll, asset_root)
+    return _Arguments(bool(parsed.list_only), bridge_dll, asset_root)
 
 
 def _manifest_object(
@@ -324,6 +323,86 @@ def _run_list_only(
     return exit_code, status
 
 
+def _run_visible(
+    arguments: _Arguments,
+    manifest: _BuildManifest,
+) -> tuple[int, str]:
+    del manifest
+    bundle = None
+    native_port = None
+    runtime = None
+    safe_renderer = None
+    try:
+        loaded = ExternalPetAssetLoader(
+            WindowsExternalPetAssetFilesystem()
+        ).load(_descriptor(arguments.asset_root))
+        if not loaded.succeeded or loaded.bundle is None:
+            return 1, loaded.status.value
+        bundle = loaded.bundle
+        native_port = Spine38NativeLibrary.from_dll_path(
+            arguments.bridge_dll
+        ).create(bundle.snapshot)
+
+        from PySide6.QtWidgets import QApplication
+
+        from sjtuclaw.application.pet_geometry import Size
+        from sjtuclaw.presentation.qt.pet_renderer import SafePetRenderer
+        from sjtuclaw.presentation.qt.pet_window import PetWindow
+        from sjtuclaw.presentation.qt.spine38_renderer import (
+            Spine38PetRenderer,
+        )
+
+        runtime = Spine38Runtime(
+            native_port,
+            atlas_size=Size(
+                bundle.metadata.atlas.page_width,
+                bundle.metadata.atlas.page_height,
+            ),
+        )
+        native_port = None
+        runtime.catalog.require_animation("Relax")
+        renderer = Spine38PetRenderer(
+            runtime,
+            bundle.snapshot.texture_bytes,
+            asset_owner=bundle,
+        )
+        runtime = None
+        bundle = None
+        safe_renderer = SafePetRenderer(renderer)
+        existing = QApplication.instance()
+        application = (
+            existing
+            if isinstance(existing, QApplication)
+            else QApplication([])
+        )
+        application.setApplicationName("SJTUClaw Spine 3.8 Vertical Slice")
+        window = PetWindow(renderer=safe_renderer)
+        window.safe_exit_requested.connect(application.quit)
+        window.show()
+        application_exit_code = application.exec()
+        if safe_renderer.using_placeholder:
+            return 1, "spine38_renderer_fallback"
+        if application_exit_code != 0:
+            return 1, "spine38_runtime_failure"
+        return 0, "spine38_visible_complete"
+    except Spine38CatalogError:
+        return 3, "spine38_relax_unconfirmed"
+    except Spine38NativeError:
+        return 1, "spine38_native_failure"
+    except Exception:
+        return 1, "spine38_runtime_failure"
+    finally:
+        for resource in (
+            safe_renderer,
+            runtime,
+            native_port,
+            bundle,
+        ):
+            if resource is not None:
+                with suppress(Exception):
+                    resource.close()
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     try:
         arguments = _parse_arguments(argv)
@@ -335,7 +414,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     except _BuildManifestError:
         _emit_status("spine38_build_manifest_invalid", sys.stderr)
         return 1
-    exit_code, status = _run_list_only(arguments, manifest)
+    if arguments.list_only:
+        exit_code, status = _run_list_only(arguments, manifest)
+    else:
+        exit_code, status = _run_visible(arguments, manifest)
     _emit_status(status, sys.stdout if exit_code == 0 else sys.stderr)
     return exit_code
 

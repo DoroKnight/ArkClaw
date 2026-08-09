@@ -7,9 +7,15 @@ import sys
 from dataclasses import FrozenInstanceError
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 import pytest
+
+from sjtuclaw.application.pet_geometry import Size
+from sjtuclaw.application.pet_mesh_model import (
+    PetMeshBlendMode,
+    PetMeshTextureData,
+)
 
 
 def _write_valid_build_manifest(directory: Path) -> None:
@@ -58,6 +64,91 @@ def test_catalog_rejects_duplicate_exact_names_instead_of_guessing() -> None:
 
     with pytest.raises(runtime.Spine38CatalogError):
         catalog.require_animation("Relax")
+
+
+def test_transform_is_fixed_from_setup_bounds() -> None:
+    runtime = importlib.import_module("sjtuclaw.application.spine38_runtime")
+
+    transform = runtime.Spine38ViewportTransform.fit(
+        runtime.Spine38Bounds(-20.0, 0.0, 40.0, 100.0),
+        viewport=Size(160, 180),
+        foot_baseline_y=160.0,
+        margin=8.0,
+    )
+
+    assert transform.point(0.0, 0.0).y == pytest.approx(160.0)
+    assert transform.point(0.0, 100.0).y >= 8.0
+    assert transform.point(-20.0, 0.0).x >= 8.0
+    assert transform.point(20.0, 0.0).x <= 152.0
+
+
+def test_runtime_converts_native_draw_commands_without_reordering() -> None:
+    runtime = importlib.import_module("sjtuclaw.application.spine38_runtime")
+    native = importlib.import_module("sjtuclaw.infrastructure.spine38_native")
+
+    class FakePort:
+        def catalog(self) -> tuple[Any, ...]:
+            return (native.Spine38AnimationInfo("Relax", 3.2),)
+
+        def skins(self) -> tuple[str, ...]:
+            return ("default",)
+
+        def setup_bounds(self) -> Any:
+            return native.Spine38Bounds(-1.0, 0.0, 2.0, 2.0)
+
+        def set_animation(self, track: int, name: str, loop: bool) -> None:
+            del track, name, loop
+
+        def update(self, delta_seconds: float) -> None:
+            del delta_seconds
+
+        def draw_commands(self) -> tuple[Any, ...]:
+            vertices = (
+                native.Spine38Vertex(-1.0, 0.0, 0.0, 0.0, 1, 2, 3, 4),
+                native.Spine38Vertex(1.0, 0.0, 1.0, 0.0, 5, 6, 7, 8),
+                native.Spine38Vertex(0.0, 2.0, 0.5, 1.0, 9, 10, 11, 12),
+            )
+            return (
+                native.Spine38DrawCommand(
+                    vertices,
+                    (0, 1, 2),
+                    0,
+                    native.Spine38BlendMode.SCREEN,
+                    9,
+                ),
+                native.Spine38DrawCommand(
+                    vertices,
+                    (0, 2, 1),
+                    0,
+                    native.Spine38BlendMode.NORMAL,
+                    1,
+                ),
+            )
+
+        def close(self) -> None:
+            return
+
+    adapter = runtime.Spine38Runtime(FakePort())
+    transform = runtime.Spine38ViewportTransform.fit(
+        adapter.setup_bounds,
+        viewport=Size(160, 180),
+        foot_baseline_y=160.0,
+        margin=8.0,
+    )
+    texture = PetMeshTextureData("spine38-page-0", 1, 1, bytes((0, 0, 0, 0)))
+
+    scene = adapter.mesh_scene(transform, texture)
+
+    assert [command.draw_order for command in scene.draw_commands] == [9, 1]
+    assert [command.blend_mode for command in scene.draw_commands] == [
+        PetMeshBlendMode.SCREEN,
+        PetMeshBlendMode.NORMAL_STRAIGHT,
+    ]
+    assert scene.draw_commands[0].triangle_indices == (0, 1, 2)
+    assert scene.draw_commands[0].vertices[0].position.y == pytest.approx(160.0)
+    assert scene.draw_commands[0].vertices[2].position.y >= 8.0
+    assert scene.draw_commands[0].vertices[0].color.red == 1
+    adapter.close()
 
 
 def test_runtime_snapshots_catalog_and_closes_owned_port_once() -> None:
@@ -404,6 +495,123 @@ def test_list_only_missing_arguments_use_fixed_content_free_error(
     assert exit_code == 2
     assert captured.out == ""
     assert captured.err == '{"status":"spine38_arguments_invalid"}\n'
+
+
+def test_visible_mode_dispatches_without_requiring_list_only(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    script = importlib.import_module("scripts.qt_spine38_vertical_slice")
+    bridge_dll = tmp_path / "bridge.dll"
+    bridge_dll.write_bytes(b"fixture")
+    _write_valid_build_manifest(tmp_path)
+    asset_root = tmp_path / "assets"
+    asset_root.mkdir()
+    calls: list[tuple[Path, Path]] = []
+
+    def fake_run_visible(arguments: Any, manifest: Any) -> tuple[int, str]:
+        assert manifest.commit == script._RUNTIME_COMMIT
+        calls.append((arguments.bridge_dll, arguments.asset_root))
+        return 0, "spine38_visible_complete"
+
+    monkeypatch.setattr(script, "_run_visible", fake_run_visible)
+
+    exit_code = script.main(
+        [
+            "--bridge-dll",
+            str(bridge_dll),
+            "--asset-root",
+            str(asset_root),
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert captured.out == '{"status":"spine38_visible_complete"}\n'
+    assert captured.err == ""
+    assert calls == [(bridge_dll.resolve(), asset_root.resolve())]
+
+
+def test_visible_mode_closes_raw_native_port_if_runtime_construction_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    script = importlib.import_module("scripts.qt_spine38_vertical_slice")
+    bridge_dll = tmp_path / "bridge.dll"
+    bridge_dll.write_bytes(b"fixture")
+    _write_valid_build_manifest(tmp_path)
+    asset_root = tmp_path / "assets"
+    asset_root.mkdir()
+    events: list[str] = []
+
+    class FakeBundle:
+        snapshot = object()
+
+        def close(self) -> None:
+            events.append("bundle.close")
+
+    class FakeLoader:
+        def __init__(self, filesystem: object) -> None:
+            del filesystem
+
+        def load(self, descriptor: object) -> object:
+            del descriptor
+            events.append("assets.load")
+            return SimpleNamespace(succeeded=True, bundle=FakeBundle())
+
+    class FakePort:
+        def close(self) -> None:
+            events.append("native.close")
+
+    class FakeLibrary:
+        @classmethod
+        def from_dll_path(cls, path: Path) -> FakeLibrary:
+            assert path == bridge_dll.resolve()
+            events.append("dll.load")
+            return cls()
+
+        def create(self, snapshot: object) -> FakePort:
+            del snapshot
+            events.append("native.create")
+            return FakePort()
+
+    class FailingRuntime:
+        def __init__(self, native_port: object, *, atlas_size: Size) -> None:
+            del native_port, atlas_size
+            raise RuntimeError("sensitive-runtime-detail")
+
+    bundle_metadata = SimpleNamespace(
+        atlas=SimpleNamespace(page_width=2, page_height=2)
+    )
+    monkeypatch.setattr(script, "ExternalPetAssetLoader", FakeLoader)
+    monkeypatch.setattr(script, "WindowsExternalPetAssetFilesystem", object)
+    monkeypatch.setattr(script, "Spine38NativeLibrary", FakeLibrary)
+    monkeypatch.setattr(script, "Spine38Runtime", FailingRuntime)
+    original_loader = FakeLoader.load
+
+    def load_with_metadata(self: FakeLoader, descriptor: object) -> object:
+        result = cast(SimpleNamespace, original_loader(self, descriptor))
+        result.bundle.metadata = bundle_metadata
+        return result
+
+    monkeypatch.setattr(FakeLoader, "load", load_with_metadata)
+    arguments = SimpleNamespace(
+        bridge_dll=bridge_dll.resolve(),
+        asset_root=asset_root.resolve(),
+    )
+    manifest = script._load_build_manifest(bridge_dll.resolve())
+
+    result = script._run_visible(arguments, manifest)
+
+    assert result == (1, "spine38_runtime_failure")
+    assert events == [
+        "assets.load",
+        "dll.load",
+        "native.create",
+        "native.close",
+        "bundle.close",
+    ]
 
 
 def test_direct_cli_uses_worktree_source_and_emits_fixed_error() -> None:
