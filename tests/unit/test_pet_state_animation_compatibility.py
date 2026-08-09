@@ -168,7 +168,21 @@ def test_named_incompatible_state_action_pairs_are_rejected(
 
 
 def test_compatibility_mapping_contains_only_active_semantic_rows() -> None:
-    assert len(STATE_ACTION_COMPATIBILITY) == 18
+    assert len(STATE_ACTION_COMPATIBILITY) == 20
+    assert STATE_ACTION_COMPATIBILITY[
+        (
+            PetLifecycleState.ACTIVE,
+            PetMotionState.IDLE,
+            PetActivityState.SPECIAL,
+        )
+    ] == frozenset({PetActionName.WAVE})
+    assert STATE_ACTION_COMPATIBILITY[
+        (
+            PetLifecycleState.ACTIVE,
+            PetMotionState.IDLE,
+            PetActivityState.INTERACT,
+        )
+    ] == frozenset({PetActionName.HAPPY})
     assert all(
         lifecycle is PetLifecycleState.ACTIVE
         for lifecycle, _motion, _activity in STATE_ACTION_COMPATIBILITY

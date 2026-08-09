@@ -70,6 +70,13 @@ class SequenceName(StrEnum):
     DRAG_RELEASE = "drag_release"
     FALL_RECOVERY = "fall_recovery"
     LANDING = "landing"
+    PRODUCTION_RELAX = "production_relax"
+    PRODUCTION_MOVE_LEFT = "production_move_left"
+    PRODUCTION_MOVE_RIGHT = "production_move_right"
+    PRODUCTION_SIT = "production_sit"
+    PRODUCTION_SLEEP = "production_sleep"
+    PRODUCTION_SPECIAL = "production_special"
+    PRODUCTION_INTERACT = "production_interact"
 
 
 class SequenceTerminal(StrEnum):
@@ -352,6 +359,53 @@ SEQUENCE_CATALOG: Mapping[SequenceName, SequenceCatalogEntry] = MappingProxyType
             InterruptClass.MOTION_SAFETY,
             terminal=SequenceTerminal.IDLE,
         ),
+        SequenceName.PRODUCTION_RELAX: _entry(
+            0,
+            (_step(PetActionName.IDLE, loop=True),),
+            InterruptClass.NORMAL_ACTION,
+            loop_index=0,
+            terminal=SequenceTerminal.HOLD,
+        ),
+        SequenceName.PRODUCTION_MOVE_LEFT: _entry(
+            0,
+            (_step(PetActionName.WALK_LEFT, loop=True),),
+            InterruptClass.NORMAL_ACTION,
+            loop_index=0,
+            terminal=SequenceTerminal.HOLD,
+        ),
+        SequenceName.PRODUCTION_MOVE_RIGHT: _entry(
+            0,
+            (_step(PetActionName.WALK_RIGHT, loop=True),),
+            InterruptClass.NORMAL_ACTION,
+            loop_index=0,
+            terminal=SequenceTerminal.HOLD,
+        ),
+        SequenceName.PRODUCTION_SIT: _entry(
+            0,
+            (_step(PetActionName.SIT_IDLE, loop=True),),
+            InterruptClass.NORMAL_ACTION,
+            loop_index=0,
+            terminal=SequenceTerminal.HOLD,
+        ),
+        SequenceName.PRODUCTION_SLEEP: _entry(
+            0,
+            (_step(PetActionName.SLEEP_LOOP, loop=True),),
+            InterruptClass.NORMAL_ACTION,
+            loop_index=0,
+            terminal=SequenceTerminal.HOLD,
+        ),
+        SequenceName.PRODUCTION_SPECIAL: _entry(
+            0,
+            (_step(PetActionName.WAVE),),
+            InterruptClass.STRICT_ACTION,
+            protected=True,
+        ),
+        SequenceName.PRODUCTION_INTERACT: _entry(
+            0,
+            (_step(PetActionName.HAPPY),),
+            InterruptClass.STRICT_ACTION,
+            protected=True,
+        ),
     }
 )
 
@@ -387,8 +441,14 @@ class AnimationRegistry:
             raise AnimationRegistryError("registry must bind every logical action")
         if any(action is not binding.action for action, binding in copied.items()):
             raise AnimationRegistryError("registry keys must match binding actions")
-        physical_names = [binding.physical_name for binding in copied.values()]
-        if len(physical_names) != len(set(physical_names)):
+        actions_by_physical: dict[str, set[PetActionName]] = {}
+        for action, binding in copied.items():
+            actions_by_physical.setdefault(binding.physical_name, set()).add(action)
+        allowed_alias = {PetActionName.WALK_LEFT, PetActionName.WALK_RIGHT}
+        if any(
+            len(actions) > 1 and actions != allowed_alias
+            for actions in actions_by_physical.values()
+        ):
             raise AnimationRegistryError("physical animation names must be unique")
         for action, binding in copied.items():
             expected_track = _expected_track(action)

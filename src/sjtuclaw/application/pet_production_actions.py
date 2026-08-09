@@ -55,6 +55,13 @@ _SOURCES_BY_ORIGIN = MappingProxyType(
 )
 
 
+def validate_action_authority(origin: ActionOrigin, source: ActionSource) -> None:
+    """Reject an origin/source pair that claims incompatible authority."""
+
+    if source not in _SOURCES_BY_ORIGIN[origin]:
+        raise ValueError("action origin and source are incompatible")
+
+
 @dataclass(frozen=True, slots=True)
 class ActionIntent:
     action: ProductionAction
@@ -63,8 +70,7 @@ class ActionIntent:
     request_token: object
 
     def __post_init__(self) -> None:
-        if self.source not in _SOURCES_BY_ORIGIN[self.origin]:
-            raise ValueError("action origin and source are incompatible")
+        validate_action_authority(self.origin, self.source)
         if self.request_token is None:
             raise ValueError("request_token must not be None")
 
@@ -136,4 +142,3 @@ _SEMANTIC_TARGETS = MappingProxyType(
 
 def semantic_target(action: ProductionAction) -> SemanticActionTarget:
     return _SEMANTIC_TARGETS[action]
-

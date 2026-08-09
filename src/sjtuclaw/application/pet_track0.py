@@ -28,6 +28,11 @@ from sjtuclaw.application.pet_action_sequence import (
     SequenceName,
     SequenceTerminal,
 )
+from sjtuclaw.application.pet_production_actions import (
+    ActionOrigin,
+    ActionSource,
+    validate_action_authority,
+)
 
 if TYPE_CHECKING:
     from sjtuclaw.application.pet_animation import MonotonicClock
@@ -83,8 +88,11 @@ class ActionRequest:
     request_token: object
     semantic_epoch: int
     input_session_token: object | None = None
+    origin: ActionOrigin = ActionOrigin.SYSTEM
+    source: ActionSource = ActionSource.LIFECYCLE
 
     def __post_init__(self) -> None:
+        validate_action_authority(self.origin, self.source)
         if self.semantic_epoch < 0:
             raise ValueError("semantic_epoch must be non-negative")
         if self.interruption_class is InterruptClass.STRICT_ACTION and not self.protected:
@@ -167,6 +175,19 @@ class PetActionArbiter:
         if interruption_class is InterruptClass.STRICT_ACTION:
             return ArbitrationDecision(ActionOutcome.REJECTED_PRIORITY, None)
         if interruption_class is InterruptClass.NORMAL_ACTION:
+            if (
+                incoming.origin is ActionOrigin.EXPLICIT
+                and active.origin is ActionOrigin.AUTONOMOUS
+            ):
+                return ArbitrationDecision(
+                    ActionOutcome.ACCEPTED,
+                    CancellationMode.REPLACE,
+                )
+            if (
+                incoming.origin is ActionOrigin.AUTONOMOUS
+                and active.origin is ActionOrigin.EXPLICIT
+            ):
+                return ArbitrationDecision(ActionOutcome.REJECTED_PRIORITY, None)
             if incoming.sequence_name is not active.sequence_name and not active.protected:
                 return ArbitrationDecision(
                     ActionOutcome.ACCEPTED,
@@ -720,7 +741,10 @@ class PetTrack0Controller:
             return directive.outcome
         if directive.step is None:
             self._watchdog_deadline = None
-            if directive.terminal is SequenceTerminal.IDLE:
+            if directive.terminal in {
+                SequenceTerminal.COMPLETE,
+                SequenceTerminal.IDLE,
+            }:
                 self._active_request = None
                 self._state = Track0PlaybackState(
                     None,

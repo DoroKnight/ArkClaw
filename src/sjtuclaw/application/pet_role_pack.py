@@ -10,6 +10,11 @@ from enum import StrEnum
 from pathlib import Path
 from types import MappingProxyType
 
+from sjtuclaw.application.pet_action_sequence import (
+    AnimationBinding,
+    AnimationRegistry,
+    PetActionName,
+)
 from sjtuclaw.application.pet_production_actions import ProductionAction
 
 _PACK_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
@@ -201,3 +206,55 @@ class AnimationRoleRegistry:
     def require_schwarz_production(self) -> None:
         if self.capabilities != frozenset(ProductionAction):
             raise RolePackManifestError("Schwarz production requires all six animations")
+
+
+_TRACK0_ACTION_BY_ROLE = MappingProxyType(
+    {
+        ProductionAction.RELAX: PetActionName.IDLE,
+        ProductionAction.MOVE_LEFT: PetActionName.WALK_LEFT,
+        ProductionAction.MOVE_RIGHT: PetActionName.WALK_RIGHT,
+        ProductionAction.SIT: PetActionName.SIT_IDLE,
+        ProductionAction.SLEEP: PetActionName.SLEEP_LOOP,
+        ProductionAction.SPECIAL: PetActionName.WAVE,
+        ProductionAction.INTERACT: PetActionName.HAPPY,
+    }
+)
+
+
+def production_track0_action(action: ProductionAction) -> PetActionName:
+    """Return the six-role Track 0 handle for one of seven logical actions."""
+
+    return _TRACK0_ACTION_BY_ROLE[action]
+
+
+def build_track0_animation_registry(
+    roles: AnimationRoleRegistry,
+    *,
+    source_durations: Mapping[ProductionAction, float],
+) -> AnimationRegistry:
+    """Overlay validated role bindings onto the complete Track 0 registry."""
+
+    bindings = {
+        action: AnimationBinding(action, action.value, 1)
+        if action is PetActionName.BREATHING
+        else AnimationBinding(action, action.value, 2)
+        if action is PetActionName.BLINK
+        else AnimationBinding(action, action.value, 0)
+        for action in PetActionName
+    }
+    for action in roles.capabilities:
+        logical = production_track0_action(action)
+        role = roles.resolve(action)
+        duration = source_durations.get(action)
+        if duration is None:
+            raise RolePackManifestError("source duration is required for every role")
+        existing = bindings.get(logical)
+        candidate = AnimationBinding(logical, role.physical_name, 0, duration)
+        if (
+            existing is not None
+            and existing.physical_name != logical.value
+            and existing != candidate
+        ):
+            raise RolePackManifestError("aliased role bindings disagree")
+        bindings[logical] = candidate
+    return AnimationRegistry(bindings)

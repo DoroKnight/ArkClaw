@@ -15,8 +15,23 @@ from sjtuclaw.application.pet_action_sequence import (
     SequenceName,
     SequenceTerminal,
 )
+from sjtuclaw.application.pet_autonomous_scheduler import (
+    AutonomousActionScheduler,
+    AutonomousSchedulerState,
+    autonomous_state_for_action,
+)
 from sjtuclaw.application.pet_geometry import Rect, Size
 from sjtuclaw.application.pet_motion import PetMotionModel, PetMotionSnapshot
+from sjtuclaw.application.pet_production_actions import (
+    ActionIntent,
+    ActionOrigin,
+    ActionSource,
+    AutonomousExecutionMode,
+    PendingExplicitIntent,
+    ProductionAction,
+    semantic_target,
+)
+from sjtuclaw.application.pet_role_pack import production_track0_action
 from sjtuclaw.application.pet_state import (
     AnimationCompatibilityError,
     PetActivityState,
@@ -37,6 +52,28 @@ from sjtuclaw.application.pet_track0 import (
     CancelReason,
     PetTrack0Controller,
     PlaybackEvent,
+)
+
+_PRODUCTION_SEQUENCE_BY_ACTION = {
+    ProductionAction.RELAX: SequenceName.PRODUCTION_RELAX,
+    ProductionAction.MOVE_LEFT: SequenceName.PRODUCTION_MOVE_LEFT,
+    ProductionAction.MOVE_RIGHT: SequenceName.PRODUCTION_MOVE_RIGHT,
+    ProductionAction.SIT: SequenceName.PRODUCTION_SIT,
+    ProductionAction.SLEEP: SequenceName.PRODUCTION_SLEEP,
+    ProductionAction.SPECIAL: SequenceName.PRODUCTION_SPECIAL,
+    ProductionAction.INTERACT: SequenceName.PRODUCTION_INTERACT,
+}
+_PRODUCTION_LOOP_ACTIONS = frozenset(
+    {
+        ProductionAction.RELAX,
+        ProductionAction.MOVE_LEFT,
+        ProductionAction.MOVE_RIGHT,
+        ProductionAction.SIT,
+        ProductionAction.SLEEP,
+    }
+)
+_PRODUCTION_PROTECTED_ACTIONS = frozenset(
+    {ProductionAction.SPECIAL, ProductionAction.INTERACT}
 )
 
 
@@ -63,6 +100,16 @@ class PetAnimationEventType(StrEnum):
     PAUSE = "pause"
     RESUME = "resume"
     BEGIN_CLOSING = "begin_closing"
+
+
+_MANDATORY_INTERRUPTION_EVENTS = frozenset(
+    {
+        PetAnimationEventType.START_FALLING,
+        PetAnimationEventType.START_DRAGGING,
+        PetAnimationEventType.PAUSE,
+        PetAnimationEventType.BEGIN_CLOSING,
+    }
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -226,11 +273,20 @@ class PetAnimationEngine:
         rng: random.Random | None = None,
         config: PetAnimationConfig | None = None,
         track0: PetTrack0Controller | None = None,
+        autonomous_scheduler: AutonomousActionScheduler | None = None,
+        clock: MonotonicClock | None = None,
     ) -> None:
         self._motion = motion
         self._rng = rng or random.Random()
         self._config = config or PetAnimationConfig()
         self._track0 = track0
+        self._autonomous_scheduler = autonomous_scheduler
+        self._clock = clock or SystemMonotonicClock()
+        self._autonomous_scheduler_state: AutonomousSchedulerState | None = None
+        self._execution_mode = AutonomousExecutionMode.AUTONOMOUS
+        self._pending_explicit_action: PendingExplicitIntent | None = None
+        self._resume_after_protected = False
+        self._active_production_action: ProductionAction | None = None
         self._animation_time = 0.0
         self._blink_elapsed = 0.0
         self._action_remaining = 0.0
@@ -246,6 +302,22 @@ class PetAnimationEngine:
     @property
     def track0(self) -> PetTrack0Controller | None:
         return self._track0
+
+    @property
+    def execution_mode(self) -> AutonomousExecutionMode:
+        return self._execution_mode
+
+    @property
+    def pending_explicit_action(self) -> PendingExplicitIntent | None:
+        return self._pending_explicit_action
+
+    @property
+    def resume_after_protected(self) -> bool:
+        return self._resume_after_protected
+
+    @property
+    def autonomous_scheduler_state(self) -> AutonomousSchedulerState | None:
+        return self._autonomous_scheduler_state
 
     @property
     def _production_sequencing_enabled(self) -> bool:
@@ -279,8 +351,174 @@ class PetAnimationEngine:
     def last_applied_delta_seconds(self) -> float:
         return self._last_applied_delta
 
+    def request_action(
+        self,
+        action: ProductionAction,
+        source: ActionSource,
+    ) -> ActionOutcome:
+        """Submit one typed explicit production action through Track 0."""
+
+        intent = ActionIntent(action, ActionOrigin.EXPLICIT, source, object())
+        return self._submit_production_intent(intent)
+
+    def resume_autonomous(self, source: ActionSource) -> ActionOutcome:
+        """Leave explicit hold, or defer autonomous Relax until one-shot end."""
+
+        command = ActionIntent(
+            ProductionAction.RELAX,
+            ActionOrigin.EXPLICIT,
+            source,
+            object(),
+        )
+        if self._active_request_is_protected():
+            self._pending_explicit_action = None
+            self._resume_after_protected = True
+            self._execution_mode = AutonomousExecutionMode.SUSPENDED
+            return ActionOutcome.ACCEPTED
+
+        outcome = self._submit_production_intent(command)
+        if outcome is ActionOutcome.ACCEPTED:
+            self._activate_autonomous(ProductionAction.RELAX)
+        return outcome
+
+    def _submit_production_intent(self, intent: ActionIntent) -> ActionOutcome:
+        track0 = self._track0
+        if track0 is None:
+            return ActionOutcome.LEGACY_DIRECT
+
+        if self._active_request_is_protected():
+            if intent.origin is not ActionOrigin.EXPLICIT:
+                return ActionOutcome.REJECTED_PRIORITY
+            self._pending_explicit_action = PendingExplicitIntent(
+                intent.action,
+                intent.source,
+                intent.request_token,
+            )
+            self._resume_after_protected = False
+            self._execution_mode = AutonomousExecutionMode.SUSPENDED
+            return ActionOutcome.ACCEPTED
+
+        if (
+            intent.origin is ActionOrigin.EXPLICIT
+            and intent.action in _PRODUCTION_LOOP_ACTIONS
+            and self._execution_mode is AutonomousExecutionMode.EXPLICIT_HOLD
+            and self._active_production_action is intent.action
+            and track0.state.confirmed_epoch is not None
+        ):
+            self._resume_after_protected = False
+            return ActionOutcome.ACCEPTED
+
+        target = semantic_target(intent.action)
+        proposal = self._motion.states.propose(
+            motion=target.motion,
+            activity=target.activity,
+            facing=target.facing,
+        )
+        sequence_name = _PRODUCTION_SEQUENCE_BY_ACTION[intent.action]
+        entry = SEQUENCE_CATALOG[sequence_name]
+        request = ActionRequest(
+            sequence_name=sequence_name,
+            interruption_class=entry.interruption_class,
+            protected=entry.protected,
+            request_token=intent.request_token,
+            semantic_epoch=proposal.target_epoch,
+            origin=intent.origin,
+            source=intent.source,
+        )
+        try:
+            assert_animation_compatible(
+                proposal.target_state,
+                production_track0_action(intent.action),
+                track0.state.health,
+            )
+        except AnimationCompatibilityError:
+            return ActionOutcome.REJECTED_INCOMPATIBLE_STATE
+
+        preflight = track0.preflight(request)
+        if preflight.outcome is not ActionOutcome.ACCEPTED:
+            return preflight.outcome
+        active = track0.active_request
+        decision = track0.arbitrate(
+            request,
+            ArbitrationContext(
+                incoming_mode=CancellationMode.REPLACE,
+                playback_health=track0.state.health,
+                confirmed_semantic_epoch=(
+                    active.semantic_epoch
+                    if active is not None and track0.state.confirmed_epoch is not None
+                    else None
+                ),
+                active_action_compatible=self._active_playback_is_compatible(),
+            ),
+        )
+        if decision.outcome is not ActionOutcome.ACCEPTED:
+            return decision.outcome
+
+        if intent.origin is ActionOrigin.EXPLICIT:
+            self._clear_protected_continuation()
+        self._motion.commit_state_transition(proposal)
+        if active is None:
+            outcome = track0.play(request)
+        elif decision.mode is None:
+            outcome = ActionOutcome.ACCEPTED
+        else:
+            outcome = track0.cancel(
+                CancelReason.USER_INTERRUPT,
+                decision.mode,
+                replacement=request,
+            )
+        if outcome is not ActionOutcome.ACCEPTED:
+            self._execution_mode = AutonomousExecutionMode.SUSPENDED
+            self._active_production_action = None
+            self._assert_transaction_compatible()
+            return outcome
+
+        self._active_production_action = intent.action
+        if intent.action in _PRODUCTION_PROTECTED_ACTIONS:
+            self._execution_mode = AutonomousExecutionMode.SUSPENDED
+        elif intent.origin is ActionOrigin.EXPLICIT:
+            self._execution_mode = AutonomousExecutionMode.EXPLICIT_HOLD
+        else:
+            self._execution_mode = AutonomousExecutionMode.AUTONOMOUS
+        self._assert_transaction_compatible()
+        return outcome
+
+    def _active_request_is_protected(self) -> bool:
+        track0 = self._track0
+        active = None if track0 is None else track0.active_request
+        return active is not None and active.protected
+
+    def _clear_protected_continuation(self) -> None:
+        self._pending_explicit_action = None
+        self._resume_after_protected = False
+
+    def _activate_autonomous(self, action: ProductionAction) -> None:
+        track0 = self._track0
+        confirmed = None if track0 is None else track0.state.confirmed_epoch
+        if confirmed is None:
+            self._execution_mode = AutonomousExecutionMode.SUSPENDED
+            self._autonomous_scheduler_state = None
+            return
+        scheduler = self._autonomous_scheduler
+        self._execution_mode = AutonomousExecutionMode.AUTONOMOUS
+        if scheduler is None:
+            self._autonomous_scheduler_state = None
+            return
+        self._autonomous_scheduler_state = scheduler.enter(
+            autonomous_state_for_action(action),
+            entered_at=self._clock.now(),
+            playback_generation=confirmed.generation,
+            playback_token=confirmed.playback_token,
+            rng=self._rng,
+        )
+
     def handle_event(self, event: PetAnimationEvent) -> ActionOutcome:
         """Atomically coordinate one semantic proposal and Track 0 request."""
+
+        if event.event_type in _MANDATORY_INTERRUPTION_EVENTS:
+            self._clear_protected_continuation()
+            self._execution_mode = AutonomousExecutionMode.SUSPENDED
+            self._active_production_action = None
 
         track0 = self._track0
         if track0 is None:
@@ -300,6 +538,8 @@ class PetAnimationEngine:
             request_token=event.request_token,
             semantic_epoch=proposal.target_epoch,
             input_session_token=event.input_session_token,
+            origin=self._event_origin(event),
+            source=self._event_source(event),
         )
         target_action = entry.sequence.steps[0].action
         try:
@@ -352,6 +592,12 @@ class PetAnimationEngine:
                 decision.mode,
                 replacement=request,
             )
+        if event.event_type is PetAnimationEventType.RESUME:
+            if outcome is ActionOutcome.ACCEPTED:
+                self._active_production_action = ProductionAction.RELAX
+                self._activate_autonomous(ProductionAction.RELAX)
+            else:
+                self._execution_mode = AutonomousExecutionMode.SUSPENDED
         self._assert_transaction_compatible()
         return outcome
 
@@ -379,6 +625,19 @@ class PetAnimationEngine:
             self._assert_transaction_compatible()
             return outcome
 
+        completes_production_protected = (
+            not event.loop_boundary
+            and self._active_production_action in _PRODUCTION_PROTECTED_ACTIONS
+            and self._active_request_is_protected()
+        )
+        active_request = track0.active_request
+        completes_mandatory_recovery = (
+            not event.loop_boundary
+            and active_request is not None
+            and active_request.sequence_name
+            in {SequenceName.DRAG_RELEASE, SequenceName.FALL_RECOVERY, SequenceName.LANDING}
+        )
+
         next_action = self._next_action_for_callback(event)
         continuation_request: ActionRequest | None = None
         if next_action is PetActionName.RETURN_IDLE:
@@ -405,9 +664,38 @@ class PetAnimationEngine:
             event,
             continuation_request=continuation_request,
         )
+        if outcome is ActionOutcome.ACCEPTED and completes_production_protected:
+            pending = self._pending_explicit_action
+            self._clear_protected_continuation()
+            self._active_production_action = None
+            if pending is not None:
+                outcome = self._submit_production_intent(pending.intent)
+            else:
+                outcome = self._recover_autonomous_relax()
+        elif outcome is ActionOutcome.ACCEPTED and completes_mandatory_recovery:
+            clear_outcome = track0.clear(CancelReason.MOTION_OVERRIDE)
+            if clear_outcome is ActionOutcome.CLEARED:
+                outcome = self._recover_autonomous_relax()
+            else:
+                self._execution_mode = AutonomousExecutionMode.SUSPENDED
+                outcome = clear_outcome
         if outcome is ActionOutcome.ACCEPTED and reaches_idle_terminal:
             outcome = self._start_idle_after_terminal()
         self._assert_transaction_compatible()
+        return outcome
+
+    def _recover_autonomous_relax(self) -> ActionOutcome:
+        intent = ActionIntent(
+            ProductionAction.RELAX,
+            ActionOrigin.AUTONOMOUS,
+            ActionSource.SCHEDULER,
+            object(),
+        )
+        outcome = self._submit_production_intent(intent)
+        if outcome is ActionOutcome.ACCEPTED:
+            self._activate_autonomous(ProductionAction.RELAX)
+        else:
+            self._execution_mode = AutonomousExecutionMode.SUSPENDED
         return outcome
 
     def request_graceful_exit(self) -> ActionOutcome:
@@ -584,7 +872,7 @@ class PetAnimationEngine:
                     motion=PetMotionState.IDLE,
                     activity=PetActivityState.NONE,
                 ),
-                SequenceName.IDLE,
+                SequenceName.PRODUCTION_RELAX,
                 CancelReason.USER_INTERRUPT,
             )
         if event.event_type is PetAnimationEventType.BEGIN_CLOSING:
@@ -597,6 +885,29 @@ class PetAnimationEngine:
                 CancelReason.SYSTEM_SHUTDOWN,
             )
         raise AssertionError("unhandled animation event")
+
+    @staticmethod
+    def _event_origin(event: PetAnimationEvent) -> ActionOrigin:
+        if event.event_type in {
+            PetAnimationEventType.START_FALLING,
+            PetAnimationEventType.PAUSE,
+            PetAnimationEventType.RESUME,
+            PetAnimationEventType.BEGIN_CLOSING,
+        }:
+            return ActionOrigin.SYSTEM
+        return ActionOrigin.EXPLICIT
+
+    @staticmethod
+    def _event_source(event: PetAnimationEvent) -> ActionSource:
+        if event.event_type is PetAnimationEventType.START_FALLING:
+            return ActionSource.MOTION
+        if event.event_type in {
+            PetAnimationEventType.PAUSE,
+            PetAnimationEventType.RESUME,
+            PetAnimationEventType.BEGIN_CLOSING,
+        }:
+            return ActionSource.LIFECYCLE
+        return ActionSource.USER
 
     def _active_playback_is_compatible(self) -> bool:
         track0 = self._track0

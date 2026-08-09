@@ -247,7 +247,12 @@ STATE_ACTION_COMPATIBILITY: Mapping[
             PetLifecycleState.ACTIVE,
             PetMotionState.IDLE,
             PetActivityState.NONE,
-        ): frozenset({PetActionName.IDLE, PetActionName.RETURN_IDLE}),
+        ): frozenset(
+            {
+                PetActionName.IDLE,
+                PetActionName.RETURN_IDLE,
+            }
+        ),
         (
             PetLifecycleState.ACTIVE,
             PetMotionState.WALKING_LEFT,
@@ -287,7 +292,10 @@ STATE_ACTION_COMPATIBILITY: Mapping[
             (PetLifecycleState.ACTIVE, PetMotionState.IDLE, activity): actions
             for activity, actions in {
                 PetActivityState.SITTING: frozenset(
-                    {PetActionName.SIT_DOWN, PetActionName.SIT_IDLE}
+                    {
+                        PetActionName.SIT_DOWN,
+                        PetActionName.SIT_IDLE,
+                    }
                 ),
                 PetActivityState.SLEEPING: frozenset(
                     {
@@ -296,6 +304,8 @@ STATE_ACTION_COMPATIBILITY: Mapping[
                         PetActionName.SLEEP_END,
                     }
                 ),
+                PetActivityState.SPECIAL: frozenset({PetActionName.WAVE}),
+                PetActivityState.INTERACT: frozenset({PetActionName.HAPPY}),
                 PetActivityState.WAVING: frozenset({PetActionName.WAVE}),
                 PetActivityState.HAPPY: frozenset({PetActionName.HAPPY}),
                 PetActivityState.THINKING: frozenset({PetActionName.THINK}),

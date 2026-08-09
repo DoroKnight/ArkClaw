@@ -10,6 +10,7 @@ from sjtuclaw.application.pet_action_sequence import (
     PlaybackHealth,
     SequenceName,
 )
+from sjtuclaw.application.pet_production_actions import ActionOrigin, ActionSource
 from sjtuclaw.application.pet_track0 import (
     ActionOutcome,
     ActionRequest,
@@ -28,6 +29,8 @@ def _request(
     input_session_token: object | None = None,
     interruption_class: InterruptClass | None = None,
     protected: bool | None = None,
+    origin: ActionOrigin = ActionOrigin.SYSTEM,
+    source: ActionSource = ActionSource.LIFECYCLE,
 ) -> ActionRequest:
     entry = SEQUENCE_CATALOG[sequence]
     return ActionRequest(
@@ -39,6 +42,8 @@ def _request(
         request_token=object() if request_token is None else request_token,
         semantic_epoch=semantic_epoch,
         input_session_token=input_session_token,
+        origin=origin,
+        source=source,
     )
 
 
@@ -276,6 +281,88 @@ def test_equal_normal_action_replacement_respects_active_protection(
     )
 
     assert decision == expected
+
+
+@pytest.mark.parametrize("incoming_origin", tuple(ActionOrigin))
+@pytest.mark.parametrize("active_origin", tuple(ActionOrigin))
+def test_normal_action_origin_tie_break_matrix(
+    incoming_origin: ActionOrigin,
+    active_origin: ActionOrigin,
+) -> None:
+    source_by_origin = {
+        ActionOrigin.SYSTEM: ActionSource.LIFECYCLE,
+        ActionOrigin.EXPLICIT: ActionSource.USER,
+        ActionOrigin.AUTONOMOUS: ActionSource.SCHEDULER,
+    }
+    decision = PetActionArbiter().decide(
+        _request(
+            SequenceName.TYPE,
+            origin=incoming_origin,
+            source=source_by_origin[incoming_origin],
+        ),
+        _request(
+            SequenceName.READ,
+            origin=active_origin,
+            source=source_by_origin[active_origin],
+        ),
+        _context(),
+    )
+
+    expected = (
+        ArbitrationDecision(ActionOutcome.REJECTED_PRIORITY, None)
+        if incoming_origin is ActionOrigin.AUTONOMOUS
+        and active_origin is ActionOrigin.EXPLICIT
+        else ArbitrationDecision(ActionOutcome.ACCEPTED, CancellationMode.REPLACE)
+    )
+    assert decision == expected
+
+
+@pytest.mark.parametrize(
+    "source",
+    (ActionSource.TRAY, ActionSource.USER, ActionSource.AGENT),
+)
+def test_explicit_source_does_not_change_normal_action_priority(
+    source: ActionSource,
+) -> None:
+    decision = PetActionArbiter().decide(
+        _request(
+            SequenceName.TYPE,
+            origin=ActionOrigin.EXPLICIT,
+            source=source,
+        ),
+        _request(
+            SequenceName.READ,
+            origin=ActionOrigin.AUTONOMOUS,
+            source=ActionSource.SCHEDULER,
+        ),
+        _context(),
+    )
+
+    assert decision == ArbitrationDecision(
+        ActionOutcome.ACCEPTED,
+        CancellationMode.REPLACE,
+    )
+
+
+def test_explicit_same_normal_action_outranks_autonomous_request() -> None:
+    decision = PetActionArbiter().decide(
+        _request(
+            SequenceName.READ,
+            origin=ActionOrigin.EXPLICIT,
+            source=ActionSource.USER,
+        ),
+        _request(
+            SequenceName.READ,
+            origin=ActionOrigin.AUTONOMOUS,
+            source=ActionSource.SCHEDULER,
+        ),
+        _context(),
+    )
+
+    assert decision == ArbitrationDecision(
+        ActionOutcome.ACCEPTED,
+        CancellationMode.REPLACE,
+    )
 
 
 def test_equal_idle_is_always_duplicate() -> None:
