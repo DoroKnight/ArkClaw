@@ -237,6 +237,22 @@ struct OwnedDrawCommand {
     }
 };
 
+struct OwnedPlaybackEvent {
+    uint32_t event_type = SJTUCLAW_SPINE38_EVENT_COMPLETE;
+    uint32_t track = 0u;
+    uint64_t loop_ordinal = 0u;
+    std::string animation_name;
+
+    SjtuclawSpine38EventView view() const noexcept {
+        return SjtuclawSpine38EventView{
+            event_type,
+            track,
+            loop_ordinal,
+            animation_name.data(),
+            animation_name.size()};
+    }
+};
+
 struct SjtuclawSpine38Handle {
     std::unique_ptr<CatalogTextureLoader> texture_loader;
     std::unique_ptr<spine::Atlas> atlas;
@@ -247,7 +263,43 @@ struct SjtuclawSpine38Handle {
     std::unique_ptr<spine::AnimationStateData> animation_state_data;
     std::unique_ptr<spine::AnimationState> animation_state;
     std::vector<OwnedDrawCommand> draw_commands;
+    std::vector<OwnedPlaybackEvent> playback_events;
+    uint64_t track_zero_loop_ordinal = 0u;
 };
+
+namespace {
+
+void capture_animation_event(
+    spine::AnimationState* state,
+    spine::EventType type,
+    spine::TrackEntry* entry,
+    spine::Event*) {
+    if (state == nullptr || type != spine::EventType_Complete ||
+        entry == nullptr || entry->getTrackIndex() != 0) {
+        return;
+    }
+    auto* handle = static_cast<SjtuclawSpine38Handle*>(
+        state->getRendererObject());
+    spine::Animation* animation = entry->getAnimation();
+    if (handle == nullptr || animation == nullptr ||
+        !valid_runtime_string(animation->getName()) ||
+        !std::isfinite(animation->getDuration()) ||
+        animation->getDuration() <= 0.0f) {
+        return;
+    }
+    OwnedPlaybackEvent event;
+    event.track = 0u;
+    event.animation_name.assign(
+        animation->getName().buffer(), animation->getName().length());
+    if (entry->getLoop()) {
+        ++handle->track_zero_loop_ordinal;
+        event.event_type = SJTUCLAW_SPINE38_EVENT_LOOP_BOUNDARY;
+        event.loop_ordinal = handle->track_zero_loop_ordinal;
+    }
+    handle->playback_events.push_back(std::move(event));
+}
+
+}  // namespace
 
 uint32_t sjtuclaw_spine38_abi_version(void) {
     try {
@@ -357,6 +409,8 @@ SjtuclawSpine38Code sjtuclaw_spine38_create(
                 result->skeleton_data.get());
         result->animation_state = std::make_unique<spine::AnimationState>(
             result->animation_state_data.get());
+        result->animation_state->setRendererObject(result.get());
+        result->animation_state->setListener(capture_animation_event);
 
         *out_handle = result.release();
         return SJTUCLAW_SPINE38_OK;
@@ -535,6 +589,10 @@ SjtuclawSpine38Code sjtuclaw_spine38_set_animation(
                 static_cast<size_t>(track), selected, loop != 0u) == nullptr) {
             return SJTUCLAW_SPINE38_RUNTIME_FAILURE;
         }
+        handle->playback_events.clear();
+        if (track == 0u) {
+            handle->track_zero_loop_ordinal = 0u;
+        }
         handle->draw_commands.clear();
         return SJTUCLAW_SPINE38_OK;
     } catch (...) {
@@ -551,6 +609,7 @@ SjtuclawSpine38Code sjtuclaw_spine38_update(
             return SJTUCLAW_SPINE38_INVALID_ARGUMENT;
         }
         handle->draw_commands.clear();
+        handle->playback_events.clear();
         handle->animation_state->update(delta_seconds);
         handle->animation_state->apply(*handle->skeleton);
         handle->skeleton->updateWorldTransform();
@@ -736,6 +795,55 @@ SjtuclawSpine38Code sjtuclaw_spine38_update(
         }
         clipper.clipEnd();
         handle->draw_commands = std::move(next_commands);
+        return SJTUCLAW_SPINE38_OK;
+    } catch (...) {
+        return SJTUCLAW_SPINE38_RUNTIME_FAILURE;
+    }
+}
+
+SjtuclawSpine38Code sjtuclaw_spine38_clear_track(
+    SjtuclawSpine38Handle* handle,
+    uint32_t track) {
+    try {
+        constexpr uint32_t max_track = 255u;
+        if (handle == nullptr || track > max_track) {
+            return SJTUCLAW_SPINE38_INVALID_ARGUMENT;
+        }
+        handle->animation_state->clearTrack(static_cast<size_t>(track));
+        handle->playback_events.clear();
+        if (track == 0u) {
+            handle->track_zero_loop_ordinal = 0u;
+        }
+        handle->draw_commands.clear();
+        return SJTUCLAW_SPINE38_OK;
+    } catch (...) {
+        return SJTUCLAW_SPINE38_RUNTIME_FAILURE;
+    }
+}
+
+size_t sjtuclaw_spine38_event_count(
+    const SjtuclawSpine38Handle* handle) {
+    try {
+        return handle == nullptr ? 0u : handle->playback_events.size();
+    } catch (...) {
+        return 0u;
+    }
+}
+
+SjtuclawSpine38Code sjtuclaw_spine38_event_view(
+    const SjtuclawSpine38Handle* handle,
+    size_t index,
+    SjtuclawSpine38EventView* out_view,
+    size_t view_capacity) {
+    try {
+        if (handle == nullptr || out_view == nullptr ||
+            view_capacity < sizeof(SjtuclawSpine38EventView) ||
+            index >= handle->playback_events.size()) {
+            return SJTUCLAW_SPINE38_INVALID_ARGUMENT;
+        }
+        const SjtuclawSpine38EventView view =
+            handle->playback_events[index].view();
+        *out_view = view;
         return SJTUCLAW_SPINE38_OK;
     } catch (...) {
         return SJTUCLAW_SPINE38_RUNTIME_FAILURE;

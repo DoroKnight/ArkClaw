@@ -47,6 +47,12 @@ class _FakeSpine38Port:
     def update(self, delta_seconds: float) -> None:
         del delta_seconds
 
+    def clear_track(self, track: int) -> None:
+        del track
+
+    def playback_events(self) -> tuple[object, ...]:
+        return ()
+
     def draw_commands(self) -> tuple[Spine38DrawCommand, ...]:
         return self._draw_commands
 
@@ -268,6 +274,12 @@ def test_runtime_converts_native_draw_commands_without_reordering() -> None:
 
         def update(self, delta_seconds: float) -> None:
             del delta_seconds
+
+        def clear_track(self, track: int) -> None:
+            del track
+
+        def playback_events(self) -> tuple[Any, ...]:
+            return ()
 
         def draw_commands(self) -> tuple[Any, ...]:
             vertices = (

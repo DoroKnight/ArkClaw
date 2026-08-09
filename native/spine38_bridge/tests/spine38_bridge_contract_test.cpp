@@ -60,6 +60,36 @@ SJTUCLAW_SPINE38_API SjtuclawSpine38Code sjtuclaw_spine38_draw_view(
 }
 #endif
 
+#ifndef SJTUCLAW_SPINE38_EVENT_ABI
+typedef enum SjtuclawSpine38EventType {
+    SJTUCLAW_SPINE38_EVENT_COMPLETE = 1,
+    SJTUCLAW_SPINE38_EVENT_LOOP_BOUNDARY = 2
+} SjtuclawSpine38EventType;
+
+typedef struct SjtuclawSpine38EventView {
+    uint32_t event_type;
+    uint32_t track;
+    uint64_t loop_ordinal;
+    const char* animation_name_utf8;
+    size_t animation_name_size;
+} SjtuclawSpine38EventView;
+
+extern "C" {
+SJTUCLAW_SPINE38_API SjtuclawSpine38Code sjtuclaw_spine38_clear_track(
+    SjtuclawSpine38Handle* handle,
+    uint32_t track);
+
+SJTUCLAW_SPINE38_API size_t sjtuclaw_spine38_event_count(
+    const SjtuclawSpine38Handle* handle);
+
+SJTUCLAW_SPINE38_API SjtuclawSpine38Code sjtuclaw_spine38_event_view(
+    const SjtuclawSpine38Handle* handle,
+    size_t index,
+    SjtuclawSpine38EventView* out_view,
+    size_t view_capacity);
+}
+#endif
+
 namespace {
 
 int failures = 0;
@@ -837,6 +867,79 @@ void check_playback_contract_without_drawables() {
     sjtuclaw_spine38_destroy(handle);
 }
 
+void check_track_zero_event_contract() {
+    const auto skeleton = make_synthetic_skeleton();
+    SjtuclawSpine38Handle* handle = nullptr;
+    CHECK(sjtuclaw_spine38_create(
+              skeleton.data(), skeleton.size(), atlas_fixture,
+              sizeof(atlas_fixture) - 1u, &handle) == SJTUCLAW_SPINE38_OK);
+    CHECK(handle != nullptr);
+    if (handle == nullptr) {
+        return;
+    }
+
+    CHECK(sjtuclaw_spine38_event_count(nullptr) == 0u);
+    CHECK(sjtuclaw_spine38_set_animation(
+              handle, 0u, animation_name_fixture,
+              sizeof(animation_name_fixture) - 1u, 1u) ==
+          SJTUCLAW_SPINE38_OK);
+
+    for (uint64_t ordinal = 1u; ordinal <= 3u; ++ordinal) {
+        CHECK(sjtuclaw_spine38_update(handle, 1.0f) == SJTUCLAW_SPINE38_OK);
+        CHECK(sjtuclaw_spine38_event_count(handle) == 0u);
+        CHECK(sjtuclaw_spine38_update(handle, 0.3f) == SJTUCLAW_SPINE38_OK);
+        CHECK(sjtuclaw_spine38_event_count(handle) == 1u);
+        SjtuclawSpine38EventView view{};
+        CHECK(sjtuclaw_spine38_event_view(
+                  handle, 0u, &view, sizeof(view)) == SJTUCLAW_SPINE38_OK);
+        CHECK(view.event_type == SJTUCLAW_SPINE38_EVENT_LOOP_BOUNDARY);
+        CHECK(view.track == 0u);
+        CHECK(view.loop_ordinal == ordinal);
+        CHECK(view.animation_name_size == sizeof(animation_name_fixture) - 1u);
+        CHECK(view.animation_name_utf8 != nullptr);
+        if (view.animation_name_utf8 != nullptr) {
+            CHECK(std::memcmp(
+                      view.animation_name_utf8, animation_name_fixture,
+                      view.animation_name_size) == 0);
+        }
+    }
+
+    SjtuclawSpine38EventView sentinel{
+        7u,
+        8u,
+        9u,
+        reinterpret_cast<const char*>(static_cast<uintptr_t>(1)),
+        10u};
+    CHECK(sjtuclaw_spine38_event_view(
+              handle, 0u, &sentinel, sizeof(sentinel) - 1u) ==
+          SJTUCLAW_SPINE38_INVALID_ARGUMENT);
+    CHECK(sentinel.event_type == 7u);
+    CHECK(sentinel.loop_ordinal == 9u);
+
+    CHECK(sjtuclaw_spine38_set_animation(
+              handle, 0u, animation_name_fixture,
+              sizeof(animation_name_fixture) - 1u, 0u) ==
+          SJTUCLAW_SPINE38_OK);
+    CHECK(sjtuclaw_spine38_event_count(handle) == 0u);
+    CHECK(sjtuclaw_spine38_update(handle, 1.25f) == SJTUCLAW_SPINE38_OK);
+    CHECK(sjtuclaw_spine38_event_count(handle) == 1u);
+    SjtuclawSpine38EventView completion{};
+    CHECK(sjtuclaw_spine38_event_view(
+              handle, 0u, &completion, sizeof(completion)) ==
+          SJTUCLAW_SPINE38_OK);
+    CHECK(completion.event_type == SJTUCLAW_SPINE38_EVENT_COMPLETE);
+    CHECK(completion.loop_ordinal == 0u);
+
+    CHECK(sjtuclaw_spine38_clear_track(handle, 0u) == SJTUCLAW_SPINE38_OK);
+    CHECK(sjtuclaw_spine38_event_count(handle) == 0u);
+    CHECK(sjtuclaw_spine38_update(handle, 1.25f) == SJTUCLAW_SPINE38_OK);
+    CHECK(sjtuclaw_spine38_event_count(handle) == 0u);
+    CHECK(sjtuclaw_spine38_clear_track(nullptr, 0u) ==
+          SJTUCLAW_SPINE38_INVALID_ARGUMENT);
+
+    sjtuclaw_spine38_destroy(handle);
+}
+
 void check_region_draw_view_is_materialized() {
     const auto skeleton = make_region_skeleton();
     SjtuclawSpine38Handle* handle = nullptr;
@@ -1369,6 +1472,7 @@ int main() {
     check_atlas_leading_whitespace_contract();
     check_zero_duration_animation_is_not_exposed();
     check_playback_contract_without_drawables();
+    check_track_zero_event_contract();
     check_region_draw_view_is_materialized();
     check_mesh_blend_modes_and_draw_order_are_materialized();
     check_clipping_is_applied_inside_the_abi();

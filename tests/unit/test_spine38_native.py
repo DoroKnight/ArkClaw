@@ -57,6 +57,16 @@ class FakeDrawView(ctypes.Structure):
     ]
 
 
+class FakeEventView(ctypes.Structure):
+    _fields_ = [
+        ("event_type", ctypes.c_uint32),
+        ("track", ctypes.c_uint32),
+        ("loop_ordinal", ctypes.c_uint64),
+        ("animation_name_utf8", ctypes.POINTER(ctypes.c_char)),
+        ("animation_name_size", ctypes.c_size_t),
+    ]
+
+
 class FakeLibrary:
     """In-process ABI fake; it replaces only the external DLL boundary."""
 
@@ -80,6 +90,9 @@ class FakeLibrary:
         self.bounds = (-2.0, 3.0, 4.0, 5.0)
         self.set_animation_calls: list[tuple[int, bytes, int]] = []
         self.update_calls: list[float] = []
+        self.clear_track_calls: list[int] = []
+        self.events: list[tuple[int, int, int, bytes]] = []
+        self._event_name_buffers: list[object] = []
         self.draw_count_override: object | None = None
         self.draw_vertex_count_override: object | None = None
         self.draw_index_count_override: object | None = None
@@ -116,6 +129,9 @@ class FakeLibrary:
         self.sjtuclaw_spine38_setup_bounds = FakeFunction(self._setup_bounds)
         self.sjtuclaw_spine38_set_animation = FakeFunction(self._set_animation)
         self.sjtuclaw_spine38_update = FakeFunction(self._update)
+        self.sjtuclaw_spine38_clear_track = FakeFunction(self._clear_track)
+        self.sjtuclaw_spine38_event_count = FakeFunction(self._event_count)
+        self.sjtuclaw_spine38_event_view = FakeFunction(self._event_view)
         self.sjtuclaw_spine38_draw_count = FakeFunction(self._draw_count)
         self.sjtuclaw_spine38_draw_view = FakeFunction(self._draw_view)
 
@@ -247,6 +263,39 @@ class FakeLibrary:
         self._assert_handle(handle)
         self.update_calls.append(float(cast(float, delta_seconds)))
         return self.update_code
+
+    def _clear_track(self, handle: object, track: object) -> int:
+        self._assert_handle(handle)
+        self.clear_track_calls.append(cast(int, track))
+        self.events.clear()
+        return 0
+
+    def _event_count(self, handle: object) -> int:
+        self._assert_handle(handle)
+        return len(self.events)
+
+    def _event_view(
+        self,
+        handle: object,
+        index: object,
+        view: object,
+        capacity: object,
+    ) -> int:
+        self._assert_handle(handle)
+        assert cast(int, capacity) >= ctypes.sizeof(FakeEventView)
+        event_type, track, ordinal, name = self.events[cast(int, index)]
+        name_buffer = (ctypes.c_char * len(name)).from_buffer_copy(name)
+        self._event_name_buffers.append(name_buffer)
+        output = ctypes.cast(cast(Any, view), ctypes.POINTER(FakeEventView))[0]
+        output.event_type = event_type
+        output.track = track
+        output.loop_ordinal = ordinal
+        output.animation_name_utf8 = ctypes.cast(
+            name_buffer,
+            ctypes.POINTER(ctypes.c_char),
+        )
+        output.animation_name_size = len(name)
+        return 0
 
     def _draw_count(self, handle: object) -> object:
         self._assert_handle(handle)
@@ -433,6 +482,20 @@ def test_native_binding_declares_every_catalog_abi_signature(
         ctypes.c_float,
     ]
     assert fake_library.sjtuclaw_spine38_update.restype is ctypes.c_int
+    assert fake_library.sjtuclaw_spine38_clear_track.argtypes == [
+        ctypes.c_void_p,
+        ctypes.c_uint32,
+    ]
+    assert fake_library.sjtuclaw_spine38_clear_track.restype is ctypes.c_int
+    assert fake_library.sjtuclaw_spine38_event_count.argtypes == [ctypes.c_void_p]
+    assert fake_library.sjtuclaw_spine38_event_count.restype is ctypes.c_size_t
+    assert fake_library.sjtuclaw_spine38_event_view.argtypes == [
+        ctypes.c_void_p,
+        ctypes.c_size_t,
+        ctypes.POINTER(native._SjtuclawSpine38EventView),
+        ctypes.c_size_t,
+    ]
+    assert fake_library.sjtuclaw_spine38_event_view.restype is ctypes.c_int
     assert fake_library.sjtuclaw_spine38_draw_count.argtypes == [ctypes.c_void_p]
     assert fake_library.sjtuclaw_spine38_draw_count.restype is ctypes.c_size_t
     assert fake_library.sjtuclaw_spine38_draw_view.argtypes == [
@@ -489,6 +552,29 @@ def test_native_binding_controls_playback_and_copies_draw_views_immediately(
     fake_library.draw_indices[0] = 2
     assert commands[0].vertices[0].x == 1.0
     assert commands[0].indices == (0, 1, 2)
+
+
+def test_native_binding_copies_playback_events_before_native_mutation(
+    fake_library: FakeLibrary,
+    snapshot: ExternalPetAssetSnapshot,
+) -> None:
+    native = importlib.import_module("sjtuclaw.infrastructure.spine38_native")
+    fake_library.events = [(2, 0, 3, b"Move")]
+    port = native.Spine38NativeLibrary(fake_library).create(snapshot)
+
+    events = port.playback_events()
+    fake_library.events = [(1, 0, 0, b"Relax")]
+    fake_library._event_name_buffers.clear()
+
+    assert events == (
+        native.Spine38NativePlaybackEvent(
+            native.Spine38NativeEventType.LOOP_BOUNDARY,
+            "Move",
+            3,
+        ),
+    )
+    port.clear_track(0)
+    assert fake_library.clear_track_calls == [0]
 
 
 @pytest.mark.parametrize(

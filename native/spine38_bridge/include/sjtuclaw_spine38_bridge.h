@@ -37,6 +37,7 @@ typedef struct SjtuclawSpine38Bounds {
 } SjtuclawSpine38Bounds;
 
 #define SJTUCLAW_SPINE38_PLAYBACK_ABI 1
+#define SJTUCLAW_SPINE38_EVENT_ABI 1
 
 typedef enum SjtuclawSpine38BlendMode {
     SJTUCLAW_SPINE38_BLEND_NORMAL = 0,
@@ -66,6 +67,19 @@ typedef struct SjtuclawSpine38DrawView {
     int32_t draw_order;
 } SjtuclawSpine38DrawView;
 
+typedef enum SjtuclawSpine38EventType {
+    SJTUCLAW_SPINE38_EVENT_COMPLETE = 1,
+    SJTUCLAW_SPINE38_EVENT_LOOP_BOUNDARY = 2
+} SjtuclawSpine38EventType;
+
+typedef struct SjtuclawSpine38EventView {
+    uint32_t event_type;
+    uint32_t track;
+    uint64_t loop_ordinal;
+    const char* animation_name_utf8;
+    size_t animation_name_size;
+} SjtuclawSpine38EventView;
+
 /*
  * ABI version 1 ownership and buffer rules:
  *
@@ -88,6 +102,9 @@ typedef struct SjtuclawSpine38DrawView {
  *   successful set_animation call, the next update call with valid arguments,
  *   or destroy. Callers that need longer lifetimes must copy both spans.
  * - Failed calls do not modify caller-owned output structs.
+ * - event_view borrows its UTF-8 animation name from the handle. The view is
+ *   valid until the next successful set_animation/clear_track call, the next
+ *   valid update call, or destroy. Copy it before another mutating call.
  * - Functions returning size_t return zero for NULL handles and on internal
  *   failures. No C++ exception is allowed to cross this C ABI.
  */
@@ -145,6 +162,19 @@ SJTUCLAW_SPINE38_API SjtuclawSpine38Code sjtuclaw_spine38_set_animation(
 SJTUCLAW_SPINE38_API SjtuclawSpine38Code sjtuclaw_spine38_update(
     SjtuclawSpine38Handle* handle,
     float delta_seconds);
+
+SJTUCLAW_SPINE38_API SjtuclawSpine38Code sjtuclaw_spine38_clear_track(
+    SjtuclawSpine38Handle* handle,
+    uint32_t track);
+
+SJTUCLAW_SPINE38_API size_t sjtuclaw_spine38_event_count(
+    const SjtuclawSpine38Handle* handle);
+
+SJTUCLAW_SPINE38_API SjtuclawSpine38Code sjtuclaw_spine38_event_view(
+    const SjtuclawSpine38Handle* handle,
+    size_t index,
+    SjtuclawSpine38EventView* out_view,
+    size_t view_capacity);
 
 SJTUCLAW_SPINE38_API size_t sjtuclaw_spine38_draw_count(
     const SjtuclawSpine38Handle* handle);

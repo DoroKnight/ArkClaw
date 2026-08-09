@@ -19,6 +19,7 @@ _MAX_CATALOG_ENTRIES = 4096
 _MAX_CATALOG_NAME_BYTES = 4096
 _MAX_DRAW_COMMANDS = 4096
 _MAX_DRAW_ELEMENTS = 4096
+_MAX_PLAYBACK_EVENTS = 4096
 _MAX_TRACK_INDEX = 255
 
 
@@ -43,6 +44,11 @@ class Spine38BlendMode(IntEnum):
     ADDITIVE = 1
     MULTIPLY = 2
     SCREEN = 3
+
+
+class Spine38NativeEventType(IntEnum):
+    COMPLETE = 1
+    LOOP_BOUNDARY = 2
 
 
 class Spine38NativeError(RuntimeError):
@@ -88,6 +94,13 @@ class Spine38DrawCommand:
     draw_order: int
 
 
+@dataclass(frozen=True, slots=True)
+class Spine38NativePlaybackEvent:
+    event_type: Spine38NativeEventType
+    physical_name: str
+    loop_ordinal: int
+
+
 class Spine38CatalogNativePort(Protocol):
     def catalog(self) -> tuple[Spine38AnimationInfo, ...]: ...
 
@@ -102,6 +115,10 @@ class Spine38NativePort(Spine38CatalogNativePort, Protocol):
     def set_animation(self, track: int, name: str, loop: bool) -> None: ...
 
     def update(self, delta_seconds: float) -> None: ...
+
+    def clear_track(self, track: int) -> None: ...
+
+    def playback_events(self) -> tuple[Spine38NativePlaybackEvent, ...]: ...
 
     def draw_commands(self) -> tuple[Spine38DrawCommand, ...]: ...
 
@@ -140,6 +157,16 @@ class _SjtuclawSpine38DrawView(ctypes.Structure):
     ]
 
 
+class _SjtuclawSpine38EventView(ctypes.Structure):
+    _fields_ = [
+        ("event_type", ctypes.c_uint32),
+        ("track", ctypes.c_uint32),
+        ("loop_ordinal", ctypes.c_uint64),
+        ("animation_name_utf8", ctypes.POINTER(ctypes.c_char)),
+        ("animation_name_size", ctypes.c_size_t),
+    ]
+
+
 class _NativeFunction(Protocol):
     argtypes: list[object]
     restype: object | None
@@ -160,6 +187,9 @@ class _NativeLibrary(Protocol):
     sjtuclaw_spine38_setup_bounds: _NativeFunction
     sjtuclaw_spine38_set_animation: _NativeFunction
     sjtuclaw_spine38_update: _NativeFunction
+    sjtuclaw_spine38_clear_track: _NativeFunction
+    sjtuclaw_spine38_event_count: _NativeFunction
+    sjtuclaw_spine38_event_view: _NativeFunction
     sjtuclaw_spine38_draw_count: _NativeFunction
     sjtuclaw_spine38_draw_view: _NativeFunction
 
@@ -274,6 +304,20 @@ class Spine38NativeLibrary:
             ctypes.c_float,
         ]
         library.sjtuclaw_spine38_update.restype = ctypes.c_int
+        library.sjtuclaw_spine38_clear_track.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_uint32,
+        ]
+        library.sjtuclaw_spine38_clear_track.restype = ctypes.c_int
+        library.sjtuclaw_spine38_event_count.argtypes = [ctypes.c_void_p]
+        library.sjtuclaw_spine38_event_count.restype = ctypes.c_size_t
+        library.sjtuclaw_spine38_event_view.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_size_t,
+            ctypes.POINTER(_SjtuclawSpine38EventView),
+            ctypes.c_size_t,
+        ]
+        library.sjtuclaw_spine38_event_view.restype = ctypes.c_int
         library.sjtuclaw_spine38_draw_count.argtypes = [ctypes.c_void_p]
         library.sjtuclaw_spine38_draw_count.restype = ctypes.c_size_t
         library.sjtuclaw_spine38_draw_view.argtypes = [
@@ -315,6 +359,7 @@ class _Spine38CatalogNativeHandle:
         self._catalog_name_limit = min(_MAX_CATALOG_NAME_BYTES, skeleton_size)
         self._draw_command_limit = min(_MAX_DRAW_COMMANDS, skeleton_size)
         self._draw_element_limit = min(_MAX_DRAW_ELEMENTS, skeleton_size)
+        self._playback_event_limit = min(_MAX_PLAYBACK_EVENTS, skeleton_size)
         self._lock = threading.RLock()
         self._closed = False
         self._finalizer = weakref.finalize(
@@ -418,6 +463,31 @@ class _Spine38CatalogNativeHandle:
                 raise Spine38NativeError(Spine38NativeCode.INVALID_ARGUMENT)
             _require_ok(self._library.sjtuclaw_spine38_update(handle, narrowed))
 
+    def clear_track(self, track: int) -> None:
+        with self._lock:
+            handle = self._require_open()
+            if (
+                isinstance(track, bool)
+                or not isinstance(track, int)
+                or track < 0
+                or track > _MAX_TRACK_INDEX
+            ):
+                raise Spine38NativeError(Spine38NativeCode.INVALID_ARGUMENT)
+            _require_ok(self._library.sjtuclaw_spine38_clear_track(handle, track))
+
+    def playback_events(self) -> tuple[Spine38NativePlaybackEvent, ...]:
+        with self._lock:
+            handle = self._require_open()
+            count = _bounded_native_size(
+                self._library.sjtuclaw_spine38_event_count(handle),
+                minimum=0,
+                maximum=self._playback_event_limit,
+            )
+            try:
+                return tuple(self._playback_event(handle, index) for index in range(count))
+            except (MemoryError, OverflowError):
+                raise Spine38NativeError(Spine38NativeCode.RUNTIME_FAILURE) from None
+
     def draw_commands(self) -> tuple[Spine38DrawCommand, ...]:
         with self._lock:
             handle = self._require_open()
@@ -437,6 +507,44 @@ class _Spine38CatalogNativeHandle:
                 return
             self._closed = True
             self._finalizer()
+
+    def _playback_event(
+        self,
+        handle: ctypes.c_void_p,
+        index: int,
+    ) -> Spine38NativePlaybackEvent:
+        raw = _SjtuclawSpine38EventView()
+        _require_ok(
+            self._library.sjtuclaw_spine38_event_view(
+                handle,
+                index,
+                ctypes.byref(raw),
+                ctypes.sizeof(raw),
+            )
+        )
+        size = _bounded_native_size(
+            raw.animation_name_size,
+            minimum=1,
+            maximum=self._catalog_name_limit,
+        )
+        if raw.track != 0 or not raw.animation_name_utf8:
+            raise Spine38NativeError(Spine38NativeCode.RUNTIME_FAILURE)
+        try:
+            event_type = Spine38NativeEventType(raw.event_type)
+            encoded = ctypes.string_at(raw.animation_name_utf8, size)
+            name = encoded.decode("utf-8")
+        except (ValueError, UnicodeDecodeError):
+            raise Spine38NativeError(Spine38NativeCode.RUNTIME_FAILURE) from None
+        invalid_ordinal = (
+            event_type is Spine38NativeEventType.COMPLETE
+            and raw.loop_ordinal != 0
+        ) or (
+            event_type is Spine38NativeEventType.LOOP_BOUNDARY
+            and raw.loop_ordinal == 0
+        )
+        if "\0" in name or invalid_ordinal:
+            raise Spine38NativeError(Spine38NativeCode.RUNTIME_FAILURE)
+        return Spine38NativePlaybackEvent(event_type, name, int(raw.loop_ordinal))
 
     def _animation_info(
         self,

@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 from contextlib import suppress
 from dataclasses import dataclass
+from enum import StrEnum
 from typing import cast
 
 from sjtuclaw.application.pet_geometry import Size
@@ -22,6 +23,7 @@ from sjtuclaw.infrastructure.spine38_native import (
     Spine38BlendMode,
     Spine38CatalogNativePort,
     Spine38DrawCommand,
+    Spine38NativeEventType,
     Spine38NativePort,
 )
 
@@ -52,6 +54,18 @@ class Spine38Bounds:
     y: float
     width: float
     height: float
+
+
+class Spine38PlaybackEventType(StrEnum):
+    COMPLETE = "complete"
+    LOOP_BOUNDARY = "loop_boundary"
+
+
+@dataclass(frozen=True, slots=True)
+class Spine38PlaybackEvent:
+    event_type: Spine38PlaybackEventType
+    physical_name: str
+    loop_ordinal: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -173,8 +187,26 @@ class Spine38Runtime:
     def set_animation(self, track: int, name: str, loop: bool) -> None:
         self._playback_port().set_animation(track, name, loop)
 
-    def update(self, delta_seconds: float) -> None:
-        self._playback_port().update(delta_seconds)
+    def update(self, delta_seconds: float) -> tuple[Spine38PlaybackEvent, ...]:
+        port = self._playback_port()
+        port.update(delta_seconds)
+        type_map = {
+            Spine38NativeEventType.COMPLETE: Spine38PlaybackEventType.COMPLETE,
+            Spine38NativeEventType.LOOP_BOUNDARY: (
+                Spine38PlaybackEventType.LOOP_BOUNDARY
+            ),
+        }
+        return tuple(
+            Spine38PlaybackEvent(
+                type_map[event.event_type],
+                event.physical_name,
+                event.loop_ordinal,
+            )
+            for event in port.playback_events()
+        )
+
+    def clear_track(self, track: int) -> None:
+        self._playback_port().clear_track(track)
 
     def draw_commands(self) -> tuple[Spine38DrawCommand, ...]:
         return self._playback_port().draw_commands()

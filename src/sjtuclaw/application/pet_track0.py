@@ -268,6 +268,7 @@ class PlaybackEvent:
     physical_name: str
     playback_token: PlaybackToken
     loop_boundary: bool = False
+    boundary_index: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
