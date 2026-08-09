@@ -7,6 +7,7 @@ import subprocess
 import sys
 import textwrap
 from pathlib import Path
+from typing import cast
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 BUILD_WRAPPER = PROJECT_ROOT / "scripts" / "build_spine38_bridge.ps1"
@@ -368,7 +369,7 @@ def test_managed_acquisition_fetches_only_the_exact_commit(
         "fetched_commit": EXPECTED_PINNED_SOURCE_MANIFEST["commit"],
     }
     git_calls = [
-        entry["arguments"]
+        cast(list[str], entry["arguments"])
         for entry in read_fake_tool_log(log_path)
         if entry["tool"] == "git"
     ]
@@ -400,7 +401,7 @@ def test_managed_acquisition_fetches_only_the_exact_commit(
     repeated = run_fixture_wrapper(project, tools, log_path)
     assert repeated.returncode == 0, repeated.stderr
     repeated_git_calls = [
-        entry["arguments"]
+        cast(list[str], entry["arguments"])
         for entry in read_fake_tool_log(log_path)
         if entry["tool"] == "git"
     ]

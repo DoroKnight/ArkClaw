@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib
 import os
+import sys
 from pathlib import Path
 
 import pytest
@@ -9,9 +10,17 @@ import pytest
 _ATLAS_SHA256 = "6d42f85b5fd09f7bbd7f8df412437bfa3d48628cc42c0bfe9ae2ba0d7329a737"
 _TEXTURE_SHA256 = "7d1654527310334ad658054acfbaF5e58c2a0719a5a1984662713306f656e2a5".lower()
 _SKELETON_SHA256 = "4c7ff39d6322d702e11e7a769457d3e4d77b1a43037f8deedf7cd508937da451"
+_EXPECTED_ANIMATIONS = {
+    "Relax": 5.0,
+    "Move": 2.666667,
+    "Sit": 3.333333,
+    "Sleep": 4.0,
+    "Special": 11.533334,
+    "Interact": 1.333333,
+}
 
 
-def test_real_schwarz_catalog_confirms_exact_relax() -> None:
+def test_real_schwarz_catalog_confirms_six_production_animations() -> None:
     bridge_value = os.environ.get("SJTUCLAW_SPINE38_BRIDGE_DLL")
     asset_root_value = os.environ.get("SJTUCLAW_SPINE38_ASSET_ROOT")
     if bridge_value is None or asset_root_value is None:
@@ -57,12 +66,13 @@ def test_real_schwarz_catalog_confirms_exact_relax() -> None:
 
     bundle = result.bundle
     adapter = None
+    modules_before = set(sys.modules)
     try:
-        adapter = runtime.Spine38Runtime(
-            native.Spine38NativeLibrary.from_dll_path(bridge_path).create(
-                bundle.snapshot
-            )
+        native_port = native.Spine38NativeLibrary.from_dll_path(bridge_path).create(
+            bundle.snapshot
         )
+        filters = native_port.texture_page_info()
+        adapter = runtime.Spine38Runtime(native_port)
         metadata = bundle.metadata
         assert metadata.skeleton.sha256 == _SKELETON_SHA256
         assert metadata.atlas.sha256 == _ATLAS_SHA256
@@ -71,16 +81,29 @@ def test_real_schwarz_catalog_confirms_exact_relax() -> None:
         assert metadata.skeleton.major == 3
         assert metadata.skeleton.minor == 8
         assert adapter.skins
-        assert adapter.catalog.animations
-        assert all(
-            animation.duration_seconds > 0.0
+        observed = {
+            animation.name: animation.duration_seconds
             for animation in adapter.catalog.animations
+        }
+        assert observed.keys() == _EXPECTED_ANIMATIONS.keys()
+        for name, duration in _EXPECTED_ANIMATIONS.items():
+            assert observed[name] == pytest.approx(duration, abs=0.00001)
+        assert filters == native.Spine38TexturePageInfo(
+            native.Spine38TextureFilter.LINEAR,
+            native.Spine38TextureFilter.LINEAR,
         )
-        assert sum(
-            animation.name == "Relax"
-            for animation in adapter.catalog.animations
-        ) == 1
-        assert adapter.catalog.require_animation("Relax").duration_seconds > 0.0
+        newly_loaded = set(sys.modules) - modules_before
+        assert not any(
+            name.startswith(
+                (
+                    "sjtuclaw.agent",
+                    "sjtuclaw.infrastructure.llm",
+                    "openai",
+                    "anthropic",
+                )
+            )
+            for name in newly_loaded
+        )
     finally:
         if adapter is not None:
             adapter.close()
