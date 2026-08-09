@@ -44,6 +44,8 @@ _ATLAS_SHA256 = "6d42f85b5fd09f7bbd7f8df412437bfa3d48628cc42c0bfe9ae2ba0d7329a73
 _TEXTURE_SHA256 = "7d1654527310334ad658054acfbaF5e58c2a0719a5a1984662713306f656e2a5".lower()
 _SKELETON_SHA256 = "4c7ff39d6322d702e11e7a769457d3e4d77b1a43037f8deedf7cd508937da451"
 _RUNTIME_COMMIT = "8b4844bd4b193ba9e54487ed397a777993cbad56"
+_BUILD_MANIFEST_FILENAME = "spine38-build-manifest.json"
+_BUILD_MANIFEST_MAX_BYTES = 4096
 _EVIDENCE_PATH = (
     _PROJECT_ROOT
     / "build"
@@ -57,6 +59,10 @@ class _CliArgumentError(Exception):
     pass
 
 
+class _BuildManifestError(Exception):
+    pass
+
+
 class _SafeArgumentParser(argparse.ArgumentParser):
     def error(self, message: str) -> NoReturn:
         del message
@@ -67,6 +73,14 @@ class _SafeArgumentParser(argparse.ArgumentParser):
 class _Arguments:
     bridge_dll: Path
     asset_root: Path
+
+
+@dataclass(frozen=True, slots=True)
+class _BuildManifest:
+    commit: str
+    configuration: str
+    architecture: str
+    bridge_abi: int
 
 
 def _parse_arguments(argv: Sequence[str] | None) -> _Arguments:
@@ -87,6 +101,59 @@ def _parse_arguments(argv: Sequence[str] | None) -> _Arguments:
     return _Arguments(bridge_dll, asset_root)
 
 
+def _manifest_object(
+    pairs: list[tuple[str, object]],
+) -> dict[str, object]:
+    value: dict[str, object] = {}
+    for key, item in pairs:
+        if key in value:
+            raise _BuildManifestError
+        value[key] = item
+    return value
+
+
+def _load_build_manifest(bridge_dll: Path) -> _BuildManifest:
+    path = bridge_dll.with_name(_BUILD_MANIFEST_FILENAME)
+    try:
+        with path.open("rb") as stream:
+            raw = stream.read(_BUILD_MANIFEST_MAX_BYTES + 1)
+        if not raw or len(raw) > _BUILD_MANIFEST_MAX_BYTES:
+            raise _BuildManifestError
+        decoded = raw.decode("utf-8")
+        value = json.loads(decoded, object_pairs_hook=_manifest_object)
+    except (
+        OSError,
+        UnicodeDecodeError,
+        json.JSONDecodeError,
+        _BuildManifestError,
+    ):
+        raise _BuildManifestError from None
+    expected_keys = {
+        "commit",
+        "configuration",
+        "architecture",
+        "bridge_abi",
+    }
+    if not isinstance(value, dict) or set(value) != expected_keys:
+        raise _BuildManifestError
+    commit = value["commit"]
+    configuration = value["configuration"]
+    architecture = value["architecture"]
+    bridge_abi = value["bridge_abi"]
+    if (
+        type(commit) is not str
+        or commit != _RUNTIME_COMMIT
+        or type(configuration) is not str
+        or configuration != "Release"
+        or type(architecture) is not str
+        or architecture != "x64"
+        or type(bridge_abi) is not int
+        or bridge_abi != 1
+    ):
+        raise _BuildManifestError
+    return _BuildManifest(commit, configuration, architecture, bridge_abi)
+
+
 def _descriptor(asset_root: Path) -> ExternalPetAssetDescriptor:
     return ExternalPetAssetDescriptor(
         opaque_asset_id="schwarz-original-spine38",
@@ -104,7 +171,12 @@ def _descriptor(asset_root: Path) -> ExternalPetAssetDescriptor:
     )
 
 
-def _evidence(bundle: Any, runtime: Spine38Runtime, status: str) -> dict[str, Any]:
+def _evidence(
+    bundle: Any,
+    runtime: Spine38Runtime,
+    status: str,
+    manifest: _BuildManifest,
+) -> dict[str, Any]:
     metadata = bundle.metadata
     bounds = runtime.setup_bounds
     return {
@@ -161,7 +233,10 @@ def _evidence(bundle: Any, runtime: Spine38Runtime, status: str) -> dict[str, An
         },
         "runtime": {
             "data_version": "3.8",
-            "source_commit": _RUNTIME_COMMIT,
+            "source_commit": manifest.commit,
+            "configuration": manifest.configuration,
+            "architecture": manifest.architecture,
+            "bridge_abi": manifest.bridge_abi,
         },
     }
 
@@ -191,7 +266,10 @@ def _emit_status(status: str, stream: TextIO) -> None:
     stream.write(json.dumps({"status": status}, separators=(",", ":")) + "\n")
 
 
-def _run_list_only(arguments: _Arguments) -> tuple[int, str]:
+def _run_list_only(
+    arguments: _Arguments,
+    manifest: _BuildManifest,
+) -> tuple[int, str]:
     bundle = None
     runtime = None
     exit_code = 1
@@ -215,7 +293,10 @@ def _run_list_only(arguments: _Arguments) -> tuple[int, str]:
         else:
             status = "spine38_catalog_confirmed"
             exit_code = 0
-        _write_atomic_json(_EVIDENCE_PATH, _evidence(bundle, runtime, status))
+        _write_atomic_json(
+            _EVIDENCE_PATH,
+            _evidence(bundle, runtime, status, manifest),
+        )
     except Spine38NativeError:
         status = "spine38_native_failure"
         exit_code = 1
@@ -249,7 +330,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     except _CliArgumentError:
         _emit_status("spine38_arguments_invalid", sys.stderr)
         return 2
-    exit_code, status = _run_list_only(arguments)
+    try:
+        manifest = _load_build_manifest(arguments.bridge_dll)
+    except _BuildManifestError:
+        _emit_status("spine38_build_manifest_invalid", sys.stderr)
+        return 1
+    exit_code, status = _run_list_only(arguments, manifest)
     _emit_status(status, sys.stdout if exit_code == 0 else sys.stderr)
     return exit_code
 

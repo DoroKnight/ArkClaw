@@ -12,6 +12,20 @@ from typing import Any
 import pytest
 
 
+def _write_valid_build_manifest(directory: Path) -> None:
+    (directory / "spine38-build-manifest.json").write_text(
+        json.dumps(
+            {
+                "commit": "8b4844bd4b193ba9e54487ed397a777993cbad56",
+                "configuration": "Release",
+                "architecture": "x64",
+                "bridge_abi": 1,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
 def test_exact_relax_candidate_is_required() -> None:
     runtime = importlib.import_module("sjtuclaw.application.spine38_runtime")
     catalog = runtime.Spine38Catalog(
@@ -117,6 +131,7 @@ def test_list_only_loads_assets_before_dll_and_closes_in_reverse_order(
     runtime = importlib.import_module("sjtuclaw.application.spine38_runtime")
     bridge_dll = tmp_path / "bridge.dll"
     bridge_dll.write_bytes(b"fixture")
+    _write_valid_build_manifest(tmp_path)
     asset_root = tmp_path / "assets"
     asset_root.mkdir()
     evidence_path = tmp_path / "catalog.json"
@@ -230,6 +245,99 @@ def test_list_only_loads_assets_before_dll_and_closes_in_reverse_order(
         {"duration_seconds": 3.2, "name": "Relax"}
     ]
     assert evidence["runtime"]["source_commit"] == script._RUNTIME_COMMIT
+    assert evidence["runtime"]["configuration"] == "Release"
+    assert evidence["runtime"]["architecture"] == "x64"
+    assert evidence["runtime"]["bridge_abi"] == 1
+
+
+@pytest.mark.parametrize(
+    "manifest_case",
+    [
+        "missing",
+        "malformed",
+        "duplicate",
+        "commit",
+        "configuration",
+        "architecture",
+        "bridge_abi",
+        "extra_field",
+    ],
+)
+def test_list_only_rejects_invalid_adjacent_build_manifest_before_loading(
+    manifest_case: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    script = importlib.import_module("scripts.qt_spine38_vertical_slice")
+    bridge_dll = tmp_path / "private-bridge-name.dll"
+    bridge_dll.write_bytes(b"fixture")
+    asset_root = tmp_path / "private-asset-root"
+    asset_root.mkdir()
+    evidence_path = tmp_path / "evidence.json"
+    manifest_path = tmp_path / "spine38-build-manifest.json"
+    manifest = {
+        "commit": "8b4844bd4b193ba9e54487ed397a777993cbad56",
+        "configuration": "Release",
+        "architecture": "x64",
+        "bridge_abi": 1,
+    }
+    if manifest_case == "malformed":
+        manifest_path.write_text("{", encoding="utf-8")
+    elif manifest_case == "duplicate":
+        manifest_path.write_text(
+            '{"commit":"8b4844bd4b193ba9e54487ed397a777993cbad56",'
+            '"commit":"8b4844bd4b193ba9e54487ed397a777993cbad56",'
+            '"configuration":"Release","architecture":"x64",'
+            '"bridge_abi":1}',
+            encoding="utf-8",
+        )
+    elif manifest_case != "missing":
+        if manifest_case == "commit":
+            manifest["commit"] = "0" * 40
+        elif manifest_case == "configuration":
+            manifest["configuration"] = "Debug"
+        elif manifest_case == "architecture":
+            manifest["architecture"] = "Win32"
+        elif manifest_case == "bridge_abi":
+            manifest["bridge_abi"] = True
+        elif manifest_case == "extra_field":
+            manifest["unexpected"] = "value"
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    class ForbiddenLoader:
+        def __init__(self, filesystem: object) -> None:
+            del filesystem
+            raise AssertionError("assets must not load")
+
+    class ForbiddenLibrary:
+        @classmethod
+        def from_dll_path(cls, path: Path) -> None:
+            del path
+            raise AssertionError("DLL must not load")
+
+    monkeypatch.setattr(script, "ExternalPetAssetLoader", ForbiddenLoader)
+    monkeypatch.setattr(script, "Spine38NativeLibrary", ForbiddenLibrary)
+    monkeypatch.setattr(script, "_EVIDENCE_PATH", evidence_path)
+
+    exit_code = script.main(
+        [
+            "--list-only",
+            "--bridge-dll",
+            str(bridge_dll),
+            "--asset-root",
+            str(asset_root),
+        ]
+    )
+
+    captured = capsys.readouterr()
+    rendered = captured.out + captured.err
+    assert exit_code == 1
+    assert captured.out == ""
+    assert captured.err == '{"status":"spine38_build_manifest_invalid"}\n'
+    assert not evidence_path.exists()
+    assert "private-bridge-name" not in rendered
+    assert "private-asset-root" not in rendered
 
 
 def test_list_only_asset_failure_never_loads_the_dll_or_leaks_paths(
@@ -240,6 +348,7 @@ def test_list_only_asset_failure_never_loads_the_dll_or_leaks_paths(
     script = importlib.import_module("scripts.qt_spine38_vertical_slice")
     bridge_dll = tmp_path / "private-bridge-name.dll"
     bridge_dll.write_bytes(b"fixture")
+    _write_valid_build_manifest(tmp_path)
     asset_root = tmp_path / "private-asset-root"
     asset_root.mkdir()
 
