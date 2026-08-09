@@ -36,6 +36,36 @@ typedef struct SjtuclawSpine38Bounds {
     float height;
 } SjtuclawSpine38Bounds;
 
+#define SJTUCLAW_SPINE38_PLAYBACK_ABI 1
+
+typedef enum SjtuclawSpine38BlendMode {
+    SJTUCLAW_SPINE38_BLEND_NORMAL = 0,
+    SJTUCLAW_SPINE38_BLEND_ADDITIVE = 1,
+    SJTUCLAW_SPINE38_BLEND_MULTIPLY = 2,
+    SJTUCLAW_SPINE38_BLEND_SCREEN = 3
+} SjtuclawSpine38BlendMode;
+
+typedef struct SjtuclawSpine38Vertex {
+    float x;
+    float y;
+    float u;
+    float v;
+    uint8_t r;
+    uint8_t g;
+    uint8_t b;
+    uint8_t a;
+} SjtuclawSpine38Vertex;
+
+typedef struct SjtuclawSpine38DrawView {
+    const SjtuclawSpine38Vertex* vertices;
+    size_t vertex_count;
+    const uint32_t* indices;
+    size_t index_count;
+    uint32_t texture_page;
+    uint32_t blend_mode;
+    int32_t draw_order;
+} SjtuclawSpine38DrawView;
+
 /*
  * ABI version 1 ownership and buffer rules:
  *
@@ -52,6 +82,12 @@ typedef struct SjtuclawSpine38Bounds {
  *   borrowed catalog-name pointers. Any borrowed view pointer added within
  *   ABI version 1 remains valid only until the next mutating call on the same
  *   handle or until destroy, whichever occurs first.
+ * - draw_view requires view_capacity >= sizeof(SjtuclawSpine38DrawView) and
+ *   copies the view descriptor into caller memory. Its vertex/index pointers
+ *   borrow immutable, handle-owned storage. They remain valid until the next
+ *   successful set_animation call, the next update call with valid arguments,
+ *   or destroy. Callers that need longer lifetimes must copy both spans.
+ * - Failed calls do not modify caller-owned output structs.
  * - Functions returning size_t return zero for NULL handles and on internal
  *   failures. No C++ exception is allowed to cross this C ABI.
  */
@@ -98,6 +134,26 @@ SJTUCLAW_SPINE38_API SjtuclawSpine38Code sjtuclaw_spine38_skin_info(
 SJTUCLAW_SPINE38_API SjtuclawSpine38Code sjtuclaw_spine38_setup_bounds(
     const SjtuclawSpine38Handle* handle,
     SjtuclawSpine38Bounds* out_bounds);
+
+SJTUCLAW_SPINE38_API SjtuclawSpine38Code sjtuclaw_spine38_set_animation(
+    SjtuclawSpine38Handle* handle,
+    uint32_t track,
+    const char* name_utf8,
+    size_t name_size,
+    uint8_t loop);
+
+SJTUCLAW_SPINE38_API SjtuclawSpine38Code sjtuclaw_spine38_update(
+    SjtuclawSpine38Handle* handle,
+    float delta_seconds);
+
+SJTUCLAW_SPINE38_API size_t sjtuclaw_spine38_draw_count(
+    const SjtuclawSpine38Handle* handle);
+
+SJTUCLAW_SPINE38_API SjtuclawSpine38Code sjtuclaw_spine38_draw_view(
+    const SjtuclawSpine38Handle* handle,
+    size_t index,
+    SjtuclawSpine38DrawView* out_view,
+    size_t view_capacity);
 
 #ifdef __cplusplus
 }

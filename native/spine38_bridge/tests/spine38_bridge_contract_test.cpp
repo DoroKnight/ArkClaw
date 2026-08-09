@@ -8,6 +8,58 @@
 #include <string>
 #include <vector>
 
+#ifndef SJTUCLAW_SPINE38_PLAYBACK_ABI
+typedef enum SjtuclawSpine38BlendMode {
+    SJTUCLAW_SPINE38_BLEND_NORMAL = 0,
+    SJTUCLAW_SPINE38_BLEND_ADDITIVE = 1,
+    SJTUCLAW_SPINE38_BLEND_MULTIPLY = 2,
+    SJTUCLAW_SPINE38_BLEND_SCREEN = 3
+} SjtuclawSpine38BlendMode;
+
+typedef struct SjtuclawSpine38Vertex {
+    float x;
+    float y;
+    float u;
+    float v;
+    uint8_t r;
+    uint8_t g;
+    uint8_t b;
+    uint8_t a;
+} SjtuclawSpine38Vertex;
+
+typedef struct SjtuclawSpine38DrawView {
+    const SjtuclawSpine38Vertex* vertices;
+    size_t vertex_count;
+    const uint32_t* indices;
+    size_t index_count;
+    uint32_t texture_page;
+    uint32_t blend_mode;
+    int32_t draw_order;
+} SjtuclawSpine38DrawView;
+
+extern "C" {
+SJTUCLAW_SPINE38_API SjtuclawSpine38Code sjtuclaw_spine38_set_animation(
+    SjtuclawSpine38Handle* handle,
+    uint32_t track,
+    const char* name_utf8,
+    size_t name_size,
+    uint8_t loop);
+
+SJTUCLAW_SPINE38_API SjtuclawSpine38Code sjtuclaw_spine38_update(
+    SjtuclawSpine38Handle* handle,
+    float delta_seconds);
+
+SJTUCLAW_SPINE38_API size_t sjtuclaw_spine38_draw_count(
+    const SjtuclawSpine38Handle* handle);
+
+SJTUCLAW_SPINE38_API SjtuclawSpine38Code sjtuclaw_spine38_draw_view(
+    const SjtuclawSpine38Handle* handle,
+    size_t index,
+    SjtuclawSpine38DrawView* out_view,
+    size_t view_capacity);
+}
+#endif
+
 namespace {
 
 int failures = 0;
@@ -48,6 +100,18 @@ void append_float(std::vector<uint8_t>& bytes, float value) {
     bytes.push_back(static_cast<uint8_t>((bits >> 16u) & 0xffu));
     bytes.push_back(static_cast<uint8_t>((bits >> 8u) & 0xffu));
     bytes.push_back(static_cast<uint8_t>(bits & 0xffu));
+}
+
+void append_color(
+    std::vector<uint8_t>& bytes,
+    uint8_t r,
+    uint8_t g,
+    uint8_t b,
+    uint8_t a) {
+    bytes.push_back(r);
+    bytes.push_back(g);
+    bytes.push_back(b);
+    bytes.push_back(a);
 }
 
 void append_empty_animation(
@@ -134,12 +198,342 @@ std::vector<uint8_t> make_synthetic_skeleton(
     return bytes;
 }
 
+std::vector<uint8_t> make_region_skeleton() {
+    std::vector<uint8_t> bytes;
+
+    append_string(bytes, "region-contract-fixture");
+    append_string(bytes, "3.8.99");
+    append_float(bytes, -2.0f);
+    append_float(bytes, 3.0f);
+    append_float(bytes, 4.0f);
+    append_float(bytes, 5.0f);
+    bytes.push_back(0);  // nonessential
+
+    append_varint(bytes, 2);  // string table
+    append_string(bytes, "fixture-skin");
+    append_string(bytes, "fixture-region");
+
+    append_varint(bytes, 1);  // bones
+    append_string(bytes, "root");
+    append_float(bytes, 0.0f);  // rotation
+    append_float(bytes, 0.0f);  // x
+    append_float(bytes, 0.0f);  // y
+    append_float(bytes, 1.0f);  // scale x
+    append_float(bytes, 1.0f);  // scale y
+    append_float(bytes, 0.0f);  // shear x
+    append_float(bytes, 0.0f);  // shear y
+    append_float(bytes, 0.0f);  // length
+    append_varint(bytes, 0);    // transform mode
+    bytes.push_back(0);         // skin required
+
+    append_varint(bytes, 1);  // slots
+    append_string(bytes, "region-slot");
+    append_varint(bytes, 0);  // root bone
+    append_color(bytes, 128, 192, 255, 128);
+    append_color(bytes, 255, 255, 255, 255);  // no dark color
+    append_varint(bytes, 2);                    // setup attachment
+    append_varint(bytes, 0);                    // normal blend
+
+    append_varint(bytes, 0);  // IK constraints
+    append_varint(bytes, 0);  // transform constraints
+    append_varint(bytes, 0);  // path constraints
+
+    append_varint(bytes, 1);  // default skin slots
+    append_varint(bytes, 0);  // slot index
+    append_varint(bytes, 1);  // attachments in slot
+    append_varint(bytes, 2);  // attachment key
+    append_varint(bytes, 0);  // attachment name uses key
+    bytes.push_back(0);       // region attachment
+    append_varint(bytes, 0);  // path uses name
+    append_float(bytes, 0.0f);  // rotation
+    append_float(bytes, 2.0f);  // x
+    append_float(bytes, 3.0f);  // y
+    append_float(bytes, 1.0f);  // scale x
+    append_float(bytes, 1.0f);  // scale y
+    append_float(bytes, 2.0f);  // width
+    append_float(bytes, 4.0f);  // height
+    append_color(bytes, 128, 255, 64, 128);
+
+    append_varint(bytes, 1);  // additional skins
+    append_varint(bytes, 1);  // fixture-skin
+    append_varint(bytes, 0);  // skin bones
+    append_varint(bytes, 0);  // skin IK constraints
+    append_varint(bytes, 0);  // skin transform constraints
+    append_varint(bytes, 0);  // skin path constraints
+    append_varint(bytes, 0);  // skin slots
+
+    append_varint(bytes, 0);  // events
+    append_varint(bytes, 1);  // animations
+    append_string(bytes, animation_name_fixture);
+    append_varint(bytes, 0);  // slot timelines
+    append_varint(bytes, 1);  // bone timeline groups
+    append_varint(bytes, 0);  // root bone index
+    append_varint(bytes, 1);  // root timeline count
+    bytes.push_back(0);       // rotate timeline
+    append_varint(bytes, 2);  // frames
+    append_float(bytes, 0.0f);
+    append_float(bytes, 0.0f);
+    bytes.push_back(0);  // linear curve
+    append_float(bytes, 1.25f);
+    append_float(bytes, 90.0f);
+    append_varint(bytes, 0);  // IK timelines
+    append_varint(bytes, 0);  // transform timelines
+    append_varint(bytes, 0);  // path timelines
+    append_varint(bytes, 0);  // deform timelines
+    append_varint(bytes, 0);  // draw-order timeline frames
+    append_varint(bytes, 0);  // event timeline frames
+    return bytes;
+}
+
+void append_region_attachment(
+    std::vector<uint8_t>& bytes,
+    float x,
+    float y) {
+    append_varint(bytes, 2);  // attachment key
+    append_varint(bytes, 0);  // attachment name uses key
+    bytes.push_back(0);       // region attachment
+    append_varint(bytes, 0);  // path uses name
+    append_float(bytes, 0.0f);  // rotation
+    append_float(bytes, x);
+    append_float(bytes, y);
+    append_float(bytes, 1.0f);  // scale x
+    append_float(bytes, 1.0f);  // scale y
+    append_float(bytes, 2.0f);  // width
+    append_float(bytes, 2.0f);  // height
+    append_color(bytes, 255, 255, 255, 255);
+}
+
+void append_mesh_attachment(std::vector<uint8_t>& bytes) {
+    append_varint(bytes, 2);  // attachment key
+    append_varint(bytes, 0);  // attachment name uses key
+    bytes.push_back(2);       // mesh attachment
+    append_varint(bytes, 0);  // path uses name
+    append_color(bytes, 255, 255, 255, 255);
+    append_varint(bytes, 3);  // vertex count
+    append_float(bytes, 0.0f);
+    append_float(bytes, 0.0f);
+    append_float(bytes, 1.0f);
+    append_float(bytes, 0.0f);
+    append_float(bytes, 0.0f);
+    append_float(bytes, 1.0f);
+    append_varint(bytes, 3);  // triangle index count
+    bytes.push_back(0);
+    bytes.push_back(0);
+    bytes.push_back(0);
+    bytes.push_back(1);
+    bytes.push_back(0);
+    bytes.push_back(2);
+    bytes.push_back(0);  // unweighted vertices
+    append_float(bytes, 0.0f);
+    append_float(bytes, 0.0f);
+    append_float(bytes, 2.0f);
+    append_float(bytes, 0.0f);
+    append_float(bytes, 0.0f);
+    append_float(bytes, 2.0f);
+    append_varint(bytes, 3);  // hull vertex count
+}
+
+std::vector<uint8_t> make_mesh_blend_skeleton() {
+    std::vector<uint8_t> bytes;
+    append_string(bytes, "mesh-blend-contract-fixture");
+    append_string(bytes, "3.8.99");
+    append_float(bytes, -2.0f);
+    append_float(bytes, 3.0f);
+    append_float(bytes, 4.0f);
+    append_float(bytes, 5.0f);
+    bytes.push_back(0);  // nonessential
+
+    append_varint(bytes, 2);  // string table
+    append_string(bytes, "fixture-skin");
+    append_string(bytes, "fixture-region");
+
+    append_varint(bytes, 1);  // bones
+    append_string(bytes, "root");
+    append_float(bytes, 0.0f);  // rotation
+    append_float(bytes, 0.0f);  // x
+    append_float(bytes, 0.0f);  // y
+    append_float(bytes, 1.0f);  // scale x
+    append_float(bytes, 1.0f);  // scale y
+    append_float(bytes, 0.0f);  // shear x
+    append_float(bytes, 0.0f);  // shear y
+    append_float(bytes, 0.0f);  // length
+    append_varint(bytes, 0);    // transform mode
+    bytes.push_back(0);         // skin required
+
+    append_varint(bytes, 5);  // slots
+    for (uint32_t slot = 0u; slot < 5u; ++slot) {
+        append_string(bytes, "draw-slot-" + std::to_string(slot));
+        append_varint(bytes, 0);  // root bone
+        append_color(bytes, 255, 255, 255, 255);
+        append_color(bytes, 255, 255, 255, 255);  // no dark color
+        append_varint(bytes, 2);                   // setup attachment
+        append_varint(bytes, slot < 4u ? slot : 0u);
+    }
+
+    append_varint(bytes, 0);  // IK constraints
+    append_varint(bytes, 0);  // transform constraints
+    append_varint(bytes, 0);  // path constraints
+
+    append_varint(bytes, 5);  // default skin slots
+    for (uint32_t slot = 0u; slot < 4u; ++slot) {
+        append_varint(bytes, slot);
+        append_varint(bytes, 1);  // attachments in slot
+        append_region_attachment(bytes, static_cast<float>(slot * 3u), 0.0f);
+    }
+    append_varint(bytes, 4);  // mesh slot
+    append_varint(bytes, 1);  // attachments in slot
+    append_mesh_attachment(bytes);
+
+    append_varint(bytes, 0);  // additional skins
+    append_varint(bytes, 0);  // events
+    append_varint(bytes, 1);  // animations
+    append_string(bytes, animation_name_fixture);
+    append_varint(bytes, 0);  // slot timelines
+    append_varint(bytes, 1);  // bone timeline groups
+    append_varint(bytes, 0);  // root bone index
+    append_varint(bytes, 1);  // root timeline count
+    bytes.push_back(0);       // rotate timeline
+    append_varint(bytes, 2);  // frames
+    append_float(bytes, 0.0f);
+    append_float(bytes, 0.0f);
+    bytes.push_back(0);  // linear curve
+    append_float(bytes, 1.25f);
+    append_float(bytes, 0.0f);
+    append_varint(bytes, 0);  // IK timelines
+    append_varint(bytes, 0);  // transform timelines
+    append_varint(bytes, 0);  // path timelines
+    append_varint(bytes, 0);  // deform timelines
+    append_varint(bytes, 0);  // draw-order timeline frames
+    append_varint(bytes, 0);  // event timeline frames
+    return bytes;
+}
+
+std::vector<uint8_t> make_clipping_skeleton(
+    bool unsupported_attachment,
+    float region_x = 0.0f) {
+    std::vector<uint8_t> bytes;
+    append_string(bytes, "clipping-contract-fixture");
+    append_string(bytes, "3.8.99");
+    append_float(bytes, -2.0f);
+    append_float(bytes, -2.0f);
+    append_float(bytes, 4.0f);
+    append_float(bytes, 4.0f);
+    bytes.push_back(0);  // nonessential
+
+    append_varint(bytes, 2);  // string table
+    append_string(bytes, "fixture-region");
+    append_string(bytes, "fixture-clip");
+
+    append_varint(bytes, 1);  // bones
+    append_string(bytes, "root");
+    append_float(bytes, 0.0f);  // rotation
+    append_float(bytes, 0.0f);  // x
+    append_float(bytes, 0.0f);  // y
+    append_float(bytes, 1.0f);  // scale x
+    append_float(bytes, 1.0f);  // scale y
+    append_float(bytes, 0.0f);  // shear x
+    append_float(bytes, 0.0f);  // shear y
+    append_float(bytes, 0.0f);  // length
+    append_varint(bytes, 0);    // transform mode
+    bytes.push_back(0);         // skin required
+
+    append_varint(bytes, 2);  // slots
+    append_string(bytes, "clip-slot");
+    append_varint(bytes, 0);
+    append_color(bytes, 255, 255, 255, 255);
+    append_color(bytes, 255, 255, 255, 255);
+    append_varint(bytes, 2);  // fixture-clip
+    append_varint(bytes, 0);  // normal blend
+    append_string(bytes, "region-slot");
+    append_varint(bytes, 0);
+    append_color(bytes, 255, 255, 255, 255);
+    append_color(bytes, 255, 255, 255, 255);
+    append_varint(bytes, 1);  // fixture-region
+    append_varint(bytes, 0);  // normal blend
+
+    append_varint(bytes, 0);  // IK constraints
+    append_varint(bytes, 0);  // transform constraints
+    append_varint(bytes, 0);  // path constraints
+
+    append_varint(bytes, 2);  // default skin slots
+    append_varint(bytes, 0);  // clip slot
+    append_varint(bytes, 1);  // attachments in slot
+    append_varint(bytes, 2);  // fixture-clip key
+    append_varint(bytes, 0);  // attachment name uses key
+    bytes.push_back(unsupported_attachment ? 1u : 6u);
+    if (!unsupported_attachment) {
+        append_varint(bytes, 1);  // clipping ends after region slot
+    }
+    append_varint(bytes, 4);  // polygon vertex count
+    bytes.push_back(0);       // unweighted vertices
+    append_float(bytes, -0.5f);
+    append_float(bytes, -0.5f);
+    append_float(bytes, -0.5f);
+    append_float(bytes, 0.5f);
+    append_float(bytes, 0.5f);
+    append_float(bytes, 0.5f);
+    append_float(bytes, 0.5f);
+    append_float(bytes, -0.5f);
+
+    append_varint(bytes, 1);  // region slot
+    append_varint(bytes, 1);  // attachments in slot
+    append_varint(bytes, 1);  // fixture-region key
+    append_varint(bytes, 0);  // attachment name uses key
+    bytes.push_back(0);       // region attachment
+    append_varint(bytes, 0);  // path uses name
+    append_float(bytes, 0.0f);  // rotation
+    append_float(bytes, region_x);
+    append_float(bytes, 0.0f);  // y
+    append_float(bytes, 1.0f);  // scale x
+    append_float(bytes, 1.0f);  // scale y
+    append_float(bytes, 2.0f);  // width
+    append_float(bytes, 2.0f);  // height
+    append_color(bytes, 255, 255, 255, 255);
+
+    append_varint(bytes, 0);  // additional skins
+    append_varint(bytes, 0);  // events
+    append_varint(bytes, 1);  // animations
+    append_string(bytes, animation_name_fixture);
+    append_varint(bytes, 0);  // slot timelines
+    append_varint(bytes, 1);  // bone timeline groups
+    append_varint(bytes, 0);  // root bone index
+    append_varint(bytes, 1);  // root timeline count
+    bytes.push_back(0);       // rotate timeline
+    append_varint(bytes, 2);  // frames
+    append_float(bytes, 0.0f);
+    append_float(bytes, 0.0f);
+    bytes.push_back(0);  // linear curve
+    append_float(bytes, 1.25f);
+    append_float(bytes, 0.0f);
+    append_varint(bytes, 0);  // IK timelines
+    append_varint(bytes, 0);  // transform timelines
+    append_varint(bytes, 0);  // path timelines
+    append_varint(bytes, 0);  // deform timelines
+    append_varint(bytes, 0);  // draw-order timeline frames
+    append_varint(bytes, 0);  // event timeline frames
+    return bytes;
+}
+
 constexpr char atlas_fixture[] =
     "fixture-page.png\n"
     "size: 1,1\n"
     "format: RGBA8888\n"
     "filter: Nearest,Nearest\n"
     "repeat: none\n";
+
+constexpr char region_atlas_fixture[] =
+    "fixture-page.png\n"
+    "size: 8,8\n"
+    "format: RGBA8888\n"
+    "filter: Nearest,Nearest\n"
+    "repeat: none\n"
+    "fixture-region\n"
+    "  rotate: false\n"
+    "  xy: 0,0\n"
+    "  size: 2,4\n"
+    "  orig: 2,4\n"
+    "  offset: 0,0\n"
+    "  index: -1\n";
 
 void check_atlas_leading_whitespace_contract() {
     const auto skeleton = make_synthetic_skeleton();
@@ -208,6 +602,331 @@ void check_zero_duration_animation_is_not_exposed() {
               sizeof(animation_name_fixture)) == 0);
     CHECK(duration == 1.25f);
     CHECK(sjtuclaw_spine38_animation_name_size(handle, 1) == 0u);
+    sjtuclaw_spine38_destroy(handle);
+}
+
+void check_playback_contract_without_drawables() {
+    const auto skeleton = make_synthetic_skeleton();
+    SjtuclawSpine38Handle* handle = nullptr;
+    CHECK(sjtuclaw_spine38_create(
+              skeleton.data(), skeleton.size(), atlas_fixture,
+              sizeof(atlas_fixture) - 1u, &handle) == SJTUCLAW_SPINE38_OK);
+    CHECK(handle != nullptr);
+    if (handle == nullptr) {
+        return;
+    }
+
+    const char animation_name[] = "idle-\xE7\x8C\xAB";
+    const char embedded_nul[] = {'i', 'd', '\0', 'l', 'e'};
+    SjtuclawSpine38DrawView sentinel{
+        reinterpret_cast<const SjtuclawSpine38Vertex*>(
+            static_cast<uintptr_t>(1)),
+        11u,
+        reinterpret_cast<const uint32_t*>(static_cast<uintptr_t>(2)),
+        12u,
+        13u,
+        14u,
+        15};
+
+    CHECK(sjtuclaw_spine38_draw_count(nullptr) == 0u);
+    CHECK(sjtuclaw_spine38_set_animation(
+              nullptr, 0u, animation_name, sizeof(animation_name) - 1u, 1u) ==
+          SJTUCLAW_SPINE38_INVALID_ARGUMENT);
+    CHECK(sjtuclaw_spine38_set_animation(
+              handle, 0u, nullptr, sizeof(animation_name) - 1u, 1u) ==
+          SJTUCLAW_SPINE38_INVALID_ARGUMENT);
+    CHECK(sjtuclaw_spine38_set_animation(
+              handle, 0u, animation_name, 0u, 1u) ==
+          SJTUCLAW_SPINE38_INVALID_ARGUMENT);
+    CHECK(sjtuclaw_spine38_set_animation(
+              handle, 0u, embedded_nul, sizeof(embedded_nul), 1u) ==
+          SJTUCLAW_SPINE38_INVALID_ARGUMENT);
+    CHECK(sjtuclaw_spine38_set_animation(
+              handle, 0u, "missing", sizeof("missing") - 1u, 1u) ==
+          SJTUCLAW_SPINE38_ANIMATION_NOT_FOUND);
+    CHECK(sjtuclaw_spine38_set_animation(
+              handle, 0u, animation_name, sizeof(animation_name) - 1u, 2u) ==
+          SJTUCLAW_SPINE38_INVALID_ARGUMENT);
+    CHECK(sjtuclaw_spine38_set_animation(
+              handle, 0u, animation_name, sizeof(animation_name) - 1u, 1u) ==
+          SJTUCLAW_SPINE38_OK);
+
+    CHECK(sjtuclaw_spine38_update(nullptr, 0.0f) ==
+          SJTUCLAW_SPINE38_INVALID_ARGUMENT);
+    CHECK(sjtuclaw_spine38_update(handle, -0.01f) ==
+          SJTUCLAW_SPINE38_INVALID_ARGUMENT);
+    CHECK(sjtuclaw_spine38_update(
+              handle, std::numeric_limits<float>::infinity()) ==
+          SJTUCLAW_SPINE38_INVALID_ARGUMENT);
+    CHECK(sjtuclaw_spine38_update(
+              handle, std::numeric_limits<float>::quiet_NaN()) ==
+          SJTUCLAW_SPINE38_INVALID_ARGUMENT);
+    CHECK(sjtuclaw_spine38_update(handle, 0.0f) == SJTUCLAW_SPINE38_OK);
+    CHECK(sjtuclaw_spine38_draw_count(handle) == 0u);
+
+    CHECK(sjtuclaw_spine38_draw_view(
+              nullptr, 0u, &sentinel, sizeof(sentinel)) ==
+          SJTUCLAW_SPINE38_INVALID_ARGUMENT);
+    CHECK(sentinel.vertex_count == 11u);
+    CHECK(sjtuclaw_spine38_draw_view(
+              handle, 0u, nullptr, sizeof(sentinel)) ==
+          SJTUCLAW_SPINE38_INVALID_ARGUMENT);
+    CHECK(sjtuclaw_spine38_draw_view(
+              handle, 0u, &sentinel, sizeof(sentinel) - 1u) ==
+          SJTUCLAW_SPINE38_INVALID_ARGUMENT);
+    CHECK(sentinel.vertex_count == 11u);
+    CHECK(sjtuclaw_spine38_draw_view(
+              handle, 0u, &sentinel, sizeof(sentinel)) ==
+          SJTUCLAW_SPINE38_INVALID_ARGUMENT);
+    CHECK(sentinel.vertex_count == 11u);
+
+    sjtuclaw_spine38_destroy(handle);
+}
+
+void check_region_draw_view_is_materialized() {
+    const auto skeleton = make_region_skeleton();
+    SjtuclawSpine38Handle* handle = nullptr;
+    CHECK(sjtuclaw_spine38_create(
+              skeleton.data(), skeleton.size(), region_atlas_fixture,
+              sizeof(region_atlas_fixture) - 1u, &handle) ==
+          SJTUCLAW_SPINE38_OK);
+    CHECK(handle != nullptr);
+    if (handle == nullptr) {
+        return;
+    }
+
+    CHECK(sjtuclaw_spine38_set_animation(
+              handle, 0u, animation_name_fixture,
+              sizeof(animation_name_fixture) - 1u, 1u) ==
+          SJTUCLAW_SPINE38_OK);
+    CHECK(sjtuclaw_spine38_update(handle, 0.0f) == SJTUCLAW_SPINE38_OK);
+    CHECK(sjtuclaw_spine38_draw_count(handle) == 1u);
+
+    SjtuclawSpine38DrawView view{};
+    CHECK(sjtuclaw_spine38_draw_view(
+              handle, 0u, &view, sizeof(view)) == SJTUCLAW_SPINE38_OK);
+    CHECK(view.vertices != nullptr);
+    CHECK(view.vertex_count == 4u);
+    CHECK(view.indices != nullptr);
+    CHECK(view.index_count == 6u);
+    CHECK(view.texture_page == 0u);
+    CHECK(view.blend_mode == SJTUCLAW_SPINE38_BLEND_NORMAL);
+    CHECK(view.draw_order == 0);
+    if (view.vertices != nullptr && view.vertex_count == 4u) {
+        float min_x = view.vertices[0].x;
+        float max_x = view.vertices[0].x;
+        float min_y = view.vertices[0].y;
+        float max_y = view.vertices[0].y;
+        for (size_t index = 0u; index < view.vertex_count; ++index) {
+            const SjtuclawSpine38Vertex& vertex = view.vertices[index];
+            CHECK(std::isfinite(vertex.x));
+            CHECK(std::isfinite(vertex.y));
+            CHECK(std::isfinite(vertex.u));
+            CHECK(std::isfinite(vertex.v));
+            CHECK(vertex.r == 64u);
+            CHECK(vertex.g == 192u);
+            CHECK(vertex.b == 64u);
+            CHECK(vertex.a == 64u);
+            min_x = vertex.x < min_x ? vertex.x : min_x;
+            max_x = vertex.x > max_x ? vertex.x : max_x;
+            min_y = vertex.y < min_y ? vertex.y : min_y;
+            max_y = vertex.y > max_y ? vertex.y : max_y;
+        }
+        CHECK(std::fabs(min_x - 1.0f) < 0.00001f);
+        CHECK(std::fabs(max_x - 3.0f) < 0.00001f);
+        CHECK(std::fabs(min_y - 1.0f) < 0.00001f);
+        CHECK(std::fabs(max_y - 5.0f) < 0.00001f);
+    }
+    if (view.indices != nullptr && view.index_count == 6u) {
+        const uint32_t expected[] = {0u, 1u, 2u, 2u, 3u, 0u};
+        CHECK(std::memcmp(view.indices, expected, sizeof(expected)) == 0);
+    }
+
+    SjtuclawSpine38DrawView repeated{};
+    CHECK(sjtuclaw_spine38_draw_view(
+              handle, 0u, &repeated, sizeof(repeated)) ==
+          SJTUCLAW_SPINE38_OK);
+    CHECK(repeated.vertices == view.vertices);
+    CHECK(repeated.indices == view.indices);
+    CHECK(sjtuclaw_spine38_set_animation(
+              handle, 0u, "missing", sizeof("missing") - 1u, 1u) ==
+          SJTUCLAW_SPINE38_ANIMATION_NOT_FOUND);
+    SjtuclawSpine38DrawView after_failed_set{};
+    CHECK(sjtuclaw_spine38_draw_view(
+              handle, 0u, &after_failed_set, sizeof(after_failed_set)) ==
+          SJTUCLAW_SPINE38_OK);
+    CHECK(after_failed_set.vertices == view.vertices);
+    CHECK(after_failed_set.indices == view.indices);
+
+    float setup_positions[8]{};
+    if (view.vertices != nullptr && view.vertex_count == 4u) {
+        for (size_t index = 0u; index < view.vertex_count; ++index) {
+            setup_positions[index * 2u] = view.vertices[index].x;
+            setup_positions[index * 2u + 1u] = view.vertices[index].y;
+        }
+    }
+    CHECK(sjtuclaw_spine38_update(handle, 0.625f) == SJTUCLAW_SPINE38_OK);
+    SjtuclawSpine38DrawView animated{};
+    CHECK(sjtuclaw_spine38_draw_view(
+              handle, 0u, &animated, sizeof(animated)) ==
+          SJTUCLAW_SPINE38_OK);
+    bool geometry_changed = false;
+    if (animated.vertices != nullptr && animated.vertex_count == 4u) {
+        for (size_t index = 0u; index < animated.vertex_count; ++index) {
+            const float x_change = std::fabs(
+                animated.vertices[index].x - setup_positions[index * 2u]);
+            const float y_change = std::fabs(
+                animated.vertices[index].y -
+                setup_positions[index * 2u + 1u]);
+            geometry_changed = geometry_changed || x_change > 0.00001f ||
+                               y_change > 0.00001f;
+        }
+    }
+    CHECK(geometry_changed);
+    CHECK(sjtuclaw_spine38_set_animation(
+              handle, 0u, animation_name_fixture,
+              sizeof(animation_name_fixture) - 1u, 1u) ==
+          SJTUCLAW_SPINE38_OK);
+    CHECK(sjtuclaw_spine38_draw_count(handle) == 0u);
+
+    sjtuclaw_spine38_destroy(handle);
+}
+
+void check_mesh_blend_modes_and_draw_order_are_materialized() {
+    const auto skeleton = make_mesh_blend_skeleton();
+    SjtuclawSpine38Handle* handle = nullptr;
+    CHECK(sjtuclaw_spine38_create(
+              skeleton.data(), skeleton.size(), region_atlas_fixture,
+              sizeof(region_atlas_fixture) - 1u, &handle) ==
+          SJTUCLAW_SPINE38_OK);
+    CHECK(handle != nullptr);
+    if (handle == nullptr) {
+        return;
+    }
+
+    CHECK(sjtuclaw_spine38_set_animation(
+              handle, 0u, animation_name_fixture,
+              sizeof(animation_name_fixture) - 1u, 1u) ==
+          SJTUCLAW_SPINE38_OK);
+    CHECK(sjtuclaw_spine38_update(handle, 0.5f) == SJTUCLAW_SPINE38_OK);
+    CHECK(sjtuclaw_spine38_draw_count(handle) == 5u);
+
+    const uint32_t expected_blends[] = {
+        SJTUCLAW_SPINE38_BLEND_NORMAL,
+        SJTUCLAW_SPINE38_BLEND_ADDITIVE,
+        SJTUCLAW_SPINE38_BLEND_MULTIPLY,
+        SJTUCLAW_SPINE38_BLEND_SCREEN,
+        SJTUCLAW_SPINE38_BLEND_NORMAL};
+    for (size_t index = 0u; index < 5u; ++index) {
+        SjtuclawSpine38DrawView view{};
+        CHECK(sjtuclaw_spine38_draw_view(
+                  handle, index, &view, sizeof(view)) ==
+              SJTUCLAW_SPINE38_OK);
+        CHECK(view.texture_page == 0u);
+        CHECK(view.blend_mode == expected_blends[index]);
+        CHECK(view.draw_order == static_cast<int32_t>(index));
+        CHECK(view.vertices != nullptr);
+        CHECK(view.indices != nullptr);
+        if (view.indices != nullptr) {
+            for (size_t triangle_index = 0u;
+                 triangle_index < view.index_count;
+                 ++triangle_index) {
+                CHECK(view.indices[triangle_index] < view.vertex_count);
+            }
+        }
+        if (index < 4u) {
+            CHECK(view.vertex_count == 4u);
+            CHECK(view.index_count == 6u);
+        } else {
+            CHECK(view.vertex_count == 3u);
+            CHECK(view.index_count == 3u);
+            if (view.vertices != nullptr && view.vertex_count == 3u) {
+                CHECK(std::fabs(view.vertices[0].x - 0.0f) < 0.00001f);
+                CHECK(std::fabs(view.vertices[0].y - 0.0f) < 0.00001f);
+                CHECK(std::fabs(view.vertices[1].x - 2.0f) < 0.00001f);
+                CHECK(std::fabs(view.vertices[1].y - 0.0f) < 0.00001f);
+                CHECK(std::fabs(view.vertices[2].x - 0.0f) < 0.00001f);
+                CHECK(std::fabs(view.vertices[2].y - 2.0f) < 0.00001f);
+            }
+        }
+    }
+
+    sjtuclaw_spine38_destroy(handle);
+}
+
+void check_clipping_is_applied_inside_the_abi() {
+    const auto skeleton = make_clipping_skeleton(false);
+    SjtuclawSpine38Handle* handle = nullptr;
+    CHECK(sjtuclaw_spine38_create(
+              skeleton.data(), skeleton.size(), region_atlas_fixture,
+              sizeof(region_atlas_fixture) - 1u, &handle) ==
+          SJTUCLAW_SPINE38_OK);
+    CHECK(handle != nullptr);
+    if (handle == nullptr) {
+        return;
+    }
+
+    CHECK(sjtuclaw_spine38_set_animation(
+              handle, 0u, animation_name_fixture,
+              sizeof(animation_name_fixture) - 1u, 1u) ==
+          SJTUCLAW_SPINE38_OK);
+    CHECK(sjtuclaw_spine38_update(handle, 0.0f) == SJTUCLAW_SPINE38_OK);
+    CHECK(sjtuclaw_spine38_draw_count(handle) == 1u);
+    SjtuclawSpine38DrawView view{};
+    CHECK(sjtuclaw_spine38_draw_view(
+              handle, 0u, &view, sizeof(view)) == SJTUCLAW_SPINE38_OK);
+    CHECK(view.draw_order == 1);
+    CHECK(view.vertices != nullptr);
+    CHECK(view.vertex_count > 0u);
+    CHECK(view.indices != nullptr);
+    CHECK(view.index_count > 0u);
+    CHECK((view.index_count % 3u) == 0u);
+    if (view.vertices != nullptr) {
+        for (size_t index = 0u; index < view.vertex_count; ++index) {
+            CHECK(view.vertices[index].x >= -0.50001f);
+            CHECK(view.vertices[index].x <= 0.50001f);
+            CHECK(view.vertices[index].y >= -0.50001f);
+            CHECK(view.vertices[index].y <= 0.50001f);
+        }
+    }
+    if (view.indices != nullptr) {
+        for (size_t index = 0u; index < view.index_count; ++index) {
+            CHECK(view.indices[index] < view.vertex_count);
+        }
+    }
+    sjtuclaw_spine38_destroy(handle);
+}
+
+void check_unsupported_active_attachment_fails_closed() {
+    const auto skeleton = make_clipping_skeleton(true);
+    SjtuclawSpine38Handle* handle = nullptr;
+    CHECK(sjtuclaw_spine38_create(
+              skeleton.data(), skeleton.size(), region_atlas_fixture,
+              sizeof(region_atlas_fixture) - 1u, &handle) ==
+          SJTUCLAW_SPINE38_OK);
+    CHECK(handle != nullptr);
+    if (handle == nullptr) {
+        return;
+    }
+    CHECK(sjtuclaw_spine38_update(handle, 0.0f) ==
+          SJTUCLAW_SPINE38_RUNTIME_FAILURE);
+    CHECK(sjtuclaw_spine38_draw_count(handle) == 0u);
+    sjtuclaw_spine38_destroy(handle);
+}
+
+void check_fully_clipped_attachment_is_a_valid_empty_draw() {
+    const auto skeleton = make_clipping_skeleton(false, 3.0f);
+    SjtuclawSpine38Handle* handle = nullptr;
+    CHECK(sjtuclaw_spine38_create(
+              skeleton.data(), skeleton.size(), region_atlas_fixture,
+              sizeof(region_atlas_fixture) - 1u, &handle) ==
+          SJTUCLAW_SPINE38_OK);
+    CHECK(handle != nullptr);
+    if (handle == nullptr) {
+        return;
+    }
+    CHECK(sjtuclaw_spine38_update(handle, 0.0f) == SJTUCLAW_SPINE38_OK);
+    CHECK(sjtuclaw_spine38_draw_count(handle) == 0u);
     sjtuclaw_spine38_destroy(handle);
 }
 
@@ -406,6 +1125,12 @@ int main() {
     check_fixed_contract_values();
     check_atlas_leading_whitespace_contract();
     check_zero_duration_animation_is_not_exposed();
+    check_playback_contract_without_drawables();
+    check_region_draw_view_is_materialized();
+    check_mesh_blend_modes_and_draw_order_are_materialized();
+    check_clipping_is_applied_inside_the_abi();
+    check_unsupported_active_attachment_fails_closed();
+    check_fully_clipped_attachment_is_a_valid_empty_draw();
     check_invalid_inputs_do_not_escape_exceptions();
     check_synthetic_catalog_and_buffers();
     return failures == 0 ? 0 : 1;

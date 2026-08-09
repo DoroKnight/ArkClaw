@@ -32,6 +32,31 @@ class FakeFunction:
         return self._callback(*args)
 
 
+class FakeVertex(ctypes.Structure):
+    _fields_ = [
+        ("x", ctypes.c_float),
+        ("y", ctypes.c_float),
+        ("u", ctypes.c_float),
+        ("v", ctypes.c_float),
+        ("r", ctypes.c_uint8),
+        ("g", ctypes.c_uint8),
+        ("b", ctypes.c_uint8),
+        ("a", ctypes.c_uint8),
+    ]
+
+
+class FakeDrawView(ctypes.Structure):
+    _fields_ = [
+        ("vertices", ctypes.POINTER(FakeVertex)),
+        ("vertex_count", ctypes.c_size_t),
+        ("indices", ctypes.POINTER(ctypes.c_uint32)),
+        ("index_count", ctypes.c_size_t),
+        ("texture_page", ctypes.c_uint32),
+        ("blend_mode", ctypes.c_uint32),
+        ("draw_order", ctypes.c_int32),
+    ]
+
+
 class FakeLibrary:
     """In-process ABI fake; it replaces only the external DLL boundary."""
 
@@ -41,6 +66,9 @@ class FakeLibrary:
         self.animation_info_code = 0
         self.skin_info_code = 0
         self.bounds_code = 0
+        self.set_animation_code = 0
+        self.update_code = 0
+        self.draw_view_code = 0
         self.animations = (("idle-猫", 1.25),)
         self.skins = ("default",)
         self.animation_count_override: object | None = None
@@ -50,6 +78,20 @@ class FakeLibrary:
         self.animation_name_bytes_override: bytes | None = None
         self.skin_name_bytes_override: bytes | None = None
         self.bounds = (-2.0, 3.0, 4.0, 5.0)
+        self.set_animation_calls: list[tuple[int, bytes, int]] = []
+        self.update_calls: list[float] = []
+        self.draw_count_override: object | None = None
+        self.draw_vertex_count_override: object | None = None
+        self.draw_index_count_override: object | None = None
+        self.draw_texture_page = 0
+        self.draw_blend_mode = 2
+        self.draw_order = 7
+        self.draw_vertices = (FakeVertex * 3)(
+            FakeVertex(1.0, 2.0, 0.0, 0.0, 10, 20, 30, 40),
+            FakeVertex(3.0, 4.0, 1.0, 0.0, 50, 60, 70, 80),
+            FakeVertex(5.0, 6.0, 0.0, 1.0, 90, 100, 110, 120),
+        )
+        self.draw_indices = (ctypes.c_uint32 * 3)(0, 1, 2)
         self.destroy_count = 0
         self.animation_info_calls = 0
         self.skin_info_calls = 0
@@ -72,6 +114,10 @@ class FakeLibrary:
         self.sjtuclaw_spine38_skin_name_size = FakeFunction(self._skin_name_size)
         self.sjtuclaw_spine38_skin_info = FakeFunction(self._skin_info)
         self.sjtuclaw_spine38_setup_bounds = FakeFunction(self._setup_bounds)
+        self.sjtuclaw_spine38_set_animation = FakeFunction(self._set_animation)
+        self.sjtuclaw_spine38_update = FakeFunction(self._update)
+        self.sjtuclaw_spine38_draw_count = FakeFunction(self._draw_count)
+        self.sjtuclaw_spine38_draw_view = FakeFunction(self._draw_view)
 
     def _abi_version(self) -> int:
         return self.abi_version
@@ -177,6 +223,69 @@ class FakeLibrary:
             return self.bounds_code
         output = ctypes.cast(cast(Any, bounds), ctypes.POINTER(FakeBounds))[0]
         output.x, output.y, output.width, output.height = self.bounds
+        return 0
+
+    def _set_animation(
+        self,
+        handle: object,
+        track: object,
+        name: object,
+        name_size: object,
+        loop: object,
+    ) -> int:
+        self._assert_handle(handle)
+        self.set_animation_calls.append(
+            (
+                cast(int, track),
+                ctypes.string_at(cast(Any, name), cast(Any, name_size)),
+                cast(int, loop),
+            )
+        )
+        return self.set_animation_code
+
+    def _update(self, handle: object, delta_seconds: object) -> int:
+        self._assert_handle(handle)
+        self.update_calls.append(float(cast(float, delta_seconds)))
+        return self.update_code
+
+    def _draw_count(self, handle: object) -> object:
+        self._assert_handle(handle)
+        if self.draw_count_override is not None:
+            return self.draw_count_override
+        return 1
+
+    def _draw_view(
+        self,
+        handle: object,
+        index: object,
+        out_view: object,
+        view_capacity: object,
+    ) -> int:
+        self._assert_handle(handle)
+        assert cast(int, index) == 0
+        assert cast(int, view_capacity) == ctypes.sizeof(FakeDrawView)
+        if self.draw_view_code != 0:
+            return self.draw_view_code
+        output = ctypes.cast(cast(Any, out_view), ctypes.POINTER(FakeDrawView))[0]
+        output.vertices = ctypes.cast(
+            self.draw_vertices, ctypes.POINTER(FakeVertex)
+        )
+        output.vertex_count = (
+            len(self.draw_vertices)
+            if self.draw_vertex_count_override is None
+            else cast(int, self.draw_vertex_count_override)
+        )
+        output.indices = ctypes.cast(
+            self.draw_indices, ctypes.POINTER(ctypes.c_uint32)
+        )
+        output.index_count = (
+            len(self.draw_indices)
+            if self.draw_index_count_override is None
+            else cast(int, self.draw_index_count_override)
+        )
+        output.texture_page = self.draw_texture_page
+        output.blend_mode = self.draw_blend_mode
+        output.draw_order = self.draw_order
         return 0
 
     def _assert_handle(self, handle: object) -> None:
@@ -311,6 +420,28 @@ def test_native_binding_declares_every_catalog_abi_signature(
         ctypes.POINTER(native._SjtuclawSpine38Bounds),
     ]
     assert fake_library.sjtuclaw_spine38_setup_bounds.restype is ctypes.c_int
+    assert fake_library.sjtuclaw_spine38_set_animation.argtypes == [
+        ctypes.c_void_p,
+        ctypes.c_uint32,
+        ctypes.POINTER(ctypes.c_char),
+        ctypes.c_size_t,
+        ctypes.c_uint8,
+    ]
+    assert fake_library.sjtuclaw_spine38_set_animation.restype is ctypes.c_int
+    assert fake_library.sjtuclaw_spine38_update.argtypes == [
+        ctypes.c_void_p,
+        ctypes.c_float,
+    ]
+    assert fake_library.sjtuclaw_spine38_update.restype is ctypes.c_int
+    assert fake_library.sjtuclaw_spine38_draw_count.argtypes == [ctypes.c_void_p]
+    assert fake_library.sjtuclaw_spine38_draw_count.restype is ctypes.c_size_t
+    assert fake_library.sjtuclaw_spine38_draw_view.argtypes == [
+        ctypes.c_void_p,
+        ctypes.c_size_t,
+        ctypes.POINTER(native._SjtuclawSpine38DrawView),
+        ctypes.c_size_t,
+    ]
+    assert fake_library.sjtuclaw_spine38_draw_view.restype is ctypes.c_int
 
 
 def test_native_binding_copies_catalog_strings_and_validates_values(
@@ -326,6 +457,124 @@ def test_native_binding_copies_catalog_strings_and_validates_values(
     assert port.setup_bounds() == native.Spine38Bounds(-2.0, 3.0, 4.0, 5.0)
     with pytest.raises(AttributeError):
         port.catalog()[0].name = "changed"
+
+
+def test_native_binding_controls_playback_and_copies_draw_views_immediately(
+    fake_library: FakeLibrary,
+    snapshot: ExternalPetAssetSnapshot,
+) -> None:
+    native = importlib.import_module("sjtuclaw.infrastructure.spine38_native")
+    port = native.Spine38NativeLibrary(fake_library).create(snapshot)
+
+    port.set_animation(0, "idle-猫", True)
+    port.update(0.25)
+    commands = port.draw_commands()
+
+    assert fake_library.set_animation_calls == [(0, "idle-猫".encode(), 1)]
+    assert fake_library.update_calls == [0.25]
+    assert commands == (
+        native.Spine38DrawCommand(
+            vertices=(
+                native.Spine38Vertex(1.0, 2.0, 0.0, 0.0, 10, 20, 30, 40),
+                native.Spine38Vertex(3.0, 4.0, 1.0, 0.0, 50, 60, 70, 80),
+                native.Spine38Vertex(5.0, 6.0, 0.0, 1.0, 90, 100, 110, 120),
+            ),
+            indices=(0, 1, 2),
+            texture_page=0,
+            blend_mode=native.Spine38BlendMode.MULTIPLY,
+            draw_order=7,
+        ),
+    )
+    fake_library.draw_vertices[0].x = 999.0
+    fake_library.draw_indices[0] = 2
+    assert commands[0].vertices[0].x == 1.0
+    assert commands[0].indices == (0, 1, 2)
+
+
+@pytest.mark.parametrize(
+    ("track", "name", "loop"),
+    [
+        (-1, "idle", True),
+        (256, "idle", True),
+        (0, "", True),
+        (0, "bad\0name", True),
+        (0, "idle", 1),
+    ],
+)
+def test_native_binding_rejects_invalid_playback_arguments_before_native_call(
+    fake_library: FakeLibrary,
+    snapshot: ExternalPetAssetSnapshot,
+    track: int,
+    name: str,
+    loop: object,
+) -> None:
+    native = importlib.import_module("sjtuclaw.infrastructure.spine38_native")
+    port = native.Spine38NativeLibrary(fake_library).create(snapshot)
+
+    with pytest.raises(native.Spine38NativeError) as caught:
+        port.set_animation(track, name, loop)
+
+    assert caught.value.code is native.Spine38NativeCode.INVALID_ARGUMENT
+    assert fake_library.set_animation_calls == []
+
+
+@pytest.mark.parametrize("delta", [-0.01, math.nan, math.inf, True])
+def test_native_binding_rejects_invalid_update_before_native_call(
+    fake_library: FakeLibrary,
+    snapshot: ExternalPetAssetSnapshot,
+    delta: object,
+) -> None:
+    native = importlib.import_module("sjtuclaw.infrastructure.spine38_native")
+    port = native.Spine38NativeLibrary(fake_library).create(snapshot)
+
+    with pytest.raises(native.Spine38NativeError) as caught:
+        port.update(delta)
+
+    assert caught.value.code is native.Spine38NativeCode.INVALID_ARGUMENT
+    assert fake_library.update_calls == []
+
+
+@pytest.mark.parametrize(
+    ("attribute", "value"),
+    [
+        ("draw_count_override", 4097),
+        ("draw_vertex_count_override", 4097),
+        ("draw_index_count_override", 4097),
+        ("draw_texture_page", 1),
+        ("draw_blend_mode", 4),
+        ("draw_order", -1),
+    ],
+)
+def test_native_binding_rejects_invalid_or_unbounded_draw_views(
+    fake_library: FakeLibrary,
+    snapshot: ExternalPetAssetSnapshot,
+    attribute: str,
+    value: int,
+) -> None:
+    native = importlib.import_module("sjtuclaw.infrastructure.spine38_native")
+    setattr(fake_library, attribute, value)
+    port = native.Spine38NativeLibrary(fake_library).create(
+        _snapshot_with_skeleton_size(4097)
+    )
+
+    with pytest.raises(native.Spine38NativeError) as caught:
+        port.draw_commands()
+
+    assert caught.value.code is native.Spine38NativeCode.RUNTIME_FAILURE
+
+
+def test_native_binding_rejects_out_of_range_native_draw_index(
+    fake_library: FakeLibrary,
+    snapshot: ExternalPetAssetSnapshot,
+) -> None:
+    native = importlib.import_module("sjtuclaw.infrastructure.spine38_native")
+    fake_library.draw_indices[2] = 3
+    port = native.Spine38NativeLibrary(fake_library).create(snapshot)
+
+    with pytest.raises(native.Spine38NativeError) as caught:
+        port.draw_commands()
+
+    assert caught.value.code is native.Spine38NativeCode.RUNTIME_FAILURE
 
 
 @pytest.mark.parametrize("path", ["bridge.dll", Path("relative/bridge.dll")])

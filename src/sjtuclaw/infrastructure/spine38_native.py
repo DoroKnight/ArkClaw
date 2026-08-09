@@ -1,4 +1,4 @@
-"""Framework-neutral ctypes boundary for the Spine 3.8 catalog bridge."""
+"""Framework-neutral ctypes boundary for the Spine 3.8 Runtime bridge."""
 
 from __future__ import annotations
 
@@ -17,6 +17,9 @@ _EXPECTED_ABI_VERSION = 1
 # Adapter safety limits bound catalog work even if a loaded DLL is corrupt.
 _MAX_CATALOG_ENTRIES = 4096
 _MAX_CATALOG_NAME_BYTES = 4096
+_MAX_DRAW_COMMANDS = 4096
+_MAX_DRAW_ELEMENTS = 4096
+_MAX_TRACK_INDEX = 255
 
 
 class Spine38NativeCode(IntEnum):
@@ -31,6 +34,15 @@ class Spine38NativeCode(IntEnum):
     ABI_MISMATCH = 6
     DLL_PATH_INVALID = 7
     CLOSED = 8
+
+
+class Spine38BlendMode(IntEnum):
+    """Renderer-neutral slot compositing values fixed by the native ABI."""
+
+    NORMAL = 0
+    ADDITIVE = 1
+    MULTIPLY = 2
+    SCREEN = 3
 
 
 class Spine38NativeError(RuntimeError):
@@ -55,6 +67,27 @@ class Spine38Bounds:
     height: float
 
 
+@dataclass(frozen=True, slots=True)
+class Spine38Vertex:
+    x: float
+    y: float
+    u: float
+    v: float
+    r: int
+    g: int
+    b: int
+    a: int
+
+
+@dataclass(frozen=True, slots=True)
+class Spine38DrawCommand:
+    vertices: tuple[Spine38Vertex, ...]
+    indices: tuple[int, ...]
+    texture_page: int
+    blend_mode: Spine38BlendMode
+    draw_order: int
+
+
 class Spine38CatalogNativePort(Protocol):
     def catalog(self) -> tuple[Spine38AnimationInfo, ...]: ...
 
@@ -65,12 +98,45 @@ class Spine38CatalogNativePort(Protocol):
     def close(self) -> None: ...
 
 
+class Spine38NativePort(Spine38CatalogNativePort, Protocol):
+    def set_animation(self, track: int, name: str, loop: bool) -> None: ...
+
+    def update(self, delta_seconds: float) -> None: ...
+
+    def draw_commands(self) -> tuple[Spine38DrawCommand, ...]: ...
+
+
 class _SjtuclawSpine38Bounds(ctypes.Structure):
     _fields_ = [
         ("x", ctypes.c_float),
         ("y", ctypes.c_float),
         ("width", ctypes.c_float),
         ("height", ctypes.c_float),
+    ]
+
+
+class _SjtuclawSpine38Vertex(ctypes.Structure):
+    _fields_ = [
+        ("x", ctypes.c_float),
+        ("y", ctypes.c_float),
+        ("u", ctypes.c_float),
+        ("v", ctypes.c_float),
+        ("r", ctypes.c_uint8),
+        ("g", ctypes.c_uint8),
+        ("b", ctypes.c_uint8),
+        ("a", ctypes.c_uint8),
+    ]
+
+
+class _SjtuclawSpine38DrawView(ctypes.Structure):
+    _fields_ = [
+        ("vertices", ctypes.POINTER(_SjtuclawSpine38Vertex)),
+        ("vertex_count", ctypes.c_size_t),
+        ("indices", ctypes.POINTER(ctypes.c_uint32)),
+        ("index_count", ctypes.c_size_t),
+        ("texture_page", ctypes.c_uint32),
+        ("blend_mode", ctypes.c_uint32),
+        ("draw_order", ctypes.c_int32),
     ]
 
 
@@ -92,6 +158,10 @@ class _NativeLibrary(Protocol):
     sjtuclaw_spine38_skin_name_size: _NativeFunction
     sjtuclaw_spine38_skin_info: _NativeFunction
     sjtuclaw_spine38_setup_bounds: _NativeFunction
+    sjtuclaw_spine38_set_animation: _NativeFunction
+    sjtuclaw_spine38_update: _NativeFunction
+    sjtuclaw_spine38_draw_count: _NativeFunction
+    sjtuclaw_spine38_draw_view: _NativeFunction
 
 
 class Spine38NativeLibrary:
@@ -120,7 +190,7 @@ class Spine38NativeLibrary:
             raise Spine38NativeError(Spine38NativeCode.DLL_PATH_INVALID) from None
         return cls(library)
 
-    def create(self, snapshot: ExternalPetAssetSnapshot) -> Spine38CatalogNativePort:
+    def create(self, snapshot: ExternalPetAssetSnapshot) -> Spine38NativePort:
         """Create a handle while retaining input buffers through the native call."""
 
         skeleton, atlas = self._validated_create_bytes(snapshot)
@@ -191,6 +261,28 @@ class Spine38NativeLibrary:
             ctypes.POINTER(_SjtuclawSpine38Bounds),
         ]
         library.sjtuclaw_spine38_setup_bounds.restype = ctypes.c_int
+        library.sjtuclaw_spine38_set_animation.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_uint32,
+            ctypes.POINTER(ctypes.c_char),
+            ctypes.c_size_t,
+            ctypes.c_uint8,
+        ]
+        library.sjtuclaw_spine38_set_animation.restype = ctypes.c_int
+        library.sjtuclaw_spine38_update.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_float,
+        ]
+        library.sjtuclaw_spine38_update.restype = ctypes.c_int
+        library.sjtuclaw_spine38_draw_count.argtypes = [ctypes.c_void_p]
+        library.sjtuclaw_spine38_draw_count.restype = ctypes.c_size_t
+        library.sjtuclaw_spine38_draw_view.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_size_t,
+            ctypes.POINTER(_SjtuclawSpine38DrawView),
+            ctypes.c_size_t,
+        ]
+        library.sjtuclaw_spine38_draw_view.restype = ctypes.c_int
 
     @staticmethod
     def _validated_create_bytes(snapshot: ExternalPetAssetSnapshot) -> tuple[bytes, bytes]:
@@ -221,6 +313,8 @@ class _Spine38CatalogNativeHandle:
         self._handle = handle
         self._catalog_entry_limit = min(_MAX_CATALOG_ENTRIES, skeleton_size)
         self._catalog_name_limit = min(_MAX_CATALOG_NAME_BYTES, skeleton_size)
+        self._draw_command_limit = min(_MAX_DRAW_COMMANDS, skeleton_size)
+        self._draw_element_limit = min(_MAX_DRAW_ELEMENTS, skeleton_size)
         self._lock = threading.RLock()
         self._closed = False
         self._finalizer = weakref.finalize(
@@ -273,6 +367,70 @@ class _Spine38CatalogNativeHandle:
                 raise Spine38NativeError(Spine38NativeCode.RUNTIME_FAILURE)
             return Spine38Bounds(*values)
 
+    def set_animation(self, track: int, name: str, loop: bool) -> None:
+        with self._lock:
+            handle = self._require_open()
+            if (
+                isinstance(track, bool)
+                or not isinstance(track, int)
+                or track < 0
+                or track > _MAX_TRACK_INDEX
+                or not isinstance(name, str)
+                or not name
+                or "\0" in name
+                or type(loop) is not bool
+            ):
+                raise Spine38NativeError(Spine38NativeCode.INVALID_ARGUMENT)
+            try:
+                encoded_name = name.encode("utf-8")
+            except UnicodeEncodeError:
+                raise Spine38NativeError(Spine38NativeCode.INVALID_ARGUMENT) from None
+            if not encoded_name or len(encoded_name) > self._catalog_name_limit:
+                raise Spine38NativeError(Spine38NativeCode.INVALID_ARGUMENT)
+            try:
+                name_buffer = (ctypes.c_char * len(encoded_name)).from_buffer_copy(
+                    encoded_name
+                )
+            except (MemoryError, OverflowError):
+                raise Spine38NativeError(Spine38NativeCode.RUNTIME_FAILURE) from None
+            _require_ok(
+                self._library.sjtuclaw_spine38_set_animation(
+                    handle,
+                    track,
+                    name_buffer,
+                    len(encoded_name),
+                    int(loop),
+                )
+            )
+
+    def update(self, delta_seconds: float) -> None:
+        with self._lock:
+            handle = self._require_open()
+            if isinstance(delta_seconds, bool) or not isinstance(
+                delta_seconds, (int, float)
+            ):
+                raise Spine38NativeError(Spine38NativeCode.INVALID_ARGUMENT)
+            value = float(delta_seconds)
+            if not math.isfinite(value) or value < 0.0:
+                raise Spine38NativeError(Spine38NativeCode.INVALID_ARGUMENT)
+            narrowed = ctypes.c_float(value).value
+            if not math.isfinite(narrowed) or narrowed < 0.0:
+                raise Spine38NativeError(Spine38NativeCode.INVALID_ARGUMENT)
+            _require_ok(self._library.sjtuclaw_spine38_update(handle, narrowed))
+
+    def draw_commands(self) -> tuple[Spine38DrawCommand, ...]:
+        with self._lock:
+            handle = self._require_open()
+            count = _bounded_native_size(
+                self._library.sjtuclaw_spine38_draw_count(handle),
+                minimum=0,
+                maximum=self._draw_command_limit,
+            )
+            try:
+                return tuple(self._draw_command(handle, index) for index in range(count))
+            except (MemoryError, OverflowError):
+                raise Spine38NativeError(Spine38NativeCode.RUNTIME_FAILURE) from None
+
     def close(self) -> None:
         with self._lock:
             if self._closed:
@@ -322,6 +480,71 @@ class _Spine38CatalogNativeHandle:
             )
         )
         return _decode_name(name_buffer)
+
+    def _draw_command(
+        self,
+        handle: ctypes.c_void_p,
+        index: int,
+    ) -> Spine38DrawCommand:
+        raw_view = _SjtuclawSpine38DrawView()
+        _require_ok(
+            self._library.sjtuclaw_spine38_draw_view(
+                handle,
+                index,
+                ctypes.byref(raw_view),
+                ctypes.sizeof(raw_view),
+            )
+        )
+        vertex_count = _bounded_native_size(
+            raw_view.vertex_count,
+            minimum=1,
+            maximum=self._draw_element_limit,
+        )
+        index_count = _bounded_native_size(
+            raw_view.index_count,
+            minimum=3,
+            maximum=self._draw_element_limit,
+        )
+        if (
+            not raw_view.vertices
+            or not raw_view.indices
+            or index_count % 3 != 0
+            or raw_view.texture_page != 0
+            or raw_view.draw_order < 0
+            or raw_view.draw_order > self._draw_element_limit
+        ):
+            raise Spine38NativeError(Spine38NativeCode.RUNTIME_FAILURE)
+        try:
+            blend_mode = Spine38BlendMode(raw_view.blend_mode)
+            vertices = tuple(
+                Spine38Vertex(
+                    float(raw_view.vertices[item].x),
+                    float(raw_view.vertices[item].y),
+                    float(raw_view.vertices[item].u),
+                    float(raw_view.vertices[item].v),
+                    int(raw_view.vertices[item].r),
+                    int(raw_view.vertices[item].g),
+                    int(raw_view.vertices[item].b),
+                    int(raw_view.vertices[item].a),
+                )
+                for item in range(vertex_count)
+            )
+            indices = tuple(int(raw_view.indices[item]) for item in range(index_count))
+        except (MemoryError, OverflowError, ValueError):
+            raise Spine38NativeError(Spine38NativeCode.RUNTIME_FAILURE) from None
+        if not all(
+            math.isfinite(value)
+            for vertex in vertices
+            for value in (vertex.x, vertex.y, vertex.u, vertex.v)
+        ) or any(item < 0 or item >= vertex_count for item in indices):
+            raise Spine38NativeError(Spine38NativeCode.RUNTIME_FAILURE)
+        return Spine38DrawCommand(
+            vertices=vertices,
+            indices=indices,
+            texture_page=int(raw_view.texture_page),
+            blend_mode=blend_mode,
+            draw_order=int(raw_view.draw_order),
+        )
 
     def _require_open(self) -> ctypes.c_void_p:
         if self._closed:

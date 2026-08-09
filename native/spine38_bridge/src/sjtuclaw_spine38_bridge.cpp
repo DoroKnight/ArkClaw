@@ -3,13 +3,21 @@
 #include <spine/Animation.h>
 #include <spine/AnimationState.h>
 #include <spine/AnimationStateData.h>
+#include <spine/Attachment.h>
 #include <spine/Atlas.h>
 #include <spine/AtlasAttachmentLoader.h>
+#include <spine/Bone.h>
+#include <spine/ClippingAttachment.h>
 #include <spine/Extension.h>
+#include <spine/MeshAttachment.h>
+#include <spine/RegionAttachment.h>
 #include <spine/Skeleton.h>
 #include <spine/SkeletonBinary.h>
+#include <spine/SkeletonClipping.h>
 #include <spine/SkeletonData.h>
 #include <spine/Skin.h>
+#include <spine/Slot.h>
+#include <spine/SlotData.h>
 #include <spine/TextureLoader.h>
 
 #include <cctype>
@@ -181,7 +189,53 @@ SjtuclawSpine38Code copy_runtime_string(
     return SJTUCLAW_SPINE38_OK;
 }
 
+uint8_t color_byte(float value) noexcept {
+    if (!std::isfinite(value)) {
+        return 0u;
+    }
+    if (value <= 0.0f) {
+        return 0u;
+    }
+    if (value >= 1.0f) {
+        return 255u;
+    }
+    return static_cast<uint8_t>(value * 255.0f);
+}
+
+bool map_blend_mode(spine::BlendMode mode, uint32_t& output) noexcept {
+    switch (mode) {
+    case spine::BlendMode_Normal:
+        output = SJTUCLAW_SPINE38_BLEND_NORMAL;
+        return true;
+    case spine::BlendMode_Additive:
+        output = SJTUCLAW_SPINE38_BLEND_ADDITIVE;
+        return true;
+    case spine::BlendMode_Multiply:
+        output = SJTUCLAW_SPINE38_BLEND_MULTIPLY;
+        return true;
+    case spine::BlendMode_Screen:
+        output = SJTUCLAW_SPINE38_BLEND_SCREEN;
+        return true;
+    default:
+        return false;
+    }
+}
+
 }  // namespace
+
+struct OwnedDrawCommand {
+    std::vector<SjtuclawSpine38Vertex> vertices;
+    std::vector<uint32_t> indices;
+    uint32_t texture_page = 0u;
+    uint32_t blend_mode = SJTUCLAW_SPINE38_BLEND_NORMAL;
+    int32_t draw_order = 0;
+
+    SjtuclawSpine38DrawView view() const noexcept {
+        return SjtuclawSpine38DrawView{
+            vertices.data(), vertices.size(), indices.data(), indices.size(),
+            texture_page, blend_mode, draw_order};
+    }
+};
 
 struct SjtuclawSpine38Handle {
     std::unique_ptr<CatalogTextureLoader> texture_loader;
@@ -192,6 +246,7 @@ struct SjtuclawSpine38Handle {
     std::unique_ptr<spine::Skeleton> skeleton;
     std::unique_ptr<spine::AnimationStateData> animation_state_data;
     std::unique_ptr<spine::AnimationState> animation_state;
+    std::vector<OwnedDrawCommand> draw_commands;
 };
 
 uint32_t sjtuclaw_spine38_abi_version(void) {
@@ -442,6 +497,241 @@ SjtuclawSpine38Code sjtuclaw_spine38_setup_bounds(
         const SjtuclawSpine38Bounds bounds{
             data.getX(), data.getY(), data.getWidth(), data.getHeight()};
         *out_bounds = bounds;
+        return SJTUCLAW_SPINE38_OK;
+    } catch (...) {
+        return SJTUCLAW_SPINE38_RUNTIME_FAILURE;
+    }
+}
+
+SjtuclawSpine38Code sjtuclaw_spine38_set_animation(
+    SjtuclawSpine38Handle* handle,
+    uint32_t track,
+    const char* name_utf8,
+    size_t name_size,
+    uint8_t loop) {
+    try {
+        constexpr uint32_t max_track = 255u;
+        if (handle == nullptr || name_utf8 == nullptr || name_size == 0u ||
+            name_size > static_cast<size_t>(std::numeric_limits<int>::max()) ||
+            track > max_track || loop > 1u ||
+            std::memchr(name_utf8, '\0', name_size) != nullptr) {
+            return SJTUCLAW_SPINE38_INVALID_ARGUMENT;
+        }
+
+        spine::Animation* selected = nullptr;
+        for (spine::Animation* animation : handle->animation_catalog) {
+            if (animation != nullptr && animation->getName().length() == name_size &&
+                std::memcmp(
+                    animation->getName().buffer(), name_utf8, name_size) == 0) {
+                selected = animation;
+                break;
+            }
+        }
+        if (selected == nullptr) {
+            return SJTUCLAW_SPINE38_ANIMATION_NOT_FOUND;
+        }
+
+        if (handle->animation_state->setAnimation(
+                static_cast<size_t>(track), selected, loop != 0u) == nullptr) {
+            return SJTUCLAW_SPINE38_RUNTIME_FAILURE;
+        }
+        handle->draw_commands.clear();
+        return SJTUCLAW_SPINE38_OK;
+    } catch (...) {
+        return SJTUCLAW_SPINE38_RUNTIME_FAILURE;
+    }
+}
+
+SjtuclawSpine38Code sjtuclaw_spine38_update(
+    SjtuclawSpine38Handle* handle,
+    float delta_seconds) {
+    try {
+        if (handle == nullptr || !std::isfinite(delta_seconds) ||
+            delta_seconds < 0.0f) {
+            return SJTUCLAW_SPINE38_INVALID_ARGUMENT;
+        }
+        handle->draw_commands.clear();
+        handle->animation_state->update(delta_seconds);
+        handle->animation_state->apply(*handle->skeleton);
+        handle->skeleton->updateWorldTransform();
+
+        std::vector<OwnedDrawCommand> next_commands;
+        auto& draw_order = handle->skeleton->getDrawOrder();
+        next_commands.reserve(draw_order.size());
+        spine::SkeletonClipping clipper;
+        for (size_t order = 0u; order < draw_order.size(); ++order) {
+            spine::Slot* slot = draw_order[order];
+            if (slot == nullptr) {
+                return SJTUCLAW_SPINE38_RUNTIME_FAILURE;
+            }
+            spine::Attachment* attachment = slot->getAttachment();
+            if (attachment == nullptr) {
+                clipper.clipEnd(*slot);
+                continue;
+            }
+            if (attachment->getRTTI().isExactly(
+                    spine::ClippingAttachment::rtti)) {
+                clipper.clipStart(
+                    *slot, static_cast<spine::ClippingAttachment*>(attachment));
+                continue;
+            }
+            std::vector<float> world_vertices;
+            spine::Vector<float>* uvs = nullptr;
+            std::vector<unsigned short> source_indices;
+            spine::Color* attachment_color = nullptr;
+            void* renderer_object = nullptr;
+            if (attachment->getRTTI().isExactly(
+                    spine::RegionAttachment::rtti)) {
+                auto* region = static_cast<spine::RegionAttachment*>(attachment);
+                world_vertices.resize(8u);
+                region->computeWorldVertices(
+                    slot->getBone(), world_vertices.data(), 0u, 2u);
+                uvs = &region->getUVs();
+                source_indices = {0u, 1u, 2u, 2u, 3u, 0u};
+                attachment_color = &region->getColor();
+                renderer_object = region->getRendererObject();
+            } else if (attachment->getRTTI().isExactly(
+                           spine::MeshAttachment::rtti)) {
+                auto* mesh = static_cast<spine::MeshAttachment*>(attachment);
+                const int world_vertices_length =
+                    mesh->getWorldVerticesLength();
+                if (world_vertices_length <= 0 ||
+                    (world_vertices_length & 1) != 0) {
+                    return SJTUCLAW_SPINE38_RUNTIME_FAILURE;
+                }
+                world_vertices.resize(
+                    static_cast<size_t>(world_vertices_length));
+                mesh->computeWorldVertices(
+                    *slot, 0, world_vertices_length, world_vertices.data(),
+                    0u, 2u);
+                uvs = &mesh->getUVs();
+                auto& mesh_triangles = mesh->getTriangles();
+                source_indices.reserve(mesh_triangles.size());
+                for (size_t index = 0u; index < mesh_triangles.size(); ++index) {
+                    source_indices.push_back(mesh_triangles[index]);
+                }
+                attachment_color = &mesh->getColor();
+                renderer_object = mesh->getRendererObject();
+            } else {
+                return SJTUCLAW_SPINE38_RUNTIME_FAILURE;
+            }
+
+            auto* atlas_region = static_cast<spine::AtlasRegion*>(
+                renderer_object);
+            if (atlas_region == nullptr || atlas_region->page == nullptr ||
+                handle->atlas->getPages().size() != 1u ||
+                atlas_region->page != handle->atlas->getPages()[0]) {
+                return SJTUCLAW_SPINE38_RUNTIME_FAILURE;
+            }
+            if (uvs == nullptr || uvs->size() != world_vertices.size() ||
+                world_vertices.empty() || source_indices.empty() ||
+                (source_indices.size() % 3u) != 0u ||
+                order > static_cast<size_t>(
+                            std::numeric_limits<int32_t>::max())) {
+                return SJTUCLAW_SPINE38_RUNTIME_FAILURE;
+            }
+
+            const float* output_vertices = world_vertices.data();
+            const float* output_uvs = uvs->buffer();
+            const unsigned short* output_indices = source_indices.data();
+            size_t output_vertex_values = world_vertices.size();
+            size_t output_index_count = source_indices.size();
+            if (clipper.isClipping()) {
+                clipper.clipTriangles(
+                    world_vertices.data(), source_indices.data(),
+                    source_indices.size(), uvs->buffer(), 2u);
+                output_vertices = clipper.getClippedVertices().buffer();
+                output_uvs = clipper.getClippedUVs().buffer();
+                output_indices = clipper.getClippedTriangles().buffer();
+                output_vertex_values =
+                    clipper.getClippedVertices().size();
+                output_index_count = clipper.getClippedTriangles().size();
+                if (clipper.getClippedUVs().size() != output_vertex_values) {
+                    return SJTUCLAW_SPINE38_RUNTIME_FAILURE;
+                }
+                if (output_vertex_values == 0u && output_index_count == 0u) {
+                    clipper.clipEnd(*slot);
+                    continue;
+                }
+            }
+            if (output_vertices == nullptr || output_uvs == nullptr ||
+                output_indices == nullptr || output_vertex_values == 0u ||
+                (output_vertex_values % 2u) != 0u ||
+                output_index_count == 0u || (output_index_count % 3u) != 0u) {
+                return SJTUCLAW_SPINE38_RUNTIME_FAILURE;
+            }
+
+            const spine::Color& skeleton_color = handle->skeleton->getColor();
+            const spine::Color& slot_color = slot->getColor();
+            const uint8_t r = color_byte(
+                skeleton_color.r * slot_color.r * attachment_color->r);
+            const uint8_t g = color_byte(
+                skeleton_color.g * slot_color.g * attachment_color->g);
+            const uint8_t b = color_byte(
+                skeleton_color.b * slot_color.b * attachment_color->b);
+            const uint8_t a = color_byte(
+                skeleton_color.a * slot_color.a * attachment_color->a);
+
+            OwnedDrawCommand command;
+            if (!map_blend_mode(
+                    slot->getData().getBlendMode(), command.blend_mode)) {
+                return SJTUCLAW_SPINE38_RUNTIME_FAILURE;
+            }
+            command.draw_order = static_cast<int32_t>(order);
+            const size_t vertex_count = output_vertex_values / 2u;
+            command.vertices.reserve(vertex_count);
+            for (size_t vertex = 0u; vertex < vertex_count; ++vertex) {
+                const size_t offset = vertex * 2u;
+                if (!std::isfinite(output_vertices[offset]) ||
+                    !std::isfinite(output_vertices[offset + 1u]) ||
+                    !std::isfinite(output_uvs[offset]) ||
+                    !std::isfinite(output_uvs[offset + 1u])) {
+                    return SJTUCLAW_SPINE38_RUNTIME_FAILURE;
+                }
+                command.vertices.push_back(SjtuclawSpine38Vertex{
+                    output_vertices[offset], output_vertices[offset + 1u],
+                    output_uvs[offset], output_uvs[offset + 1u], r, g, b, a});
+            }
+            command.indices.reserve(output_index_count);
+            for (size_t index = 0u; index < output_index_count; ++index) {
+                if (output_indices[index] >= vertex_count) {
+                    return SJTUCLAW_SPINE38_RUNTIME_FAILURE;
+                }
+                command.indices.push_back(
+                    static_cast<uint32_t>(output_indices[index]));
+            }
+            next_commands.push_back(std::move(command));
+            clipper.clipEnd(*slot);
+        }
+        clipper.clipEnd();
+        handle->draw_commands = std::move(next_commands);
+        return SJTUCLAW_SPINE38_OK;
+    } catch (...) {
+        return SJTUCLAW_SPINE38_RUNTIME_FAILURE;
+    }
+}
+
+size_t sjtuclaw_spine38_draw_count(
+    const SjtuclawSpine38Handle* handle) {
+    try {
+        return handle == nullptr ? 0u : handle->draw_commands.size();
+    } catch (...) {
+        return 0u;
+    }
+}
+
+SjtuclawSpine38Code sjtuclaw_spine38_draw_view(
+    const SjtuclawSpine38Handle* handle,
+    size_t index,
+    SjtuclawSpine38DrawView* out_view,
+    size_t view_capacity) {
+    try {
+        if (handle == nullptr || out_view == nullptr ||
+            view_capacity < sizeof(SjtuclawSpine38DrawView) ||
+            index >= handle->draw_commands.size()) {
+            return SJTUCLAW_SPINE38_INVALID_ARGUMENT;
+        }
+        *out_view = handle->draw_commands[index].view();
         return SJTUCLAW_SPINE38_OK;
     } catch (...) {
         return SJTUCLAW_SPINE38_RUNTIME_FAILURE;
