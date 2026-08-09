@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import random
+from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QSignalBlocker, Qt, QTimer, Signal
 from PySide6.QtGui import (
@@ -39,15 +40,17 @@ from sjtuclaw.application.pet_state import (
     PetMotionState,
     PetStateTransitionError,
 )
-from sjtuclaw.presentation.qt.autostart_controller import (
-    AutostartUiController,
-)
 from sjtuclaw.presentation.qt.pet_renderer import (
     PetRenderer,
     PetRendererSafeCode,
     PlaceholderPetRenderer,
     SafePetRenderer,
 )
+
+if TYPE_CHECKING:
+    from sjtuclaw.presentation.qt.autostart_controller import (
+        AutostartUiController,
+    )
 
 _PET_WIDTH = 160
 _PET_HEIGHT = 180

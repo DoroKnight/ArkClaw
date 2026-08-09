@@ -68,6 +68,48 @@ class _ManualShutdownBridge(QObject):
     shutdown_finished = Signal(bool, str)
 
 
+def test_pet_window_import_does_not_import_agent_loop() -> None:
+    repository = Path(__file__).resolve().parents[2]
+    environment = os.environ.copy()
+    environment["QT_QPA_PLATFORM"] = "offscreen"
+    environment["PYTHONPATH"] = os.pathsep.join(
+        filter(
+            None,
+            (str(repository / "src"), environment.get("PYTHONPATH", "")),
+        )
+    )
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import sys; "
+                "import sjtuclaw.presentation.qt.pet_window; "
+                "print('agent_loop_imported=' + "
+                "str('sjtuclaw.application.agent_loop' in sys.modules).lower()); "
+                "from sjtuclaw.presentation.qt import QtRuntimeBridge; "
+                "print('runtime_bridge=' + QtRuntimeBridge.__module__ + '.' + "
+                "QtRuntimeBridge.__name__)"
+            ),
+        ],
+        cwd=repository,
+        env=environment,
+        check=False,
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+
+    assert completed.returncode == 0
+    assert completed.stderr == ""
+    assert completed.stdout == (
+        "agent_loop_imported=false\n"
+        "runtime_bridge=sjtuclaw.presentation.qt.runtime_bridge."
+        "QtRuntimeBridge\n"
+    )
+
+
 class _RecordingMainWindow:
     def __init__(self) -> None:
         self.close_requests = 0
