@@ -20,6 +20,7 @@ from PySide6.QtWidgets import QApplication
 from sjtuclaw.application.pet_geometry import Size
 from sjtuclaw.application.pet_mesh_model import (
     PetMeshBlendMode,
+    PetMeshColor,
     PetMeshDrawCommand,
     PetMeshPoint,
     PetMeshScene,
@@ -32,8 +33,13 @@ from sjtuclaw.presentation.qt.pet_mesh_opengl_renderer import (
     OpenGLMeshSafeCode,
     OpenGLTexturedMeshBackend,
 )
-from sjtuclaw.presentation.qt.pet_mesh_spike import generate_mesh_spike_scene
+from sjtuclaw.presentation.qt.pet_mesh_spike import (
+    SoftwareTexturedMeshRenderer,
+    generate_mesh_spike_scene,
+)
 from sjtuclaw.presentation.qt.pet_renderer import SafePetRenderer
+
+_WHITE = PetMeshColor()
 
 
 @pytest.fixture(scope="module")
@@ -151,14 +157,15 @@ def _blend_quad(
     texture_id: str,
     blend_mode: PetMeshBlendMode,
     draw_order: int,
+    color: PetMeshColor = _WHITE,
 ) -> PetMeshDrawCommand:
     return PetMeshDrawCommand(
         texture_id=texture_id,
         vertices=(
-            PetMeshVertex(PetMeshPoint(0.0, 0.0), 0.0, 0.0),
-            PetMeshVertex(PetMeshPoint(8.0, 0.0), 1.0, 0.0),
-            PetMeshVertex(PetMeshPoint(8.0, 8.0), 1.0, 1.0),
-            PetMeshVertex(PetMeshPoint(0.0, 8.0), 0.0, 1.0),
+            PetMeshVertex(PetMeshPoint(0.0, 0.0), 0.0, 0.0, color),
+            PetMeshVertex(PetMeshPoint(8.0, 0.0), 1.0, 0.0, color),
+            PetMeshVertex(PetMeshPoint(8.0, 8.0), 1.0, 1.0, color),
+            PetMeshVertex(PetMeshPoint(0.0, 8.0), 0.0, 1.0, color),
         ),
         triangle_indices=(0, 1, 2, 0, 2, 3),
         draw_order=draw_order,
@@ -220,6 +227,44 @@ def _render_blend_probe() -> dict[str, list[int]]:
             ]
         finally:
             backend.close()
+    faded_premultiplied_scene = PetMeshScene(
+        width=8,
+        height=8,
+        foot_baseline_y=7.0,
+        textures=(background, premultiplied),
+        draw_commands=(
+            _blend_quad("background", PetMeshBlendMode.NORMAL_STRAIGHT, 0),
+            _blend_quad(
+                "premultiplied",
+                PetMeshBlendMode.NORMAL_PREMULTIPLIED,
+                1,
+                PetMeshColor(alpha=128),
+            ),
+        ),
+    )
+    backend = OpenGLTexturedMeshBackend(faded_premultiplied_scene)
+    software = SoftwareTexturedMeshRenderer()
+    try:
+        backend.initialize(Size(8, 8))
+        gpu_color = backend.render_scene().pixelColor(4, 4)
+        software_color = software.render_scene(
+            faded_premultiplied_scene
+        ).pixelColor(4, 4)
+        observed["PMA_VERTEX_ALPHA_GPU"] = [
+            gpu_color.red(),
+            gpu_color.green(),
+            gpu_color.blue(),
+            gpu_color.alpha(),
+        ]
+        observed["PMA_VERTEX_ALPHA_SOFTWARE"] = [
+            software_color.red(),
+            software_color.green(),
+            software_color.blue(),
+            software_color.alpha(),
+        ]
+    finally:
+        software.close()
+        backend.close()
     del application
     return observed
 
@@ -249,6 +294,12 @@ def test_real_backend_applies_renderer_neutral_blend_modes_per_command() -> None
     assert completed.returncode == 0, completed.stderr
     assert completed.stderr == ""
     observed = json.loads(completed.stdout)
+    pma_gpu = observed.pop("PMA_VERTEX_ALPHA_GPU")
+    pma_software = observed.pop("PMA_VERTEX_ALPHA_SOFTWARE")
+    assert all(
+        abs(actual - reference) <= 2
+        for actual, reference in zip(pma_gpu, pma_software, strict=True)
+    )
     expected = {
         "NORMAL_STRAIGHT": [120, 90, 85, 255],
         "NORMAL_PREMULTIPLIED": [120, 90, 85, 255],

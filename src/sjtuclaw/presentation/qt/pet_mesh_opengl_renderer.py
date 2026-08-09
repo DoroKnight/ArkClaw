@@ -211,8 +211,12 @@ void main() { gl_Position = vec4(inPosition, 0.0, 1.0); uv = inUv; color = inCol
 in vec2 uv;
 in vec4 color;
 uniform sampler2D sourceTexture;
+uniform int associateVertexAlpha;
 out vec4 fragmentColor;
-void main() { fragmentColor = texture(sourceTexture, uv) * color; }
+void main() {
+    fragmentColor = texture(sourceTexture, uv) * color;
+    if (associateVertexAlpha != 0) { fragmentColor.rgb *= color.a; }
+}
 """
 
     def __init__(
@@ -678,6 +682,13 @@ void main() { fragmentColor = texture(sourceTexture, uv) * color; }
         texture = scene.textures[command.source.texture_id].texture
         program.bind()
         program.setUniformValue(program.uniformLocation(b"sourceTexture"), 0)
+        program.setUniformValue(
+            program.uniformLocation(b"associateVertexAlpha"),
+            int(
+                command.source.blend_mode
+                is PetMeshBlendMode.NORMAL_PREMULTIPLIED
+            ),
+        )
         texture.bind(0)
         clip = command.clip_geometry
         if clip is not None:

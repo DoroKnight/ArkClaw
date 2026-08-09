@@ -89,6 +89,12 @@ All five modes use `GL_ONE` and `GL_ONE_MINUS_SRC_ALPHA` for alpha, yielding
 \(A_s + A_d(1 - A_s)\). The backend calls `glBlendFuncSeparate` for every
 draw command, so one command's mode cannot leak into the next command.
 
+For normal premultiplied commands, the sampled texture RGB is already
+associated with texture alpha. The fragment shader multiplies that RGB by
+vertex RGB and then by vertex alpha exactly once; it does not multiply by
+texture alpha again. This keeps translucent vertex/slot fades associated while
+the matching alpha output remains sampled texture alpha times vertex alpha.
+
 ## DPI and transparent-window composition
 
 The mesh remains in logical coordinates. The FBO dimensions are
