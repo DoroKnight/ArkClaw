@@ -49,6 +49,8 @@ class PetActivityState(Enum):
     REMINDING = "reminding"
     CONFUSED = "confused"
     ANGRY = "angry"
+    SPECIAL = "special"
+    INTERACT = "interact"
 
 
 class PetFacing(Enum):
@@ -119,6 +121,8 @@ _STATE_PRIORITIES: dict[
     PetActivityState.REMINDING: 50,
     PetActivityState.CONFUSED: 30,
     PetActivityState.ANGRY: 30,
+    PetActivityState.SPECIAL: 30,
+    PetActivityState.INTERACT: 30,
 }
 
 
