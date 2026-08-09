@@ -164,6 +164,12 @@ if tool == "cmake":
     raise SystemExit(0)
 
 
+if tool == "ctest":
+    print("fake_ctest_stdout")
+    print("fake_ctest_stderr", file=sys.stderr)
+    raise SystemExit(int(os.environ.get("FAKE_CTEST_EXIT_CODE", "0")))
+
+
 raise SystemExit(91)
 """
 
@@ -201,13 +207,18 @@ def create_fake_tools(
     *,
     include_git: bool = True,
     include_cmake: bool = True,
+    include_ctest: bool = False,
 ) -> tuple[Path, Path]:
     tools = parent / "fake-tools"
     tools.mkdir()
     driver = tools / "fake_native_tool.py"
     driver.write_text(textwrap.dedent(FAKE_NATIVE_TOOL), encoding="utf-8")
 
-    for name, included in (("git", include_git), ("cmake", include_cmake)):
+    for name, included in (
+        ("git", include_git),
+        ("cmake", include_cmake),
+        ("ctest", include_ctest),
+    ):
         if not included:
             continue
         shim = tools / f"{name}.cmd"
@@ -495,3 +506,73 @@ def test_successful_native_stdout_and_stderr_remain_visible(
     assert "fake_git_fetch_stderr" in completed.stderr
     assert "fake_cmake_stdout" in completed.stdout
     assert "fake_cmake_stderr" in completed.stderr
+
+
+def test_run_tests_invokes_ctest_with_selected_configuration(
+    tmp_path: Path,
+) -> None:
+    project = create_wrapper_project(tmp_path)
+    tools, log_path = create_fake_tools(tmp_path, include_ctest=True)
+
+    completed = run_fixture_wrapper(
+        project,
+        tools,
+        log_path,
+        "-Configuration",
+        "Debug",
+        "-RunTests",
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    ctest_calls = [
+        entry["arguments"]
+        for entry in read_fake_tool_log(log_path)
+        if entry["tool"] == "ctest"
+    ]
+    assert ctest_calls == [
+        [
+            "--test-dir",
+            str(project / "build" / "spine38"),
+            "-C",
+            "Debug",
+            "--output-on-failure",
+        ]
+    ]
+    assert "fake_ctest_stdout" in completed.stdout
+    assert "fake_ctest_stderr" in completed.stderr
+    assert completed.stdout.splitlines()[-1] == "spine38_build_complete"
+
+
+def test_run_tests_maps_ctest_failure_to_fixed_code(tmp_path: Path) -> None:
+    project = create_wrapper_project(tmp_path)
+    tools, log_path = create_fake_tools(tmp_path, include_ctest=True)
+
+    completed = run_fixture_wrapper(
+        project,
+        tools,
+        log_path,
+        "-RunTests",
+        extra_environment={"FAKE_CTEST_EXIT_CODE": "37"},
+    )
+
+    assert completed.returncode == 1
+    assert "fake_ctest_stdout" in completed.stdout
+    assert "fake_ctest_stderr" in completed.stderr
+    assert completed.stdout.splitlines()[-1] == "spine38_test_failed"
+    assert "spine38_build_complete" not in completed.stdout
+
+
+def test_run_tests_reports_missing_ctest_with_fixed_code(tmp_path: Path) -> None:
+    project = create_wrapper_project(tmp_path)
+    tools, log_path = create_fake_tools(tmp_path)
+
+    completed = run_fixture_wrapper(
+        project,
+        tools,
+        log_path,
+        "-RunTests",
+    )
+
+    assert completed.returncode == 1
+    assert completed.stdout.splitlines()[-1] == "spine38_ctest_missing"
+    assert "spine38_build_complete" not in completed.stdout

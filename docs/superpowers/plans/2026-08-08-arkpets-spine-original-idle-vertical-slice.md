@@ -229,7 +229,7 @@ git commit -m "feat: retain verified spine asset bytes"
 
 - [ ] **Step 1: Define the failing CTest contract**
 
-The character-asset-free contract must assert ABI version `1`, null/empty input rejection, idempotent destroy, no C++ exception crossing the ABI, buffer-capacity rejection, and deterministic fixed error values. Exact catalog values are covered by Task 5's opt-in real-asset integration test.
+The character-asset-free contract must assert ABI version `1`, null/empty input rejection, NULL-safe native destroy with exactly-once non-null destroy, no C++ exception crossing the ABI, buffer-capacity rejection, and deterministic fixed error values. Task 4's owning Python `close()` is idempotent; the fixed raw-pointer native destroy is not. Exact catalog values are covered by Task 5's opt-in real-asset integration test.
 
 ```cpp
 enum SjtuclawSpine38Code {

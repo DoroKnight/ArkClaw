@@ -4,7 +4,8 @@ param(
     [string]$Configuration = "Release",
     [string]$SpineSource = "",
     [switch]$PrintSourceManifest,
-    [switch]$ValidateSourceOnly
+    [switch]$ValidateSourceOnly,
+    [switch]$RunTests
 )
 
 $ErrorActionPreference = "Stop"
@@ -177,6 +178,9 @@ if ($ValidateSourceOnly) {
 }
 
 Require-NativeCommand -Name "cmake" -FailureCode "spine38_cmake_missing"
+if ($RunTests) {
+    Require-NativeCommand -Name "ctest" -FailureCode "spine38_ctest_missing"
+}
 [System.IO.Directory]::CreateDirectory($BuildRoot) | Out-Null
 
 if (-not $HasExplicitSpineSource -and -not (Test-Path -LiteralPath $SpineSource)) {
@@ -296,6 +300,13 @@ if (-not (Test-Path -LiteralPath $BridgeDll -PathType Leaf)) {
 }
 if (-not (Test-Path -LiteralPath $CopiedLicense -PathType Leaf)) {
     Exit-WithCode -Code "spine38_build_license_missing" -ExitCode 1
+}
+
+if ($RunTests) {
+    Write-Output "spine38_test"
+    Invoke-NativeStage -FailureCode "spine38_test_failed" -Command {
+        & ctest --test-dir $BuildRoot -C $Configuration --output-on-failure
+    }
 }
 
 $BuildManifest = [ordered]@{

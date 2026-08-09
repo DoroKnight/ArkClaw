@@ -4,12 +4,15 @@
 #include <cstdint>
 #include <cstring>
 #include <iostream>
+#include <limits>
 #include <string>
 #include <vector>
 
 namespace {
 
 int failures = 0;
+
+constexpr char animation_name_fixture[] = "idle-\xE7\x8C\xAB";
 
 void check(bool condition, const char* expression, int line) {
     if (!condition) {
@@ -90,7 +93,7 @@ std::vector<uint8_t> make_synthetic_skeleton() {
 
     append_varint(bytes, 0);  // events
     append_varint(bytes, 1);  // animations
-    append_string(bytes, "idle-fixture");
+    append_string(bytes, animation_name_fixture);
 
     append_varint(bytes, 0);  // slot timelines
     append_varint(bytes, 1);  // bone timeline groups
@@ -134,6 +137,7 @@ void check_invalid_inputs_do_not_escape_exceptions() {
     SjtuclawSpine38Handle* handle = reinterpret_cast<SjtuclawSpine38Handle*>(
         static_cast<uintptr_t>(1));
     const auto skeleton = make_synthetic_skeleton();
+    const uint8_t nonnull_byte = 0;
 
     try {
         CHECK(sjtuclaw_spine38_create(
@@ -141,7 +145,23 @@ void check_invalid_inputs_do_not_escape_exceptions() {
               SJTUCLAW_SPINE38_INVALID_ARGUMENT);
         CHECK(handle == nullptr);
 
-        const uint8_t nonnull_byte = 0;
+        const size_t oversized_span =
+            static_cast<size_t>(std::numeric_limits<int>::max()) + 1u;
+        handle = reinterpret_cast<SjtuclawSpine38Handle*>(
+            static_cast<uintptr_t>(1));
+        CHECK(sjtuclaw_spine38_create(
+                  &nonnull_byte, oversized_span, atlas_fixture,
+                  sizeof(atlas_fixture) - 1u, &handle) ==
+              SJTUCLAW_SPINE38_INVALID_ARGUMENT);
+        CHECK(handle == nullptr);
+        handle = reinterpret_cast<SjtuclawSpine38Handle*>(
+            static_cast<uintptr_t>(1));
+        CHECK(sjtuclaw_spine38_create(
+                  skeleton.data(), skeleton.size(), atlas_fixture,
+                  oversized_span, &handle) ==
+              SJTUCLAW_SPINE38_INVALID_ARGUMENT);
+        CHECK(handle == nullptr);
+
         CHECK(sjtuclaw_spine38_create(
                   &nonnull_byte, 0, atlas_fixture,
                   sizeof(atlas_fixture) - 1u, &handle) ==
@@ -174,17 +194,24 @@ void check_invalid_inputs_do_not_escape_exceptions() {
         CHECK(sjtuclaw_spine38_skin_count(nullptr) == 0u);
         CHECK(sjtuclaw_spine38_skin_name_size(nullptr, 0) == 0u);
 
-        char name[8] = {};
+        char name[8] = {'#', '#', '#', '#', '#', '#', '#', '#'};
         float duration = -1.0f;
         CHECK(sjtuclaw_spine38_animation_info(
                   nullptr, 0, name, sizeof(name), &duration) ==
               SJTUCLAW_SPINE38_INVALID_ARGUMENT);
+        CHECK(name[0] == '#');
+        CHECK(duration == -1.0f);
         CHECK(sjtuclaw_spine38_skin_info(
                   nullptr, 0, name, sizeof(name)) ==
               SJTUCLAW_SPINE38_INVALID_ARGUMENT);
-        SjtuclawSpine38Bounds bounds{};
+        CHECK(name[0] == '#');
+        SjtuclawSpine38Bounds bounds{-1.0f, -2.0f, -3.0f, -4.0f};
         CHECK(sjtuclaw_spine38_setup_bounds(nullptr, &bounds) ==
               SJTUCLAW_SPINE38_INVALID_ARGUMENT);
+        CHECK(bounds.x == -1.0f);
+        CHECK(bounds.y == -2.0f);
+        CHECK(bounds.width == -3.0f);
+        CHECK(bounds.height == -4.0f);
 
         sjtuclaw_spine38_destroy(nullptr);
         sjtuclaw_spine38_destroy(nullptr);
@@ -207,10 +234,28 @@ void check_synthetic_catalog_and_buffers() {
     CHECK(sjtuclaw_spine38_animation_count(handle) == 1u);
     const size_t animation_capacity =
         sjtuclaw_spine38_animation_name_size(handle, 0);
-    CHECK(animation_capacity == sizeof("idle-fixture"));
+    CHECK(animation_capacity == sizeof(animation_name_fixture));
+
+    float duration = -7.0f;
+    CHECK(sjtuclaw_spine38_animation_info(
+              handle, 0, nullptr, animation_capacity, &duration) ==
+          SJTUCLAW_SPINE38_INVALID_ARGUMENT);
+    CHECK(duration == -7.0f);
+
+    std::vector<char> zero_capacity(animation_capacity, '#');
+    CHECK(sjtuclaw_spine38_animation_info(
+              handle, 0, zero_capacity.data(), 0, &duration) ==
+          SJTUCLAW_SPINE38_INVALID_ARGUMENT);
+    CHECK(zero_capacity.front() == '#');
+    CHECK(duration == -7.0f);
+
+    std::vector<char> null_duration(animation_capacity, '#');
+    CHECK(sjtuclaw_spine38_animation_info(
+              handle, 0, null_duration.data(), null_duration.size(),
+              nullptr) == SJTUCLAW_SPINE38_INVALID_ARGUMENT);
+    CHECK(null_duration.front() == '#');
 
     std::vector<char> too_small(animation_capacity - 1u, '#');
-    float duration = -7.0f;
     CHECK(sjtuclaw_spine38_animation_info(
               handle, 0, too_small.data(), too_small.size(), &duration) ==
           SJTUCLAW_SPINE38_INVALID_ARGUMENT);
@@ -221,19 +266,34 @@ void check_synthetic_catalog_and_buffers() {
     CHECK(sjtuclaw_spine38_animation_info(
               handle, 0, animation_name.data(), animation_name.size(),
               &duration) == SJTUCLAW_SPINE38_OK);
-    CHECK(std::strcmp(animation_name.data(), "idle-fixture") == 0);
+    CHECK(std::memcmp(
+              animation_name.data(), animation_name_fixture,
+              sizeof(animation_name_fixture)) == 0);
+    CHECK(animation_name.back() == '\0');
     CHECK(std::isfinite(duration));
     CHECK(duration == 1.25f);
     CHECK(duration > 0.0f);
 
+    std::vector<char> missing_animation(animation_capacity, '#');
+    duration = -9.0f;
     CHECK(sjtuclaw_spine38_animation_info(
-              handle, 1, animation_name.data(), animation_name.size(),
+              handle, 1, missing_animation.data(), missing_animation.size(),
               &duration) == SJTUCLAW_SPINE38_ANIMATION_NOT_FOUND);
+    CHECK(missing_animation.front() == '#');
+    CHECK(duration == -9.0f);
     CHECK(sjtuclaw_spine38_animation_name_size(handle, 1) == 0u);
 
     CHECK(sjtuclaw_spine38_skin_count(handle) == 1u);
     const size_t skin_capacity = sjtuclaw_spine38_skin_name_size(handle, 0);
     CHECK(skin_capacity == sizeof("fixture-skin"));
+    CHECK(sjtuclaw_spine38_skin_info(
+              handle, 0, nullptr, skin_capacity) ==
+          SJTUCLAW_SPINE38_INVALID_ARGUMENT);
+    std::vector<char> zero_skin_capacity(skin_capacity, '#');
+    CHECK(sjtuclaw_spine38_skin_info(
+              handle, 0, zero_skin_capacity.data(), 0) ==
+          SJTUCLAW_SPINE38_INVALID_ARGUMENT);
+    CHECK(zero_skin_capacity.front() == '#');
     std::vector<char> skin_name(skin_capacity, '#');
     CHECK(sjtuclaw_spine38_skin_info(
               handle, 0, skin_name.data(), skin_name.size() - 1u) ==
@@ -243,9 +303,11 @@ void check_synthetic_catalog_and_buffers() {
               handle, 0, skin_name.data(), skin_name.size()) ==
           SJTUCLAW_SPINE38_OK);
     CHECK(std::strcmp(skin_name.data(), "fixture-skin") == 0);
+    std::vector<char> missing_skin(skin_capacity, '#');
     CHECK(sjtuclaw_spine38_skin_info(
-              handle, 1, skin_name.data(), skin_name.size()) ==
+              handle, 1, missing_skin.data(), missing_skin.size()) ==
           SJTUCLAW_SPINE38_INVALID_ARGUMENT);
+    CHECK(missing_skin.front() == '#');
 
     SjtuclawSpine38Bounds bounds{-10.0f, -10.0f, -10.0f, -10.0f};
     CHECK(sjtuclaw_spine38_setup_bounds(handle, &bounds) ==
