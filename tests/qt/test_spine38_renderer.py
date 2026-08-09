@@ -22,6 +22,7 @@ from sjtuclaw.application.spine38_runtime import (
     Spine38AnimationInfo,
     Spine38Bounds,
     Spine38Catalog,
+    Spine38FrameError,
 )
 from sjtuclaw.infrastructure.spine38_native import (
     Spine38BlendMode,
@@ -55,28 +56,44 @@ def verified_texture_bytes() -> bytes:
 class _FakeRuntime:
     def __init__(self, events: list[str] | None = None) -> None:
         self.catalog = Spine38Catalog((Spine38AnimationInfo("Relax", 3.2),))
-        self.setup_bounds = Spine38Bounds(-1.0, 0.0, 2.0, 2.0)
+        self.setup_bounds = Spine38Bounds(-0.5, 0.0, 1.0, 2.0)
         self.atlas_size = Size(2, 2)
         self.set_animation_calls: list[tuple[int, str, bool]] = []
         self.update_calls: list[float] = []
+        self.visible_bounds_calls = 0
         self.close_count = 0
         self.fail_update = False
+        self.fail_zero_delta_update = False
+        self.fail_visible_bounds = False
+        self.visible_bounds_values = [
+            Spine38Bounds(-0.5, 0.0, 1.0, 2.0),
+            Spine38Bounds(-10.0, -10.0, 20.0, 20.0),
+        ]
         self._events = events
 
     def set_animation(self, track: int, name: str, loop: bool) -> None:
         self.set_animation_calls.append((track, name, loop))
 
     def update(self, delta_seconds: float) -> None:
-        if self.fail_update:
+        if self.fail_update or (
+            self.fail_zero_delta_update and delta_seconds == 0.0
+        ):
             raise RuntimeError("sensitive-native-detail")
         self.update_calls.append(delta_seconds)
+
+    def visible_bounds(self) -> Spine38Bounds:
+        self.visible_bounds_calls += 1
+        if self.fail_visible_bounds:
+            raise Spine38FrameError
+        index = min(self.visible_bounds_calls - 1, len(self.visible_bounds_values) - 1)
+        return self.visible_bounds_values[index]
 
     def draw_commands(self) -> tuple[Spine38DrawCommand, ...]:
         return (
             Spine38DrawCommand(
                 vertices=(
-                    Spine38Vertex(-1.0, 0.0, 0.0, 0.0, 255, 255, 255, 255),
-                    Spine38Vertex(1.0, 0.0, 1.0, 0.0, 255, 255, 255, 255),
+                    Spine38Vertex(-0.5, 0.0, 0.0, 0.0, 255, 255, 255, 255),
+                    Spine38Vertex(0.5, 0.0, 1.0, 0.0, 255, 255, 255, 255),
                     Spine38Vertex(0.0, 2.0, 0.5, 1.0, 255, 255, 255, 255),
                 ),
                 indices=(0, 1, 2),
@@ -180,9 +197,75 @@ def test_renderer_sets_relax_once_and_only_advances_time(
     renderer.update(0.016)
 
     assert runtime.set_animation_calls == [(0, "Relax", True)]
-    assert runtime.update_calls == [0.016, 0.016]
+    assert runtime.update_calls == [0.0, 0.016, 0.016]
+    assert runtime.visible_bounds_calls == 1
     assert len(backends) == 1
     assert len(backends[0].scenes) == 2
+    initial_vertices = backends[0].initial_scene.draw_commands[0].vertices
+    assert min(vertex.position.y for vertex in initial_vertices) == pytest.approx(4.0)
+    assert max(vertex.position.y for vertex in initial_vertices) == pytest.approx(176.0)
+    assert renderer.foot_baseline_y == pytest.approx(176.0)
+    renderer.close()
+
+
+def test_renderer_keeps_visible_frame_transform_after_initialization(
+    qt_application: QApplication,
+    verified_texture_bytes: bytes,
+) -> None:
+    del qt_application
+    module = importlib.import_module("sjtuclaw.presentation.qt.spine38_renderer")
+    runtime = _FakeRuntime()
+    backends: list[_FakeBackend] = []
+    renderer = module.Spine38PetRenderer(
+        runtime,
+        verified_texture_bytes,
+        backend_factory=_backend_factory(backends),
+    )
+
+    renderer.initialize(Size(160, 180))
+    renderer.update(0.016)
+    renderer.update(0.016)
+
+    assert runtime.visible_bounds_calls == 1
+    updated_vertices = backends[0].scenes[-1].draw_commands[0].vertices
+    assert min(vertex.position.y for vertex in updated_vertices) == pytest.approx(4.0)
+    assert max(vertex.position.y for vertex in updated_vertices) == pytest.approx(176.0)
+    renderer.close()
+
+
+@pytest.mark.parametrize(
+    ("failure", "expected_code"),
+    [
+        ("zero_delta", "RUNTIME_FAILED"),
+        ("visible_bounds", "MESH_INVALID"),
+    ],
+)
+def test_renderer_initialization_visible_frame_failure_publishes_no_scene(
+    qt_application: QApplication,
+    verified_texture_bytes: bytes,
+    failure: str,
+    expected_code: str,
+) -> None:
+    del qt_application
+    module = importlib.import_module("sjtuclaw.presentation.qt.spine38_renderer")
+    runtime = _FakeRuntime()
+    runtime.fail_zero_delta_update = failure == "zero_delta"
+    runtime.fail_visible_bounds = failure == "visible_bounds"
+    backends: list[_FakeBackend] = []
+    renderer = module.Spine38PetRenderer(
+        runtime,
+        verified_texture_bytes,
+        backend_factory=_backend_factory(backends),
+    )
+
+    with pytest.raises(module.Spine38RendererError) as caught:
+        renderer.initialize(Size(160, 180))
+
+    assert caught.value.code is getattr(
+        module.Spine38RendererCode,
+        expected_code,
+    )
+    assert backends == []
     renderer.close()
 
 

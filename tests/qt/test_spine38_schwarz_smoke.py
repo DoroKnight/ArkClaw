@@ -310,6 +310,9 @@ def test_real_schwarz_renders_three_relax_loops_and_proves_fallback() -> None:
         assert bounds["x"] + bounds["width"] <= 160
         assert bounds["y"] + bounds["height"] <= 180
         assert bounds["nonzero_pixels"] > 0
+        assert bounds["width"] >= 80
+        assert bounds["height"] >= 150
+        assert 172 <= bounds["y"] + bounds["height"] <= 180
 
     assert evidence_path.is_file()
     assert json.loads(evidence_path.read_text(encoding="utf-8")) == result

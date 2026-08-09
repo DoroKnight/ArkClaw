@@ -35,8 +35,8 @@ from sjtuclaw.presentation.qt.pet_mesh_opengl_renderer import (
 )
 
 _VIEWPORT = Size(160, 180)
-_FOOT_BASELINE_Y = 160.0
-_MARGIN = 8.0
+_FOOT_BASELINE_Y = 176.0
+_MARGIN = 4.0
 _TEXTURE_ID = "spine38-page-0"
 
 
@@ -69,6 +69,8 @@ class _Spine38RenderRuntime(Protocol):
     def set_animation(self, track: int, name: str, loop: bool) -> None: ...
 
     def update(self, delta_seconds: float) -> None: ...
+
+    def visible_bounds(self) -> Spine38Bounds: ...
 
     def mesh_scene(
         self,
@@ -127,13 +129,14 @@ class Spine38PetRenderer:
             ) from None
         texture = self._decode_texture()
         try:
+            self._runtime.set_animation(0, "Relax", True)
+            self._runtime.update(0.0)
             transform = Spine38ViewportTransform.fit(
-                self._runtime.setup_bounds,
+                self._runtime.visible_bounds(),
                 viewport=viewport,
                 foot_baseline_y=_FOOT_BASELINE_Y,
                 margin=_MARGIN,
             )
-            self._runtime.set_animation(0, "Relax", True)
             scene = self._runtime.mesh_scene(transform, texture)
         except (PetMeshValidationError, Spine38FrameError):
             raise Spine38RendererError(Spine38RendererCode.MESH_INVALID) from None
