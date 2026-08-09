@@ -50,7 +50,22 @@ void append_float(std::vector<uint8_t>& bytes, float value) {
     bytes.push_back(static_cast<uint8_t>(bits & 0xffu));
 }
 
-std::vector<uint8_t> make_synthetic_skeleton() {
+void append_empty_animation(
+    std::vector<uint8_t>& bytes,
+    const std::string& name) {
+    append_string(bytes, name);
+    append_varint(bytes, 0);  // slot timelines
+    append_varint(bytes, 0);  // bone timelines
+    append_varint(bytes, 0);  // IK timelines
+    append_varint(bytes, 0);  // transform timelines
+    append_varint(bytes, 0);  // path timelines
+    append_varint(bytes, 0);  // deform timelines
+    append_varint(bytes, 0);  // draw-order timeline frames
+    append_varint(bytes, 0);  // event timeline frames
+}
+
+std::vector<uint8_t> make_synthetic_skeleton(
+    bool include_zero_duration_animation = false) {
     std::vector<uint8_t> bytes;
 
     append_string(bytes, "contract-fixture");
@@ -92,7 +107,10 @@ std::vector<uint8_t> make_synthetic_skeleton() {
     append_varint(bytes, 0);  // skin slots
 
     append_varint(bytes, 0);  // events
-    append_varint(bytes, 1);  // animations
+    append_varint(bytes, include_zero_duration_animation ? 2 : 1);
+    if (include_zero_duration_animation) {
+        append_empty_animation(bytes, "Default");
+    }
     append_string(bytes, animation_name_fixture);
 
     append_varint(bytes, 0);  // slot timelines
@@ -164,6 +182,33 @@ void check_fixed_contract_values() {
     CHECK(SJTUCLAW_SPINE38_SKELETON_LOAD_FAILED == 3);
     CHECK(SJTUCLAW_SPINE38_ANIMATION_NOT_FOUND == 4);
     CHECK(SJTUCLAW_SPINE38_RUNTIME_FAILURE == 5);
+}
+
+void check_zero_duration_animation_is_not_exposed() {
+    const auto skeleton = make_synthetic_skeleton(true);
+    SjtuclawSpine38Handle* handle = nullptr;
+    CHECK(sjtuclaw_spine38_create(
+              skeleton.data(), skeleton.size(), atlas_fixture,
+              sizeof(atlas_fixture) - 1u, &handle) == SJTUCLAW_SPINE38_OK);
+    CHECK(handle != nullptr);
+    if (handle == nullptr) {
+        return;
+    }
+
+    CHECK(sjtuclaw_spine38_animation_count(handle) == 1u);
+    const size_t capacity = sjtuclaw_spine38_animation_name_size(handle, 0);
+    CHECK(capacity == sizeof(animation_name_fixture));
+    std::vector<char> name(capacity, '#');
+    float duration = -1.0f;
+    CHECK(sjtuclaw_spine38_animation_info(
+              handle, 0, name.data(), name.size(), &duration) ==
+          SJTUCLAW_SPINE38_OK);
+    CHECK(std::memcmp(
+              name.data(), animation_name_fixture,
+              sizeof(animation_name_fixture)) == 0);
+    CHECK(duration == 1.25f);
+    CHECK(sjtuclaw_spine38_animation_name_size(handle, 1) == 0u);
+    sjtuclaw_spine38_destroy(handle);
 }
 
 void check_invalid_inputs_do_not_escape_exceptions() {
@@ -360,6 +405,7 @@ void check_synthetic_catalog_and_buffers() {
 int main() {
     check_fixed_contract_values();
     check_atlas_leading_whitespace_contract();
+    check_zero_duration_animation_is_not_exposed();
     check_invalid_inputs_do_not_escape_exceptions();
     check_synthetic_catalog_and_buffers();
     return failures == 0 ? 0 : 1;

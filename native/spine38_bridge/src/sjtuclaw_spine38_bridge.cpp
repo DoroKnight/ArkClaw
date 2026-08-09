@@ -19,6 +19,7 @@
 #include <memory>
 #include <new>
 #include <string>
+#include <vector>
 
 namespace spine {
 
@@ -187,6 +188,7 @@ struct SjtuclawSpine38Handle {
     std::unique_ptr<spine::Atlas> atlas;
     std::unique_ptr<spine::AtlasAttachmentLoader> attachment_loader;
     std::unique_ptr<spine::SkeletonData> skeleton_data;
+    std::vector<spine::Animation*> animation_catalog;
     std::unique_ptr<spine::Skeleton> skeleton;
     std::unique_ptr<spine::AnimationStateData> animation_state_data;
     std::unique_ptr<spine::AnimationState> animation_state;
@@ -277,8 +279,11 @@ SjtuclawSpine38Code sjtuclaw_spine38_create(
             if (animations[index] == nullptr ||
                 !valid_runtime_string(animations[index]->getName()) ||
                 !std::isfinite(animations[index]->getDuration()) ||
-                animations[index]->getDuration() <= 0.0f) {
+                animations[index]->getDuration() < 0.0f) {
                 return SJTUCLAW_SPINE38_SKELETON_LOAD_FAILED;
+            }
+            if (animations[index]->getDuration() > 0.0f) {
+                result->animation_catalog.push_back(animations[index]);
             }
         }
         auto& skins = result->skeleton_data->getSkins();
@@ -317,7 +322,7 @@ size_t sjtuclaw_spine38_animation_count(
     try {
         return handle == nullptr
                    ? 0u
-                   : handle->skeleton_data->getAnimations().size();
+                   : handle->animation_catalog.size();
     } catch (...) {
         return 0u;
     }
@@ -330,7 +335,7 @@ size_t sjtuclaw_spine38_animation_name_size(
         if (handle == nullptr) {
             return 0u;
         }
-        auto& animations = handle->skeleton_data->getAnimations();
+        const auto& animations = handle->animation_catalog;
         if (index >= animations.size() || animations[index] == nullptr ||
             !valid_runtime_string(animations[index]->getName())) {
             return 0u;
@@ -352,7 +357,7 @@ SjtuclawSpine38Code sjtuclaw_spine38_animation_info(
             duration_seconds == nullptr) {
             return SJTUCLAW_SPINE38_INVALID_ARGUMENT;
         }
-        auto& animations = handle->skeleton_data->getAnimations();
+        const auto& animations = handle->animation_catalog;
         if (index >= animations.size() || animations[index] == nullptr) {
             return SJTUCLAW_SPINE38_ANIMATION_NOT_FOUND;
         }
