@@ -43,6 +43,7 @@ def _atlas(
     texture: str = "fictional.png",
     *,
     region_bounds: str = "1, 2, 8, 7",
+    rotate: str = "false",
 ) -> bytes:
     return (
         f"{texture}\n"
@@ -51,7 +52,7 @@ def _atlas(
         "filter: Linear, Linear\n"
         "repeat: none\n"
         "fictional-region\n"
-        "  rotate: false\n"
+        f"  rotate: {rotate}\n"
         f"  bounds: {region_bounds}\n"
         "  index: -1\n"
     ).encode()
@@ -392,6 +393,50 @@ def test_atlas_texture_and_region_bounds_are_strict(
     result = ExternalPetAssetLoader(filesystem).load(_descriptor())
 
     assert result.status is expected
+
+
+@pytest.mark.parametrize("rotate", ["true", "90"])
+def test_atlas_quarter_turn_uses_swapped_packed_bounds(rotate: str) -> None:
+    filesystem = _FakeFilesystem()
+    filesystem.handles["fictional.atlas"] = _FakeHandle(
+        _atlas(region_bounds="9, 1, 10, 7", rotate=rotate),
+        2,
+    )
+
+    result = ExternalPetAssetLoader(filesystem).load(_descriptor())
+
+    assert result.succeeded
+    assert result.bundle is not None
+    result.bundle.close()
+
+
+@pytest.mark.parametrize("rotate", ["true", "90"])
+def test_atlas_quarter_turn_rejects_unswapped_only_bounds(rotate: str) -> None:
+    filesystem = _FakeFilesystem()
+    filesystem.handles["fictional.atlas"] = _FakeHandle(
+        _atlas(region_bounds="1, 5, 8, 7", rotate=rotate),
+        2,
+    )
+
+    result = ExternalPetAssetLoader(filesystem).load(_descriptor())
+
+    assert result.status is ExternalPetAssetStatus.ATLAS_INVALID
+    assert result.bundle is None
+
+
+@pytest.mark.parametrize("rotate", ["false", "0", "180", "270"])
+def test_atlas_other_rotations_keep_unswapped_packed_bounds(rotate: str) -> None:
+    filesystem = _FakeFilesystem()
+    filesystem.handles["fictional.atlas"] = _FakeHandle(
+        _atlas(region_bounds="1, 5, 8, 7", rotate=rotate),
+        2,
+    )
+
+    result = ExternalPetAssetLoader(filesystem).load(_descriptor())
+
+    assert result.succeeded
+    assert result.bundle is not None
+    result.bundle.close()
 
 
 def test_atlas_rejects_an_implicit_second_page() -> None:

@@ -558,13 +558,16 @@ def _parse_atlas_metadata(
         else:
             x, y = _parse_pair(region.get("xy"))
             width, height = _parse_pair(region.get("size"))
+        packed_width, packed_height = (
+            (height, width) if rotate in {"true", "90"} else (width, height)
+        )
         if (
             x < 0
             or y < 0
             or width <= 0
             or height <= 0
-            or x + width > page_width
-            or y + height > page_height
+            or x + packed_width > page_width
+            or y + packed_height > page_height
         ):
             raise ExternalAssetFilesystemError(
                 ExternalPetAssetStatus.ATLAS_INVALID
