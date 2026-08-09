@@ -17,8 +17,10 @@ from sjtuclaw.application.autostart_operation_journal import (
     AutostartOperationOrigin,
     AutostartOperationRuntimeState,
 )
+from sjtuclaw.application.pet_production_actions import ProductionAction
 from sjtuclaw.application.pet_settings import PetSettings
 from sjtuclaw.application.pet_state import PetLifecycleState
+from sjtuclaw.application.pet_track0 import ActionOutcome
 from sjtuclaw.application.startup_mode import (
     StartupModeArgumentError,
     parse_startup_mode,
@@ -28,6 +30,9 @@ from sjtuclaw.bootstrap.autostart import (
 )
 from sjtuclaw.bootstrap.autostart_diagnostics import (
     run_autostart_runtime_diagnostic_if_requested,
+)
+from sjtuclaw.bootstrap.pet_production import (
+    create_optional_production_pet_composition,
 )
 from sjtuclaw.bootstrap.qt_runtime import (
     ProductionQtRuntimeCompositionRoot,
@@ -126,6 +131,14 @@ class PetApplicationCoordinator(QObject):
         )
 
     @property
+    def active_role_pack_id(self) -> str:
+        return self._pet_window.active_role_pack_id
+
+    @property
+    def available_pet_actions(self) -> frozenset[ProductionAction]:
+        return self._pet_window.available_pet_actions
+
+    @property
     def tray_safe_code(self) -> str:
         if self._system_tray is None:
             return "system_tray_not_configured"
@@ -208,6 +221,12 @@ class PetApplicationCoordinator(QObject):
     @Slot()
     def request_safe_exit(self) -> None:
         self._pet_window.request_safe_exit()
+
+    def request_pet_action(self, action: ProductionAction) -> ActionOutcome:
+        return self._pet_window.request_pet_action(action)
+
+    def resume_pet_autonomous(self) -> ActionOutcome:
+        return self._pet_window.resume_pet_autonomous()
 
     @Slot()
     def _begin_runtime_shutdown(self) -> None:
@@ -454,9 +473,28 @@ def main(argv: list[str] | None = None) -> int:
         hide_on_close=True,
         autostart_controller=autostart_controller,
     )
-    pet_window = PetWindow(
-        autostart_controller=autostart_controller,
-    )
+    production_pet = create_optional_production_pet_composition()
+    if production_pet is None:
+        pet_window = PetWindow(
+            autostart_controller=autostart_controller,
+        )
+    else:
+        try:
+            pet_window = PetWindow(
+                autostart_controller=autostart_controller,
+                renderer=production_pet.renderer,
+                track0=production_pet.track0,
+                active_role_pack_id=production_pet.role_pack_id,
+                available_production_actions=production_pet.available_actions,
+                autonomous_scheduler=production_pet.autonomous_scheduler,
+                playback_event_source=production_pet.playback_event_source,
+            )
+        except Exception:
+            with suppress(Exception):
+                production_pet.renderer.close()
+            pet_window = PetWindow(
+                autostart_controller=autostart_controller,
+            )
     if recorder is not None:
         recorder.record(OwnerStartupStage.PET_WINDOW_CREATED)
     coordinator = PetApplicationCoordinator(

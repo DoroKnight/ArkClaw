@@ -381,6 +381,34 @@ class PetAnimationEngine:
             self._activate_autonomous(ProductionAction.RELAX)
         return outcome
 
+    def start_autonomous(self) -> ActionOutcome:
+        """Establish the initial autonomous Relax transaction at production startup."""
+
+        if self._track0 is None:
+            return ActionOutcome.LEGACY_DIRECT
+        if self._track0.active_request is not None:
+            return ActionOutcome.REJECTED_DUPLICATE
+        outcome = self._recover_autonomous_relax()
+        return outcome
+
+    def contain_renderer_failure(self) -> ActionOutcome:
+        """Stop motion and autonomy after the playback event boundary fails."""
+
+        self._clear_protected_continuation()
+        self._execution_mode = AutonomousExecutionMode.SUSPENDED
+        self._active_production_action = None
+        relax = semantic_target(ProductionAction.RELAX)
+        self._motion.commit_state_transition(
+            self._motion.states.propose(
+                motion=relax.motion,
+                activity=relax.activity,
+                facing=relax.facing,
+            )
+        )
+        if self._track0 is None:
+            return ActionOutcome.LEGACY_DIRECT
+        return self._track0.clear(CancelReason.RENDERER_FAILURE)
+
     def _submit_production_intent(self, intent: ActionIntent) -> ActionOutcome:
         track0 = self._track0
         if track0 is None:

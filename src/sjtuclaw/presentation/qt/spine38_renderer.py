@@ -68,7 +68,7 @@ class _Spine38RenderRuntime(Protocol):
 
     def set_animation(self, track: int, name: str, loop: bool) -> None: ...
 
-    def update(self, delta_seconds: float) -> None: ...
+    def update(self, delta_seconds: float) -> object: ...
 
     def visible_bounds(self) -> Spine38Bounds: ...
 
@@ -100,11 +100,13 @@ class Spine38PetRenderer:
         *,
         asset_owner: _Closeable | None = None,
         backend_factory: BackendFactory = OpenGLTexturedMeshBackend,
+        advance_runtime: bool = True,
     ) -> None:
         self._runtime = runtime
         self._texture_bytes = bytes(verified_texture_bytes)
         self._asset_owner = asset_owner
         self._backend_factory = backend_factory
+        self._advance_runtime = advance_runtime
         self._backend: PetMeshImageBackend | None = None
         self._transform: Spine38ViewportTransform | None = None
         self._texture: PetMeshTextureData | None = None
@@ -186,7 +188,8 @@ class Spine38PetRenderer:
         ):
             raise Spine38RendererError(Spine38RendererCode.RUNTIME_FAILED)
         try:
-            self._runtime.update(delta_seconds)
+            if self._advance_runtime:
+                self._runtime.update(delta_seconds)
             scene = self._runtime.mesh_scene(self._transform, self._texture)
         except (PetMeshValidationError, Spine38FrameError):
             raise Spine38RendererError(Spine38RendererCode.MESH_INVALID) from None

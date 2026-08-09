@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Protocol
+from typing import Protocol, cast
 
 from PySide6.QtCore import QObject, QPoint, QSignalBlocker, Qt
 from PySide6.QtGui import QAction, QColor, QIcon, QPainter, QPen, QPixmap
@@ -17,6 +17,8 @@ from sjtuclaw.application.autostart_service import (
     AutostartSnapshot,
     AutostartStatus,
 )
+from sjtuclaw.application.pet_production_actions import ProductionAction
+from sjtuclaw.application.pet_track0 import ActionOutcome
 from sjtuclaw.presentation.qt.autostart_controller import (
     AutostartUiController,
 )
@@ -35,6 +37,8 @@ class PetTrayState:
     )
     autostart_busy: bool = False
     autostart_display_message: str = ""
+    role_pack_id: str = "placeholder"
+    available_actions: frozenset[ProductionAction] = frozenset()
 
 
 class PetTrayCommands(Protocol):
@@ -61,6 +65,18 @@ class PetTrayCommands(Protocol):
     def request_safe_exit(self) -> None: ...
 
 
+class PetProductionActionCommands(Protocol):
+    @property
+    def active_role_pack_id(self) -> str: ...
+
+    @property
+    def available_pet_actions(self) -> frozenset[ProductionAction]: ...
+
+    def request_pet_action(self, action: ProductionAction) -> ActionOutcome: ...
+
+    def resume_pet_autonomous(self) -> ActionOutcome: ...
+
+
 @dataclass(frozen=True, slots=True)
 class TrayCallbacks:
     refresh: Callable[[], None]
@@ -70,6 +86,8 @@ class TrayCallbacks:
     set_always_on_top: Callable[[bool], None]
     request_safe_exit: Callable[[], None]
     set_autostart_enabled: Callable[[bool], None] | None = None
+    request_action: Callable[[ProductionAction], None] | None = None
+    resume_autonomous: Callable[[], None] | None = None
 
 
 class TrayView(Protocol):
@@ -130,6 +148,58 @@ class _QtSystemTrayView:
             callbacks.set_always_on_top
         )
         self._menu.addAction(self._always_on_top_action)
+
+        self._role_pack_action: QAction | None = None
+        self._move_menu: QMenu | None = None
+        self._resume_autonomous_action: QAction | None = None
+        self._action_items: dict[ProductionAction, QAction] = {}
+        if (
+            callbacks.request_action is not None
+            and callbacks.resume_autonomous is not None
+        ):
+            self._menu.addSeparator()
+            self._role_pack_action = QAction("Role Pack: placeholder", self._menu)
+            self._role_pack_action.setEnabled(False)
+            self._menu.addAction(self._role_pack_action)
+            self._add_production_action(
+                ProductionAction.RELAX,
+                "Relax",
+                self._menu,
+                callbacks.request_action,
+            )
+            self._move_menu = self._menu.addMenu("Move")
+            self._add_production_action(
+                ProductionAction.MOVE_LEFT,
+                "Left",
+                self._move_menu,
+                callbacks.request_action,
+            )
+            self._add_production_action(
+                ProductionAction.MOVE_RIGHT,
+                "Right",
+                self._move_menu,
+                callbacks.request_action,
+            )
+            for action, label in (
+                (ProductionAction.SIT, "Sit"),
+                (ProductionAction.SLEEP, "Sleep"),
+                (ProductionAction.SPECIAL, "Special"),
+                (ProductionAction.INTERACT, "Interact"),
+            ):
+                self._add_production_action(
+                    action,
+                    label,
+                    self._menu,
+                    callbacks.request_action,
+                )
+            self._resume_autonomous_action = QAction(
+                "Resume Autonomous",
+                self._menu,
+            )
+            self._resume_autonomous_action.triggered.connect(
+                lambda checked=False: callbacks.resume_autonomous()
+            )
+            self._menu.addAction(self._resume_autonomous_action)
 
         self._autostart_action = QAction(
             "Start with Windows",
@@ -195,6 +265,43 @@ class _QtSystemTrayView:
         ):
             action.setEnabled(not state.closing)
         self._exit_action.setEnabled(not state.closing)
+        if self._role_pack_action is not None:
+            self._role_pack_action.setText(f"Role Pack: {state.role_pack_id}")
+        for production_action, menu_action in self._action_items.items():
+            menu_action.setEnabled(
+                not state.closing
+                and production_action in state.available_actions
+            )
+        if self._move_menu is not None:
+            self._move_menu.setEnabled(
+                not state.closing
+                and any(
+                    action in state.available_actions
+                    for action in (
+                        ProductionAction.MOVE_LEFT,
+                        ProductionAction.MOVE_RIGHT,
+                    )
+                )
+            )
+        if self._resume_autonomous_action is not None:
+            self._resume_autonomous_action.setEnabled(
+                not state.closing
+                and ProductionAction.RELAX in state.available_actions
+            )
+
+    def _add_production_action(
+        self,
+        action: ProductionAction,
+        label: str,
+        menu: QMenu,
+        callback: Callable[[ProductionAction], None],
+    ) -> None:
+        item = QAction(label, menu)
+        item.triggered.connect(
+            lambda checked=False, selected=action: callback(selected)
+        )
+        menu.addAction(item)
+        self._action_items[action] = item
 
     def close(self) -> None:
         if self._closed:
@@ -216,12 +323,24 @@ class SystemTrayController(QObject):
         self,
         commands: PetTrayCommands,
         *,
+        production_actions: PetProductionActionCommands | None = None,
         autostart_controller: AutostartUiController | None = None,
         view_factory: TrayViewFactory | None = None,
         parent: QObject | None = None,
     ) -> None:
         super().__init__(parent)
         self._commands = commands
+        if production_actions is None and all(
+            hasattr(commands, name)
+            for name in (
+                "active_role_pack_id",
+                "available_pet_actions",
+                "request_pet_action",
+                "resume_pet_autonomous",
+            )
+        ):
+            production_actions = cast(PetProductionActionCommands, commands)
+        self._production_actions = production_actions
         self._autostart_controller = autostart_controller
         self._closed = False
         self._shutdown_started = False
@@ -241,6 +360,16 @@ class SystemTrayController(QObject):
                 None
                 if autostart_controller is None
                 else self._set_autostart_enabled
+            ),
+            request_action=(
+                None
+                if production_actions is None
+                else self._request_production_action
+            ),
+            resume_autonomous=(
+                None
+                if production_actions is None
+                else self._resume_autonomous
             ),
         )
         factory = view_factory or _create_qt_tray_view
@@ -373,6 +502,16 @@ class SystemTrayController(QObject):
                     if self._autostart_controller is None
                     else self._autostart_controller.display_message
                 ),
+                role_pack_id=(
+                    "placeholder"
+                    if self._production_actions is None
+                    else self._production_actions.active_role_pack_id
+                ),
+                available_actions=(
+                    frozenset()
+                    if self._production_actions is None
+                    else self._production_actions.available_pet_actions
+                ),
             )
         )
 
@@ -414,6 +553,24 @@ class SystemTrayController(QObject):
         if self._exit_requested or self._shutdown_started or self._closed:
             return
         self._commands.set_always_on_top(enabled)
+        self.refresh()
+
+    def _request_production_action(self, action: ProductionAction) -> None:
+        if self._exit_requested or self._shutdown_started or self._closed:
+            return
+        commands = self._production_actions
+        if commands is None:
+            return
+        commands.request_pet_action(action)
+        self.refresh()
+
+    def _resume_autonomous(self) -> None:
+        if self._exit_requested or self._shutdown_started or self._closed:
+            return
+        commands = self._production_actions
+        if commands is None:
+            return
+        commands.resume_pet_autonomous()
         self.refresh()
 
     def _request_safe_exit(self) -> None:

@@ -35,8 +35,13 @@ from sjtuclaw.application.pet_animation import (
     PetRenderFrame,
     SystemMonotonicClock,
 )
+from sjtuclaw.application.pet_autonomous_scheduler import AutonomousActionScheduler
 from sjtuclaw.application.pet_geometry import Point, Rect, Size
 from sjtuclaw.application.pet_motion import PetMotionModel
+from sjtuclaw.application.pet_production_actions import (
+    ActionSource,
+    ProductionAction,
+)
 from sjtuclaw.application.pet_renderer_model import action_request_for_frame
 from sjtuclaw.application.pet_state import (
     PetFacing,
@@ -48,6 +53,7 @@ from sjtuclaw.application.pet_track0 import (
     ActionOutcome,
     AnimationPlayerCapabilities,
     PetTrack0Controller,
+    PlaybackEvent,
     PlaybackRequest,
     PlaybackToken,
 )
@@ -78,6 +84,10 @@ class _AutostartUiController(Protocol):
         *,
         origin: AutostartOperationOrigin,
     ) -> str | None: ...
+
+
+class _PlaybackEventSource(Protocol):
+    def update(self, delta_seconds: float) -> tuple[PlaybackEvent, ...]: ...
 
 _PET_WIDTH = 160
 _PET_HEIGHT = 180
@@ -131,6 +141,11 @@ class PetWindow(QWidget):
         rng: random.Random | None = None,
         animation_config: PetAnimationConfig | None = None,
         autostart_controller: _AutostartUiController | None = None,
+        track0: PetTrack0Controller | None = None,
+        active_role_pack_id: str = "placeholder",
+        available_production_actions: frozenset[ProductionAction] = frozenset(),
+        autonomous_scheduler: AutonomousActionScheduler | None = None,
+        playback_event_source: _PlaybackEventSource | None = None,
     ) -> None:
         super().__init__()
         self._always_on_top = always_on_top
@@ -140,6 +155,11 @@ class PetWindow(QWidget):
         self._context_menu: QMenu | None = None
         self._autostart_controller = autostart_controller
         self._autostart_action: QAction | None = None
+        self._active_role_pack_id = active_role_pack_id
+        self._available_production_actions = frozenset(
+            available_production_actions
+        )
+        self._playback_event_source = playback_event_source
         selected_renderer = renderer or PlaceholderPetRenderer()
         self._renderer = (
             selected_renderer
@@ -165,19 +185,30 @@ class PetWindow(QWidget):
             Size(_PET_WIDTH, _PET_HEIGHT),
         )
         selected_clock = clock or SystemMonotonicClock()
-        self._animation_player = PlaceholderAnimationPlayer()
-        track0 = PetTrack0Controller(
-            player=self._animation_player,
-            registry=default_animation_registry(),
-            clock=selected_clock,
-        )
+        self._animation_player: PlaceholderAnimationPlayer | None = None
+        selected_track0 = track0
+        if selected_track0 is None:
+            self._animation_player = PlaceholderAnimationPlayer()
+            selected_track0 = PetTrack0Controller(
+                player=self._animation_player,
+                registry=default_animation_registry(),
+                clock=selected_clock,
+            )
         self._animation = PetAnimationEngine(
             motion,
             rng=rng,
             config=animation_config,
-            track0=track0,
+            track0=selected_track0,
+            autonomous_scheduler=autonomous_scheduler,
+            clock=selected_clock,
         )
         self._renderer.initialize(Size(_PET_WIDTH, _PET_HEIGHT))
+        if self._renderer.safe_code is not PetRendererSafeCode.NONE:
+            self._active_role_pack_id = "placeholder"
+            self._available_production_actions = frozenset()
+            self._playback_event_source = None
+        elif autonomous_scheduler is not None:
+            self._animation.start_autonomous()
         self._sync_renderer_state()
         self._clock = selected_clock
         self._last_tick = self._clock.now()
@@ -208,6 +239,14 @@ class PetWindow(QWidget):
     @property
     def always_on_top(self) -> bool:
         return self._always_on_top
+
+    @property
+    def active_role_pack_id(self) -> str:
+        return self._active_role_pack_id
+
+    @property
+    def available_pet_actions(self) -> frozenset[ProductionAction]:
+        return self._available_production_actions
 
     @property
     def physics_timer(self) -> QTimer:
@@ -363,6 +402,32 @@ class PetWindow(QWidget):
         self._sync_renderer_state()
         self.update()
         return True
+
+    def request_pet_action(self, action: ProductionAction) -> ActionOutcome:
+        """Submit one tray action without promoting it to direct manipulation."""
+
+        if (
+            self.lifecycle_state is PetLifecycleState.CLOSING
+            or action not in self._available_production_actions
+        ):
+            return ActionOutcome.INVALID_SEQUENCE
+        outcome = self._animation.request_action(action, ActionSource.TRAY)
+        self._sync_renderer_state()
+        self.update()
+        self.presentation_state_changed.emit()
+        return outcome
+
+    def resume_pet_autonomous(self) -> ActionOutcome:
+        if (
+            self.lifecycle_state is PetLifecycleState.CLOSING
+            or ProductionAction.RELAX not in self._available_production_actions
+        ):
+            return ActionOutcome.INVALID_SEQUENCE
+        outcome = self._animation.resume_autonomous(ActionSource.TRAY)
+        self._sync_renderer_state()
+        self.update()
+        self.presentation_state_changed.emit()
+        return outcome
 
     def paintEvent(self, event: QPaintEvent) -> None:
         del event
@@ -543,6 +608,19 @@ class PetWindow(QWidget):
             elapsed,
             self._workspaces(),
         )
+        if self._playback_event_source is not None:
+            try:
+                playback_events = self._playback_event_source.update(
+                    snapshot.applied_delta_seconds
+                )
+            except Exception:
+                self._animation.contain_renderer_failure()
+                self._playback_event_source = None
+                self._active_role_pack_id = "placeholder"
+                self._available_production_actions = frozenset()
+            else:
+                for playback_event in playback_events:
+                    self._animation.handle_playback_event(playback_event)
         self._renderer.set_state(
             action_request_for_frame(snapshot.frame)
         )
