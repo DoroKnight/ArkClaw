@@ -129,6 +129,11 @@ Mandatory invariants:
    destination.
 10. An explicit looping action suspends autonomous scheduling until an
     explicit resume command or a higher-authority lifecycle/safety event.
+11. A mandatory interruption invalidating protected playback clears both
+    forms of protected continuation: pending explicit intent and
+    `resume_after_protected`.
+12. A loop boundary is consumed at most once by stable playback epoch plus
+    strictly increasing boundary index.
 
 ## 5. Component Architecture
 
@@ -222,9 +227,38 @@ class AutonomousSchedulerState:
     last_committed_state: AutonomousState
     entered_at: float
     dwell_target_seconds: float | None
-    boundary_epoch: int
+    playback_generation: int | None
+    playback_token: object | None
+    last_consumed_boundary_index: int
     proposal_eligible: bool
 ```
+
+A looping boundary has explicit identity:
+
+```python
+@dataclass(frozen=True, slots=True)
+class AutonomousBoundaryEvent:
+    generation: int
+    playback_token: object
+    boundary_index: int
+    observed_at: float
+```
+
+The Spine `AnimationPlayer` adapter assigns `boundary_index` at the native
+TrackEntry event source. It starts at `1` for each confirmed
+`generation + playback_token` epoch and increases by exactly one for each new
+physical loop completion. If the same source event is queued or delivered
+again through Qt, every duplicate retains the original index; a delivery
+layer must not manufacture a new index. A new playback generation/token resets
+the scheduler's consumed index to `0`.
+
+The scheduler accepts a boundary for evaluation only when generation and token
+match its committed playback epoch and `boundary_index` is greater than
+`last_consumed_boundary_index`. Every accepted unique boundary is recorded as
+consumed even when dwell has not elapsed. Therefore an old pre-deadline event
+cannot be replayed after the deadline. An event with an older/equal index or a
+mismatched playback epoch is stale/duplicate and has no state, dwell, RNG,
+proposal, or playback side effect.
 
 Its conceptual API is:
 
@@ -258,13 +292,17 @@ Proposal handling is two-phase:
 3. only after the complete application transaction succeeds does the engine
    commit `last_committed_state`, the new entry time, and one destination
    dwell sample;
-4. a rejected proposal keeps the source state, consumes no destination dwell,
-   is never queued, invalidates the old eligibility window, and starts a fresh
+4. a rejected proposal keeps the source `last_committed_state`, records the
+   triggering boundary index as consumed, consumes no destination dwell, is
+   never queued, invalidates the old eligibility window, and starts a fresh
    eligibility window only after autonomous scheduling becomes eligible
    again.
 
 `STAY` is a scheduler-local accepted decision: it does not cross the playback
-seam and commits only a fresh dwell target for the unchanged state.
+seam, records the current boundary index exactly once, and commits only a
+fresh dwell target for the unchanged state. The existing generation and
+playback token remain valid, so a later strictly greater boundary index from
+that same epoch is a new valid event.
 
 ### 5.3 Explicit action gateway
 
@@ -315,11 +353,15 @@ the then-current semantic epoch. The slot:
   replacement;
 - never accepts an autonomous proposal.
 
-The engine also owns a `resume_after_protected` flag. A resume-autonomous
-command received during protected playback clears the pending explicit slot
-and sets this flag. A later explicit action clears the flag and becomes the
-latest pending intent. Matching protected completion consumes exactly one of
-these mutually exclusive continuations.
+The engine also owns a `resume_after_protected` flag. Together, the pending
+slot and this flag are the complete protected-continuation state. A
+resume-autonomous command received during protected playback clears the
+pending explicit slot and sets this flag. A later explicit action clears the
+flag and becomes the latest pending intent. Matching protected completion
+consumes exactly one of these mutually exclusive continuations. Any mandatory
+interruption that invalidates protected playback clears the complete
+protected-continuation state: both `PendingExplicitActionSlot` and
+`resume_after_protected`.
 
 `PetActionArbiter` remains a pure decision component and owns no queue.
 `PetSequenceRunner` owns only the active sequence's own execution state.
@@ -489,7 +531,8 @@ Rules approved for this milestone:
    action is active also occupies that single pending slot.
 5. Closing, dragging, falling, landing, pause, renderer containment, or other
    mandatory safety work interrupts protected playback immediately and clears
-   the pending explicit slot.
+   all protected-continuation state, including both the pending explicit slot
+   and `resume_after_protected`.
 6. Autonomous proposals are never queued. A rejected autonomous proposal is
    discarded without committing its destination or consuming destination
    dwell. The old eligibility window is invalidated, and a fresh window begins
@@ -528,6 +571,43 @@ freshly revalidated pending intent when one exists. Without a pending intent,
 or with `resume_after_protected`, completion establishes `RELAX`, samples one
 fresh Relax dwell, and resumes autonomous scheduling. Starting a protected
 one-shot from an explicit hold ends that hold.
+
+### 7.2 Suspended-mode recovery
+
+Entering drag, falling, landing, pause, shutdown, containment, role-pack
+replacement, or protected one-shot playback sets execution mode to
+`SUSPENDED`. The transition clears an earlier explicit hold. Except for the
+documented protected-action pending slot, explicit actions rejected by an
+active mandatory sequence are not queued.
+
+The normal recovery rule is fixed for drag release/landing, completed motion
+safety, and application resume:
+
+1. the verified mandatory sequence completes or the resume transition is
+   accepted;
+2. `PetAnimationEngine` establishes semantic `RELAX` with zero velocity;
+3. Track 0 starts and confirms physical `Relax` playback;
+4. the engine samples exactly one fresh Relax dwell; and
+5. execution mode changes from `SUSPENDED` to `AUTONOMOUS`.
+
+The mode change occurs only after healthy Relax playback confirmation. If
+playback health is `DEGRADED` or `UNKNOWN`, any of these steps fails, or the
+renderer/player has not completed its explicit recovery/re-probe path, the
+engine remains `SUSPENDED`, keeps velocity zero, and performs no autonomous
+evaluation. Shutdown is terminal and never follows the recovery path.
+
+Protected one-shot recovery follows section 7.1, and role-pack replacement
+follows section 8.1. Both use the same final invariant: only confirmed healthy
+Relax playback plus one fresh dwell may re-enter `AUTONOMOUS`.
+
+The mid-loop workspace-boundary direction turn in section 6.3 is the sole
+motion-safety exception to the Relax recovery sequence. It ends any explicit
+hold. On successful confirmation it atomically commits the opposite semantic
+Move direction, facing, velocity, generation/token, and physical `Move`,
+samples one fresh dwell for that direction, and enters `AUTONOMOUS` without
+inserting `Relax`. If opposite Move playback fails, the engine stops velocity,
+commits semantic `RELAX`, remains `SUSPENDED`, and applies degraded/unknown
+containment.
 
 ## 8. Role-Pack Reuse
 
@@ -604,15 +684,25 @@ Role-pack switching is a two-phase GUI-thread transaction:
 9. play candidate `RELAX`; only after that playback is confirmed healthy,
    sample one fresh Relax dwell and resume autonomous scheduling.
 
-A same-manifest request is a validated no-op. If candidate resources cannot
-coexist temporarily with the active resources, the switch fails without
-destroying the active package; version 1 does not use a destructive fallback.
+A same-manifest request is a validated no-op. “Same” means the same normalized
+validated manifest identity: schema version, pack ID, expected asset hashes,
+logical animation bindings, direction policy, and framing configuration all
+match the active identity. Equality is not based on manifest path. Reusing a
+path after its contents or expected hashes change triggers full candidate
+validation and replacement. If candidate resources cannot coexist temporarily
+with the active resources, the switch fails without destroying the active
+package; version 1 does not use a destructive fallback.
 
 ## 9. Production Lifetime and Tray Behavior
 
 The production entry point uses the existing `PetApplicationCoordinator` and
 `SystemTrayController`. The timed vertical-slice diagnostic remains a test
 tool and is not the production launcher.
+
+These identifiers match the current source and are preserved. This
+specification introduces no rename of `PetApplicationCoordinator`,
+`SystemTrayController`, or their existing public interfaces unless a later
+TDD task explicitly adds a backward-compatible method described here.
 
 Production rules:
 
@@ -707,15 +797,23 @@ collects successfully and fails for the absent or incorrect behavior.
 - sleep never transitions directly to move/special and special never repeats;
 - same-state selection produces `STAY`, resamples dwell once, and does not
   change semantic state, generation, token, or player call count;
+- `duplicate_loop_boundary_is_side_effect_free`: an equal/older boundary index
+  performs no RNG, dwell, proposal, semantic, or playback work;
+- `stay_consumes_boundary_once`: `STAY` records its boundary index and a
+  duplicate cannot resample dwell;
+- `new_loop_boundary_with_same_generation_and_token_is_valid`: a strictly
+  greater boundary index in the unchanged playback epoch remains valid;
+- `old_boundary_cannot_trigger_after_new_dwell_deadline`: a unique boundary
+  observed before dwell expiry is consumed and cannot be replayed later;
 - dwell is sampled exactly once on state entry, remains within the frozen
   range, and is not consumed by a stale boundary;
 - dwell targets require both elapsed time and the correct playback boundary;
 - one update emits at most one autonomous proposal;
 - a proposed destination is committed only after the corresponding semantic,
   motion, and playback transaction succeeds;
-- a rejected autonomous proposal retains the source scheduler state, consumes
-  no destination dwell, is not queued, and invalidates the old eligibility
-  window;
+- a rejected autonomous proposal retains source `last_committed_state`,
+  records the triggering boundary as consumed, consumes no destination dwell,
+  is not queued, and invalidates the old eligibility window;
 - explicit requests replace autonomous loops immediately;
 - explicit normal loops enter hold, ignore autonomous dwell/boundaries, and
   remain stable until replacement, mandatory interruption, or explicit
@@ -727,7 +825,11 @@ collects successfully and fails for the absent or incorrect behavior.
 - explicit requests queue behind protected `SPECIAL/INTERACT` in the bounded
   latest-wins slot;
 - drag, safety, pause, and shutdown interrupt protected actions and clear the
-  pending slot;
+  complete protected-continuation state;
+- `safety_interrupt_clears_resume_after_protected`;
+- `drag_interrupt_clears_resume_after_protected`;
+- `pause_interrupt_clears_resume_after_protected`;
+- `shutdown_clears_resume_after_protected`;
 - stale or mismatched completion does not release a pending request;
 - the pending explicit slot is latest-wins, never accepts autonomous work, is
   consumed once by matching protected completion, and is cleared by safety;
@@ -735,6 +837,10 @@ collects successfully and fails for the absent or incorrect behavior.
   capability and creates a fresh epoch-bound request;
 - resume during protected playback clears pending explicit work and is applied
   once by matching protected completion;
+- successful drag/landing, safety, and pause-resume recovery establish
+  confirmed `RELAX`, sample one fresh dwell, and enter `AUTONOMOUS`;
+- degraded/unknown recovery retains zero velocity and `SUSPENDED` mode without
+  autonomous evaluation;
 - all priority/origin combinations are covered by an exhaustive arbiter
   matrix;
 - missing role bindings are disabled rather than substituted.
@@ -747,7 +853,9 @@ collects successfully and fails for the absent or incorrect behavior.
   playback degraded/unknown, and leaves autonomous scheduling stopped;
 - stopping or replacing move stops physical velocity and no frame reports
   moving semantic state with `Relax` playback;
-- boundary contact turns autonomous movement without leaving the workspace;
+- boundary contact turns movement without leaving the workspace or inserting
+  `Relax`; successful confirmation ends explicit hold when present, samples a
+  fresh opposite-direction dwell, and enters `AUTONOMOUS`;
 - `Special` and `Interact` play exactly once and return to `Relax` or the one
   valid pending explicit action;
 - all six exact Schwarz names and durations are verified through the Release
@@ -776,6 +884,10 @@ collects successfully and fails for the absent or incorrect behavior.
 
 - complete manifest parsing, hashes, Spine version, exact animation catalog,
   aliases, and direction policy;
+- same-manifest no-op compares normalized validated identity and expected
+  hashes rather than manifest path;
+- changing content or hashes at the same manifest path performs full candidate
+  validation instead of returning a no-op;
 - schema version 1 rejects a second atlas texture page;
 - a compatible second fake pack can switch through configuration without code
   changes;
@@ -814,12 +926,17 @@ This milestone is complete only when:
    shutdown;
 8. `Resume Autonomous` is a separate typed mode command that safely returns
    explicit hold to a fresh confirmed `RELAX` dwell;
-9. the Schwarz package remains external and read-only;
-10. another compatible complete role pack can be described through data and
+9. every nonterminal `SUSPENDED` path either recovers through confirmed
+   healthy `RELAX` playback into `AUTONOMOUS` or remains stopped with explicit
+   degraded/unknown health;
+10. protected continuation and loop-boundary identity are consumed at most
+    once even under mandatory interruption or duplicate Qt delivery;
+11. the Schwarz package remains external and read-only;
+12. another compatible complete role pack can be described through data and
    selected without renderer or scheduler code changes;
-11. all focused unit, integration, Qt, native CTest, static, artifact-scope,
+13. all focused unit, integration, Qt, native CTest, static, artifact-scope,
     and Agent-isolation gates pass;
-12. a final Windows manual review confirms clarity, animation choice,
+14. a final Windows manual review confirms clarity, animation choice,
     movement, tray persistence, transparency, taskbar placement, and explicit
     action selection.
 
