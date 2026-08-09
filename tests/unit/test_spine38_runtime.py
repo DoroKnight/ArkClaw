@@ -16,6 +16,56 @@ from sjtuclaw.application.pet_mesh_model import (
     PetMeshBlendMode,
     PetMeshTextureData,
 )
+from sjtuclaw.infrastructure.spine38_native import (
+    Spine38AnimationInfo,
+    Spine38BlendMode,
+    Spine38DrawCommand,
+    Spine38Vertex,
+)
+from sjtuclaw.infrastructure.spine38_native import (
+    Spine38Bounds as NativeSpine38Bounds,
+)
+
+
+class _FakeSpine38Port:
+    def __init__(self, *, draw_commands: tuple[Spine38DrawCommand, ...]) -> None:
+        self._draw_commands = draw_commands
+        self.closed = False
+
+    def catalog(self) -> tuple[Spine38AnimationInfo, ...]:
+        return (Spine38AnimationInfo("Relax", 3.2),)
+
+    def skins(self) -> tuple[str, ...]:
+        return ("default",)
+
+    def setup_bounds(self) -> NativeSpine38Bounds:
+        return NativeSpine38Bounds(-1.0, 0.0, 2.0, 2.0)
+
+    def set_animation(self, track: int, name: str, loop: bool) -> None:
+        del track, name, loop
+
+    def update(self, delta_seconds: float) -> None:
+        del delta_seconds
+
+    def draw_commands(self) -> tuple[Spine38DrawCommand, ...]:
+        return self._draw_commands
+
+    def close(self) -> None:
+        self.closed = True
+
+
+def _vertex(x: float, y: float, *, a: int = 255) -> Spine38Vertex:
+    return Spine38Vertex(x, y, 0.0, 0.0, 255, 255, 255, a)
+
+
+def _command(*vertices: Spine38Vertex) -> Spine38DrawCommand:
+    return Spine38DrawCommand(
+        vertices,
+        (0, 1, 2),
+        0,
+        Spine38BlendMode.NORMAL,
+        0,
+    )
 
 
 def _write_valid_build_manifest(directory: Path) -> None:
@@ -80,6 +130,101 @@ def test_transform_is_fixed_from_setup_bounds() -> None:
     assert transform.point(0.0, 100.0).y >= 8.0
     assert transform.point(-20.0, 0.0).x >= 8.0
     assert transform.point(20.0, 0.0).x <= 152.0
+
+
+def test_visible_bounds_excludes_fully_transparent_commands() -> None:
+    runtime = importlib.import_module("sjtuclaw.application.spine38_runtime")
+    port = _FakeSpine38Port(
+        draw_commands=(
+            _command(
+                _vertex(-1000.0, -1000.0, a=0),
+                _vertex(1000.0, 1000.0, a=0),
+                _vertex(0.0, 1000.0, a=0),
+            ),
+            _command(
+                _vertex(-2.0, -3.0, a=255),
+                _vertex(4.0, -3.0, a=255),
+                _vertex(1.0, 9.0, a=255),
+            ),
+        )
+    )
+    adapter = runtime.Spine38Runtime(port)
+
+    assert adapter.visible_bounds() == runtime.Spine38Bounds(
+        x=-2.0,
+        y=-3.0,
+        width=6.0,
+        height=12.0,
+    )
+
+
+def test_visible_bounds_keeps_entire_partially_visible_command() -> None:
+    runtime = importlib.import_module("sjtuclaw.application.spine38_runtime")
+    port = _FakeSpine38Port(
+        draw_commands=(
+            _command(
+                _vertex(-7.0, -5.0, a=0),
+                _vertex(8.0, 6.0, a=1),
+                _vertex(2.0, 10.0, a=0),
+            ),
+        )
+    )
+
+    assert runtime.Spine38Runtime(port).visible_bounds() == runtime.Spine38Bounds(
+        x=-7.0,
+        y=-5.0,
+        width=15.0,
+        height=15.0,
+    )
+
+
+@pytest.mark.parametrize(
+    "draw_commands",
+    [
+        (),
+        (
+            _command(
+                _vertex(-1.0, -1.0, a=0),
+                _vertex(1.0, -1.0, a=0),
+                _vertex(0.0, 1.0, a=0),
+            ),
+        ),
+        (
+            _command(
+                _vertex(float("nan"), 0.0),
+                _vertex(1.0, 0.0),
+                _vertex(0.0, 1.0),
+            ),
+        ),
+        (
+            _command(
+                _vertex(2.0, 0.0),
+                _vertex(2.0, 1.0),
+                _vertex(2.0, 2.0),
+            ),
+        ),
+        (
+            _command(
+                _vertex(0.0, 2.0),
+                _vertex(1.0, 2.0),
+                _vertex(2.0, 2.0),
+            ),
+        ),
+    ],
+    ids=("no_commands", "all_transparent", "non_finite_xy", "zero_width", "zero_height"),
+)
+def test_visible_bounds_rejects_invalid_geometry(
+    draw_commands: tuple[Spine38DrawCommand, ...],
+) -> None:
+    runtime = importlib.import_module("sjtuclaw.application.spine38_runtime")
+
+    with pytest.raises(
+        runtime.Spine38FrameError,
+        match=r"^spine38_frame_invalid$",
+    ):
+        runtime.Spine38Runtime(
+            _FakeSpine38Port(draw_commands=draw_commands)
+        ).visible_bounds()
 
 
 def test_runtime_converts_native_draw_commands_without_reordering() -> None:

@@ -179,6 +179,36 @@ class Spine38Runtime:
     def draw_commands(self) -> tuple[Spine38DrawCommand, ...]:
         return self._playback_port().draw_commands()
 
+    def visible_bounds(self) -> Spine38Bounds:
+        visible_vertices = [
+            vertex
+            for command in self.draw_commands()
+            if any(vertex.a > 0 for vertex in command.vertices)
+            for vertex in command.vertices
+        ]
+        if not visible_vertices:
+            raise Spine38FrameError
+
+        xs = tuple(vertex.x for vertex in visible_vertices)
+        ys = tuple(vertex.y for vertex in visible_vertices)
+        if not all(math.isfinite(value) for value in (*xs, *ys)):
+            raise Spine38FrameError
+
+        minimum_x = min(xs)
+        maximum_x = max(xs)
+        minimum_y = min(ys)
+        maximum_y = max(ys)
+        width = maximum_x - minimum_x
+        height = maximum_y - minimum_y
+        if width <= 0.0 or height <= 0.0:
+            raise Spine38FrameError
+        return Spine38Bounds(
+            x=minimum_x,
+            y=minimum_y,
+            width=width,
+            height=height,
+        )
+
     def mesh_scene(
         self,
         transform: Spine38ViewportTransform,
