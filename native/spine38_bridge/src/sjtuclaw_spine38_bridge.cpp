@@ -12,6 +12,7 @@
 #include <spine/Skin.h>
 #include <spine/TextureLoader.h>
 
+#include <cctype>
 #include <cmath>
 #include <cstring>
 #include <limits>
@@ -71,8 +72,18 @@ bool atlas_has_supported_shape(const char* atlas, size_t atlas_size) {
     }
 
     const std::string text(atlas, atlas_size);
-    const size_t first_line_end = text.find_first_of("\r\n");
-    if (first_line_end == std::string::npos || first_line_end == 0u) {
+    size_t first_content = 0u;
+    while (first_content < text.size() &&
+           std::isspace(static_cast<unsigned char>(text[first_content]))) {
+        ++first_content;
+    }
+    if (first_content == text.size()) {
+        return false;
+    }
+
+    const size_t first_line_end = text.find_first_of("\r\n", first_content);
+    if (first_line_end == std::string::npos ||
+        first_line_end == first_content) {
         return false;
     }
     return text.find("size:", first_line_end) != std::string::npos &&

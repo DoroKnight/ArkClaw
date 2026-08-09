@@ -123,6 +123,39 @@ constexpr char atlas_fixture[] =
     "filter: Nearest,Nearest\n"
     "repeat: none\n";
 
+void check_atlas_leading_whitespace_contract() {
+    const auto skeleton = make_synthetic_skeleton();
+    const std::vector<std::string> valid_atlases{
+        std::string("\n") + atlas_fixture,
+        std::string(" \t\r\n\r\n\t \n") + atlas_fixture,
+    };
+
+    for (const std::string& atlas : valid_atlases) {
+        SjtuclawSpine38Handle* handle = nullptr;
+        CHECK(sjtuclaw_spine38_create(
+                  skeleton.data(), skeleton.size(), atlas.data(), atlas.size(),
+                  &handle) == SJTUCLAW_SPINE38_OK);
+        CHECK(handle != nullptr);
+        if (handle != nullptr) {
+            CHECK(sjtuclaw_spine38_animation_count(handle) == 1u);
+            sjtuclaw_spine38_destroy(handle);
+        }
+    }
+
+    const std::vector<std::string> invalid_atlases{
+        " \t\r\n\r\n\t \n",
+        "\nfixture-page.png\nsize: 1,1\nformat: RGBA8888\n",
+    };
+    for (const std::string& atlas : invalid_atlases) {
+        SjtuclawSpine38Handle* handle = reinterpret_cast<
+            SjtuclawSpine38Handle*>(static_cast<uintptr_t>(1));
+        CHECK(sjtuclaw_spine38_create(
+                  skeleton.data(), skeleton.size(), atlas.data(), atlas.size(),
+                  &handle) == SJTUCLAW_SPINE38_ATLAS_LOAD_FAILED);
+        CHECK(handle == nullptr);
+    }
+}
+
 void check_fixed_contract_values() {
     CHECK(sjtuclaw_spine38_abi_version() == 1u);
     CHECK(SJTUCLAW_SPINE38_OK == 0);
@@ -326,6 +359,7 @@ void check_synthetic_catalog_and_buffers() {
 
 int main() {
     check_fixed_contract_values();
+    check_atlas_leading_whitespace_contract();
     check_invalid_inputs_do_not_escape_exceptions();
     check_synthetic_catalog_and_buffers();
     return failures == 0 ? 0 : 1;
