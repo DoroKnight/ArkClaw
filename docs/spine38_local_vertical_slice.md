@@ -21,6 +21,8 @@ The wrapper verifies and checks out official `spine-runtimes` commit `8b4844bd4b
 - `build\spine38\Release\spine38-build-manifest.json`
 - `build\spine38\Release\LICENSE`
 
+Before using the adjacent `build\spine38\Release\spine38-build-manifest.json`, verify that it identifies the approved native contract: `configuration: Release`, `architecture: x64`, and `bridge_abi: 1`.
+
 The copied license is the Spine Runtimes License Agreement from the pinned upstream source. The Runtime is not MIT-, Apache-, BSD-, or SJTUClaw-owned code. Runtime source, DLLs, PDBs, generated evidence, and external character assets stay under ignored/local paths and are not packaged by this slice.
 
 ## Catalog-only check
