@@ -521,9 +521,9 @@ def _parse_atlas_metadata(
             continue
         if ":" not in stripped:
             if after_blank:
-                page_count += 1
-                after_blank = False
-                continue
+                raise ExternalAssetFilesystemError(
+                    ExternalPetAssetStatus.ATLAS_TEXTURE_MISMATCH
+                )
             current_region = {}
             regions.append(current_region)
             continue

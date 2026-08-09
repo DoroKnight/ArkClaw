@@ -477,12 +477,16 @@ def test_atlas_rejects_all_blank_lines() -> None:
 
 def test_atlas_rejects_an_implicit_second_page() -> None:
     filesystem = _FakeFilesystem()
-    extra_page = _atlas() + b"\nother.png\n"
+    extra_page = _atlas() + (
+        b"\nother.png\nsize: 1, 1\nformat: RGBA8888\n"
+        b"filter: Linear, Linear\nrepeat: none\n"
+    )
     filesystem.handles["fictional.atlas"] = _FakeHandle(extra_page, 2)
 
     result = ExternalPetAssetLoader(filesystem).load(_descriptor())
 
     assert result.status is ExternalPetAssetStatus.ATLAS_TEXTURE_MISMATCH
+    assert result.bundle is None
 
 
 @pytest.mark.parametrize(
