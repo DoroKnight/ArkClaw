@@ -1,7 +1,7 @@
 # Schwarz Production Autonomous Animation Design
 
 **Date:** 2026-08-09
-**Status:** Revised specification pending user freeze review
+**Status:** Closed and frozen for TDD implementation
 **Scope:** Production Schwarz desktop-pet runtime with six original Spine 3.8
 animations, persistent tray lifetime, high-DPI rendering, ArkPets-inspired
 autonomous behavior, explicit action requests, and reusable external role packs
@@ -926,9 +926,12 @@ This milestone is complete only when:
    shutdown;
 8. `Resume Autonomous` is a separate typed mode command that safely returns
    explicit hold to a fresh confirmed `RELAX` dwell;
-9. every nonterminal `SUSPENDED` path either recovers through confirmed
-   healthy `RELAX` playback into `AUTONOMOUS` or remains stopped with explicit
-   degraded/unknown health;
+9. every nonterminal `SUSPENDED` path either:
+   - recovers through confirmed healthy `RELAX` playback into `AUTONOMOUS`;
+   - follows the explicitly defined mid-loop workspace-boundary direction-turn
+     exception and re-enters `AUTONOMOUS` through confirmed opposite `Move`
+     playback; or
+   - remains stopped with explicit degraded/unknown health;
 10. protected continuation and loop-boundary identity are consumed at most
     once even under mandatory interruption or duplicate Qt delivery;
 11. the Schwarz package remains external and read-only;
