@@ -439,20 +439,50 @@ def test_atlas_other_rotations_keep_unswapped_packed_bounds(rotate: str) -> None
     result.bundle.close()
 
 
+@pytest.mark.parametrize("leading_blank_lines", [b"\n", b" \t\r\n\t\n"])
+def test_atlas_accepts_leading_blank_lines_without_changing_metadata(
+    leading_blank_lines: bytes,
+) -> None:
+    filesystem = _FakeFilesystem()
+    filesystem.handles["fictional.atlas"] = _FakeHandle(
+        leading_blank_lines + _atlas(),
+        2,
+    )
+
+    result = ExternalPetAssetLoader(filesystem).load(_descriptor())
+
+    assert result.succeeded
+    bundle = result.bundle
+    assert bundle is not None
+    atlas = bundle.metadata.atlas
+    assert atlas.page_count == 1
+    assert atlas.page_filename == "fictional.png"
+    assert (atlas.page_width, atlas.page_height) == (16, 12)
+    assert atlas.pixel_format == "RGBA8888"
+    assert (atlas.min_filter, atlas.mag_filter) == ("Linear", "Linear")
+    assert atlas.repeat == "none"
+    assert atlas.region_count == 1
+    bundle.close()
+
+
+def test_atlas_rejects_all_blank_lines() -> None:
+    filesystem = _FakeFilesystem()
+    filesystem.handles["fictional.atlas"] = _FakeHandle(b"\n \t\r\n\t\n", 2)
+
+    result = ExternalPetAssetLoader(filesystem).load(_descriptor())
+
+    assert result.status is ExternalPetAssetStatus.ATLAS_INVALID
+    assert result.bundle is None
+
+
 def test_atlas_rejects_an_implicit_second_page() -> None:
     filesystem = _FakeFilesystem()
-    extra_page = _atlas() + (
-        b"\nother.png\nsize: 1, 1\nformat: RGBA8888\n"
-        b"filter: Linear, Linear\nrepeat: none\n"
-    )
+    extra_page = _atlas() + b"\nother.png\n"
     filesystem.handles["fictional.atlas"] = _FakeHandle(extra_page, 2)
 
     result = ExternalPetAssetLoader(filesystem).load(_descriptor())
 
-    assert result.status in {
-        ExternalPetAssetStatus.ATLAS_INVALID,
-        ExternalPetAssetStatus.ATLAS_TEXTURE_MISMATCH,
-    }
+    assert result.status is ExternalPetAssetStatus.ATLAS_TEXTURE_MISMATCH
 
 
 @pytest.mark.parametrize(

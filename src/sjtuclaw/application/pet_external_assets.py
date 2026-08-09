@@ -493,11 +493,17 @@ def _parse_atlas_metadata(
             ExternalPetAssetStatus.ATLAS_INVALID
         )
     lines = text.splitlines()
-    if not lines or not lines[0].strip():
+    first_content_line = 0
+    while (
+        first_content_line < len(lines)
+        and not lines[first_content_line].strip()
+    ):
+        first_content_line += 1
+    if first_content_line == len(lines):
         raise ExternalAssetFilesystemError(
             ExternalPetAssetStatus.ATLAS_INVALID
         )
-    page_filename = lines[0].strip()
+    page_filename = lines[first_content_line].strip()
     if page_filename != expected_texture_filename:
         raise ExternalAssetFilesystemError(
             ExternalPetAssetStatus.ATLAS_TEXTURE_MISMATCH
@@ -507,7 +513,7 @@ def _parse_atlas_metadata(
     current_region: dict[str, str] | None = None
     page_count = 1
     after_blank = False
-    for raw_line in lines[1:]:
+    for raw_line in lines[first_content_line + 1 :]:
         stripped = raw_line.strip()
         if not stripped:
             after_blank = True
