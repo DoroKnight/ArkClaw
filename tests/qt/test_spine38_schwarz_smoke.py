@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import importlib
 import json
 import os
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any, cast
+from types import SimpleNamespace
+from typing import Any, NoReturn, cast
 
 import pytest
 
@@ -23,6 +25,150 @@ _SAMPLE_LABELS = [
     "loop_3_before_end",
     "loop_3_after_end",
 ]
+
+
+def test_wrong_hash_phase_observes_zero_bridge_factory_calls() -> None:
+    script = importlib.import_module("scripts.qt_spine38_vertical_slice")
+    assets = importlib.import_module(
+        "sjtuclaw.application.pet_external_assets"
+    )
+    bridge_calls: list[object] = []
+
+    class HashMismatchLoader:
+        def load(self, descriptor: object) -> object:
+            del descriptor
+            return SimpleNamespace(
+                succeeded=False,
+                bundle=None,
+                status=assets.ExternalPetAssetStatus.HASH_MISMATCH,
+            )
+
+    def forbidden_bridge_factory(snapshot: object) -> NoReturn:
+        bridge_calls.append(snapshot)
+        raise AssertionError("wrong-hash phase must not construct the bridge")
+
+    evidence = script._forced_hash_failure_evidence(
+        Path("X:/approved-assets"),
+        asset_loader=HashMismatchLoader(),
+        bridge_factory=forbidden_bridge_factory,
+    )
+
+    assert bridge_calls == []
+    assert evidence == {
+        "bridge_constructed": False,
+        "loader_status": "external_asset_hash_mismatch",
+        "renderer_safe_code": "pet_renderer_construction_failed",
+        "using_placeholder": True,
+    }
+
+
+def test_wrong_hash_phase_attempts_monitored_bridge_on_loader_success() -> None:
+    script = importlib.import_module("scripts.qt_spine38_vertical_slice")
+    assets = importlib.import_module(
+        "sjtuclaw.application.pet_external_assets"
+    )
+    bridge_calls: list[object] = []
+
+    class UnexpectedBundle:
+        snapshot = object()
+
+        def __init__(self) -> None:
+            self.close_count = 0
+
+        def close(self) -> None:
+            self.close_count += 1
+
+    bundle = UnexpectedBundle()
+
+    class UnexpectedSuccessLoader:
+        def load(self, descriptor: object) -> object:
+            del descriptor
+            return SimpleNamespace(
+                succeeded=True,
+                bundle=bundle,
+                status=assets.ExternalPetAssetStatus.OK,
+            )
+
+    def forbidden_bridge_factory(snapshot: object) -> NoReturn:
+        bridge_calls.append(snapshot)
+        raise AssertionError("monitored bridge boundary reached")
+
+    with pytest.raises(AssertionError, match="monitored bridge boundary reached"):
+        script._forced_hash_failure_evidence(
+            Path("X:/approved-assets"),
+            asset_loader=UnexpectedSuccessLoader(),
+            bridge_factory=forbidden_bridge_factory,
+        )
+
+    assert bridge_calls == [bundle.snapshot]
+    assert bundle.close_count == 1
+
+
+def test_three_loop_runner_keeps_wrong_hash_probe_before_native_boundary(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    script = importlib.import_module("scripts.qt_spine38_vertical_slice")
+    snapshot = object()
+    probe_calls: list[object] = []
+    probe_rejections: list[str] = []
+    native_bridge_calls: list[object] = []
+
+    class NativeLibrary:
+        def create(self, received_snapshot: object) -> object:
+            native_bridge_calls.append(received_snapshot)
+            return SimpleNamespace(close=lambda: None)
+
+    def from_dll_path(path: Path) -> NativeLibrary:
+        del path
+        return NativeLibrary()
+
+    def unexpected_success_probe(
+        asset_root: Path,
+        *,
+        asset_loader: object,
+        bridge_factory: object,
+    ) -> NoReturn:
+        del asset_root, asset_loader
+        probe_calls.append(snapshot)
+        try:
+            cast(Any, bridge_factory)(snapshot)
+        except AssertionError as exc:
+            probe_rejections.append(str(exc))
+        raise RuntimeError
+
+    monkeypatch.setattr(
+        script.Spine38NativeLibrary,
+        "from_dll_path",
+        staticmethod(from_dll_path),
+    )
+    monkeypatch.setattr(
+        script,
+        "_forced_hash_failure_evidence",
+        unexpected_success_probe,
+    )
+
+    result = script._run_three_loop_smoke(
+        script._Arguments(
+            list_only=False,
+            bridge_dll=Path("X:/spine38_bridge.dll"),
+            asset_root=Path("X:/approved-assets"),
+            animation="Relax",
+            loops=3,
+        ),
+        script._BuildManifest(
+            commit=script._RUNTIME_COMMIT,
+            configuration="Release",
+            architecture="x64",
+            bridge_abi=1,
+        ),
+    )
+
+    assert result == (1, "spine38_runtime_failure", None)
+    assert probe_calls == [snapshot]
+    assert probe_rejections == [
+        "wrong-hash phase must not construct the bridge"
+    ]
+    assert native_bridge_calls == []
 
 
 def test_real_schwarz_renders_three_relax_loops_and_proves_fallback() -> None:

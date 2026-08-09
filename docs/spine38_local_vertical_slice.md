@@ -50,7 +50,7 @@ Only the exact combination `--animation Relax --loops 3` is accepted. The proces
 
 The run samples in-memory alpha bounds and a short vertex checksum near the start, midpoint, and end of each loop, including both sides of all three boundaries. It stops after the final post-boundary sample, at no less than three reported durations. No screenshot is written.
 
-In the same process, before the successful bridge construction path, a nonvisual probe changes the expected skeleton hash in memory. The loader must return `external_asset_hash_mismatch`; that path must not construct the bridge and must initialize a `SafePetRenderer` placeholder with a fixed construction-failure code. It opens no window.
+In the same process, before the successful bridge construction path, a nonvisual probe changes the expected skeleton hash in memory. The probe wraps an injected, phase-local forbidden bridge factory with a call counter. The loader must return `external_asset_hash_mismatch`; the evidence derives `bridge_constructed` from that observed zero count. If the loader unexpectedly reports success, the probe increments the counter and invokes the forbidden factory, which rejects the attempt before any DLL/native construction and prevents negative-path evidence from being published. Only after the probe returns does the verified asset path define and use the real DLL-backed factory. The expected mismatch path initializes a `SafePetRenderer` placeholder with a fixed construction-failure code and opens no window.
 
 ## Automated opt-in assertion
 

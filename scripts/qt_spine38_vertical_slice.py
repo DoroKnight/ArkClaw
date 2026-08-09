@@ -10,11 +10,11 @@ import struct
 import sys
 import time
 import uuid
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from contextlib import suppress
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any, NoReturn, TextIO, cast
+from typing import Any, NoReturn, Protocol, TextIO, cast
 
 if __package__ in {None, ""}:
     sys.path.insert(
@@ -24,6 +24,8 @@ if __package__ in {None, ""}:
 
 from sjtuclaw.application.pet_external_assets import (
     ExternalPetAssetLoader,
+    ExternalPetAssetLoadResult,
+    ExternalPetAssetSnapshot,
     ExternalPetAssetStatus,
 )
 from sjtuclaw.application.pet_renderer_model import (
@@ -40,6 +42,7 @@ from sjtuclaw.infrastructure.pet_external_asset_filesystem import (
 from sjtuclaw.infrastructure.spine38_native import (
     Spine38NativeError,
     Spine38NativeLibrary,
+    Spine38NativePort,
 )
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -80,6 +83,16 @@ class _CliArgumentError(Exception):
 
 class _BuildManifestError(Exception):
     pass
+
+
+class _WrongHashAssetLoader(Protocol):
+    def load(
+        self,
+        descriptor: ExternalPetAssetDescriptor | None,
+    ) -> ExternalPetAssetLoadResult: ...
+
+
+_BridgeFactory = Callable[[ExternalPetAssetSnapshot], Spine38NativePort]
 
 
 class _SafeArgumentParser(argparse.ArgumentParser):
@@ -312,7 +325,12 @@ def _emit_json(value: dict[str, Any], stream: TextIO) -> None:
     )
 
 
-def _forced_hash_failure_evidence(asset_root: Path) -> dict[str, Any]:
+def _forced_hash_failure_evidence(
+    asset_root: Path,
+    *,
+    asset_loader: _WrongHashAssetLoader,
+    bridge_factory: _BridgeFactory,
+) -> dict[str, Any]:
     from sjtuclaw.application.pet_geometry import Size
     from sjtuclaw.presentation.qt.pet_renderer import (
         PetRendererSafeCode,
@@ -329,13 +347,33 @@ def _forced_hash_failure_evidence(asset_root: Path) -> dict[str, Any]:
             texture_sha256=_TEXTURE_SHA256,
         ),
     )
-    loaded = ExternalPetAssetLoader(
-        WindowsExternalPetAssetFilesystem()
-    ).load(wrong_descriptor)
+    bridge_call_count = 0
+
+    def monitored_bridge_factory(
+        snapshot: ExternalPetAssetSnapshot,
+    ) -> Spine38NativePort:
+        nonlocal bridge_call_count
+        bridge_call_count += 1
+        return bridge_factory(snapshot)
+
+    loaded = asset_loader.load(wrong_descriptor)
+    if loaded.succeeded and loaded.bundle is not None:
+        probe_port = None
+        try:
+            probe_port = monitored_bridge_factory(loaded.bundle.snapshot)
+        finally:
+            try:
+                if probe_port is not None:
+                    probe_port.close()
+            finally:
+                loaded.bundle.close()
+        raise RuntimeError
     if loaded.bundle is not None:
         loaded.bundle.close()
         raise RuntimeError
     if loaded.status is not ExternalPetAssetStatus.HASH_MISMATCH:
+        raise RuntimeError
+    if bridge_call_count != 0:
         raise RuntimeError
     fallback = SafePetRenderer(
         PlaceholderPetRenderer(),
@@ -343,7 +381,7 @@ def _forced_hash_failure_evidence(asset_root: Path) -> dict[str, Any]:
     )
     fallback.initialize(Size(160, 180))
     evidence = {
-        "bridge_constructed": False,
+        "bridge_constructed": bridge_call_count > 0,
         "loader_status": loaded.status.value,
         "renderer_safe_code": fallback.safe_code.value,
         "using_placeholder": fallback.using_placeholder,
@@ -509,9 +547,30 @@ def _run_three_loop_smoke(
     try:
         if arguments.animation != "Relax" or arguments.loops != 3:
             raise RuntimeError
+
+        def forbidden_wrong_hash_bridge_factory(
+            snapshot: ExternalPetAssetSnapshot,
+        ) -> NoReturn:
+            del snapshot
+            raise AssertionError(
+                "wrong-hash phase must not construct the bridge"
+            )
+
         forced_hash_failure = _forced_hash_failure_evidence(
-            arguments.asset_root
+            arguments.asset_root,
+            asset_loader=ExternalPetAssetLoader(
+                WindowsExternalPetAssetFilesystem()
+            ),
+            bridge_factory=forbidden_wrong_hash_bridge_factory,
         )
+
+        def bridge_factory(
+            snapshot: ExternalPetAssetSnapshot,
+        ) -> Spine38NativePort:
+            return Spine38NativeLibrary.from_dll_path(
+                arguments.bridge_dll
+            ).create(snapshot)
+
         loaded = ExternalPetAssetLoader(
             WindowsExternalPetAssetFilesystem()
         ).load(_descriptor(arguments.asset_root))
@@ -519,9 +578,7 @@ def _run_three_loop_smoke(
             status = loaded.status.value
         else:
             bundle = loaded.bundle
-            native_port = Spine38NativeLibrary.from_dll_path(
-                arguments.bridge_dll
-            ).create(bundle.snapshot)
+            native_port = bridge_factory(bundle.snapshot)
 
             from PySide6.QtCore import Qt, QTimer
             from PySide6.QtWidgets import QApplication
