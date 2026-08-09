@@ -12,6 +12,7 @@ from typing import Any, cast
 from sjtuclaw.application.pet_autonomous_scheduler import AutonomousActionScheduler
 from sjtuclaw.application.pet_external_assets import ExternalPetAssetLoader
 from sjtuclaw.application.pet_geometry import Size
+from sjtuclaw.application.pet_mesh_model import PetMeshTextureFilter
 from sjtuclaw.application.pet_production_actions import ProductionAction
 from sjtuclaw.application.pet_renderer_model import (
     ExternalPetAssetDescriptor,
@@ -27,11 +28,14 @@ from sjtuclaw.application.pet_role_pack import (
     build_track0_animation_registry,
 )
 from sjtuclaw.application.pet_track0 import PetTrack0Controller
-from sjtuclaw.application.spine38_runtime import Spine38Runtime
+from sjtuclaw.application.spine38_runtime import Spine38Bounds, Spine38Runtime
 from sjtuclaw.infrastructure.pet_external_asset_filesystem import (
     WindowsExternalPetAssetFilesystem,
 )
-from sjtuclaw.infrastructure.spine38_native import Spine38NativeLibrary
+from sjtuclaw.infrastructure.spine38_native import (
+    Spine38NativeLibrary,
+    Spine38TextureFilter,
+)
 from sjtuclaw.presentation.qt.spine38_player import Spine38AnimationPlayer
 from sjtuclaw.presentation.qt.spine38_renderer import Spine38PetRenderer
 
@@ -75,6 +79,7 @@ def create_optional_production_pet_composition() -> ProductionPetComposition | N
         native = Spine38NativeLibrary.from_dll_path(bridge_value).create(
             bundle.snapshot
         )
+        native_filters = native.texture_page_info()
         runtime = Spine38Runtime(
             native,
             atlas_size=Size(
@@ -93,6 +98,7 @@ def create_optional_production_pet_composition() -> ProductionPetComposition | N
             roles,
             source_durations=durations,
         )
+        session_bounds = _sample_session_bounds(runtime, roles, durations)
         player = Spine38AnimationPlayer(runtime)
         track0 = PetTrack0Controller(player=player, registry=registry)
         renderer = Spine38PetRenderer(
@@ -100,6 +106,10 @@ def create_optional_production_pet_composition() -> ProductionPetComposition | N
             bundle.snapshot.texture_bytes,
             asset_owner=bundle,
             advance_runtime=False,
+            min_filter=_texture_filter(native_filters.min_filter),
+            mag_filter=_texture_filter(native_filters.mag_filter),
+            framing=manifest.framing,
+            session_bounds=session_bounds,
         )
         runtime = None
         bundle = None
@@ -201,3 +211,39 @@ def _asset_descriptor(manifest: RolePackManifest) -> ExternalPetAssetDescriptor:
             manifest.expected_sha256.texture,
         ),
     )
+
+
+def _texture_filter(value: Spine38TextureFilter) -> PetMeshTextureFilter:
+    if value is Spine38TextureFilter.NEAREST:
+        return PetMeshTextureFilter.NEAREST
+    return PetMeshTextureFilter.LINEAR
+
+
+def _sample_session_bounds(
+    runtime: Spine38Runtime,
+    roles: AnimationRoleRegistry,
+    durations: dict[ProductionAction, float],
+) -> Spine38Bounds:
+    """Build one immutable union transform from every physical animation."""
+
+    samples: list[Spine38Bounds] = []
+    sampled_names: set[str] = set()
+    for action in ProductionAction:
+        binding = roles.resolve(action)
+        if binding.physical_name in sampled_names:
+            continue
+        sampled_names.add(binding.physical_name)
+        runtime.set_animation(0, binding.physical_name, True)
+        runtime.update(0.0)
+        samples.append(runtime.visible_bounds())
+        step = durations[action] / 12.0
+        for _ in range(11):
+            runtime.update(step)
+            samples.append(runtime.visible_bounds())
+    if not samples:
+        raise ValueError("role_pack_visible_bounds_unavailable")
+    left = min(item.x for item in samples)
+    bottom = min(item.y for item in samples)
+    right = max(item.x + item.width for item in samples)
+    top = max(item.y + item.height for item in samples)
+    return Spine38Bounds(left, bottom, right - left, top - bottom)

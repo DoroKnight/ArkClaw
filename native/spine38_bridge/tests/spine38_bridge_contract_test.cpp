@@ -760,6 +760,44 @@ void check_fixed_contract_values() {
     CHECK(SJTUCLAW_SPINE38_SKELETON_LOAD_FAILED == 3);
     CHECK(SJTUCLAW_SPINE38_ANIMATION_NOT_FOUND == 4);
     CHECK(SJTUCLAW_SPINE38_RUNTIME_FAILURE == 5);
+    CHECK(SJTUCLAW_SPINE38_FILTER_UNKNOWN == 0);
+    CHECK(SJTUCLAW_SPINE38_FILTER_NEAREST == 1);
+    CHECK(SJTUCLAW_SPINE38_FILTER_LINEAR == 2);
+}
+
+void check_texture_filter_metadata() {
+    const auto skeleton = make_synthetic_skeleton();
+    const struct FilterCase {
+        const char* declaration;
+        uint32_t expected_min;
+        uint32_t expected_mag;
+    } cases[]{
+        {"Nearest,Nearest", 1u, 1u},
+        {"Nearest,Linear", 1u, 2u},
+        {"Linear,Nearest", 2u, 1u},
+        {"Linear,Linear", 2u, 2u},
+    };
+    for (const FilterCase& item : cases) {
+        const std::string atlas =
+            std::string("fixture-page.png\nsize: 1,1\nformat: RGBA8888\nfilter: ") +
+            item.declaration + "\nrepeat: none\n";
+        SjtuclawSpine38Handle* handle = nullptr;
+        CHECK(sjtuclaw_spine38_create(
+                  skeleton.data(), skeleton.size(), atlas.data(), atlas.size(),
+                  &handle) == SJTUCLAW_SPINE38_OK);
+        SjtuclawSpine38TexturePageView view{99u, 98u};
+        CHECK(sjtuclaw_spine38_texture_page_view(
+                  handle, &view, sizeof(view)) == SJTUCLAW_SPINE38_OK);
+        CHECK(view.min_filter == item.expected_min);
+        CHECK(view.mag_filter == item.expected_mag);
+        SjtuclawSpine38TexturePageView sentinel{91u, 92u};
+        CHECK(sjtuclaw_spine38_texture_page_view(
+                  handle, &sentinel, sizeof(sentinel) - 1u) ==
+              SJTUCLAW_SPINE38_INVALID_ARGUMENT);
+        CHECK(sentinel.min_filter == 91u);
+        CHECK(sentinel.mag_filter == 92u);
+        sjtuclaw_spine38_destroy(handle);
+    }
 }
 
 void check_zero_duration_animation_is_not_exposed() {
@@ -1469,6 +1507,7 @@ void check_synthetic_catalog_and_buffers() {
 
 int main() {
     check_fixed_contract_values();
+    check_texture_filter_metadata();
     check_atlas_leading_whitespace_contract();
     check_zero_duration_animation_is_not_exposed();
     check_playback_contract_without_drawables();

@@ -52,6 +52,8 @@ public:
         accepted_ = true;
         page_name_.assign(page.name.buffer(), page.name.length());
         texture_path_.assign(path.buffer(), path.length());
+        min_filter_ = map_filter(page.minFilter);
+        mag_filter_ = map_filter(page.magFilter);
         page.texturePath = path;
         page.setRendererObject(&texture_page_token_);
     }
@@ -63,12 +65,28 @@ public:
                !texture_path_.empty();
     }
 
+    uint32_t min_filter() const noexcept { return min_filter_; }
+    uint32_t mag_filter() const noexcept { return mag_filter_; }
+
 private:
+    static uint32_t map_filter(spine::TextureFilter value) noexcept {
+        switch (value) {
+        case spine::TextureFilter_Nearest:
+            return SJTUCLAW_SPINE38_FILTER_NEAREST;
+        case spine::TextureFilter_Linear:
+            return SJTUCLAW_SPINE38_FILTER_LINEAR;
+        default:
+            return SJTUCLAW_SPINE38_FILTER_UNKNOWN;
+        }
+    }
+
     size_t load_count_ = 0;
     bool accepted_ = false;
     uint8_t texture_page_token_ = 0;
     std::string page_name_;
     std::string texture_path_;
+    uint32_t min_filter_ = SJTUCLAW_SPINE38_FILTER_UNKNOWN;
+    uint32_t mag_filter_ = SJTUCLAW_SPINE38_FILTER_UNKNOWN;
 };
 
 bool atlas_has_supported_shape(const char* atlas, size_t atlas_size) {
@@ -844,6 +862,26 @@ SjtuclawSpine38Code sjtuclaw_spine38_event_view(
         const SjtuclawSpine38EventView view =
             handle->playback_events[index].view();
         *out_view = view;
+        return SJTUCLAW_SPINE38_OK;
+    } catch (...) {
+        return SJTUCLAW_SPINE38_RUNTIME_FAILURE;
+    }
+}
+
+SjtuclawSpine38Code sjtuclaw_spine38_texture_page_view(
+    const SjtuclawSpine38Handle* handle,
+    SjtuclawSpine38TexturePageView* out_view,
+    size_t view_capacity) {
+    try {
+        if (handle == nullptr || out_view == nullptr ||
+            view_capacity < sizeof(SjtuclawSpine38TexturePageView) ||
+            handle->texture_loader == nullptr) {
+            return SJTUCLAW_SPINE38_INVALID_ARGUMENT;
+        }
+        const SjtuclawSpine38TexturePageView candidate{
+            handle->texture_loader->min_filter(),
+            handle->texture_loader->mag_filter()};
+        *out_view = candidate;
         return SJTUCLAW_SPINE38_OK;
     } catch (...) {
         return SJTUCLAW_SPINE38_RUNTIME_FAILURE;

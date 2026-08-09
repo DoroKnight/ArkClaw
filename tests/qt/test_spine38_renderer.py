@@ -17,7 +17,9 @@ from PySide6.QtGui import QImage
 from PySide6.QtWidgets import QApplication
 
 from sjtuclaw.application.pet_geometry import Size
+from sjtuclaw.application.pet_mesh_model import PetMeshTextureFilter
 from sjtuclaw.application.pet_renderer_model import PetRendererAction
+from sjtuclaw.application.pet_role_pack import RolePackFraming
 from sjtuclaw.application.spine38_runtime import (
     Spine38AnimationInfo,
     Spine38Bounds,
@@ -153,12 +155,16 @@ class _FakeBackend:
         self.scenes: list[Any] = []
         self.closed = False
         self._events = events
+        self.device_pixel_ratios: list[float] = []
 
     def initialize(self, viewport: Size) -> None:
         assert viewport == Size(160, 180)
 
     def set_viewport(self, viewport: Size) -> None:
         assert viewport == Size(160, 180)
+
+    def set_device_pixel_ratio(self, value: float) -> None:
+        self.device_pixel_ratios.append(value)
 
     def set_scene(self, scene: Any) -> None:
         self.scenes.append(scene)
@@ -225,6 +231,43 @@ def test_renderer_sets_relax_once_and_only_advances_time(
     assert min(vertex.position.y for vertex in initial_vertices) == pytest.approx(4.0)
     assert max(vertex.position.y for vertex in initial_vertices) == pytest.approx(176.0)
     assert renderer.foot_baseline_y == pytest.approx(176.0)
+    renderer.close()
+
+
+def test_renderer_propagates_real_dpr_filters_and_one_fixed_framing(
+    qt_application: QApplication,
+    verified_texture_bytes: bytes,
+) -> None:
+    del qt_application
+    module = importlib.import_module("sjtuclaw.presentation.qt.spine38_renderer")
+    runtime = _FakeRuntime()
+    backends: list[_FakeBackend] = []
+    renderer = module.Spine38PetRenderer(
+        runtime,
+        verified_texture_bytes,
+        backend_factory=_backend_factory(backends),
+        min_filter=PetMeshTextureFilter.NEAREST,
+        mag_filter=PetMeshTextureFilter.LINEAR,
+        framing=RolePackFraming(0.9, 3.0, 175.0),
+        session_bounds=Spine38Bounds(-0.5, 0.0, 1.0, 2.0),
+    )
+
+    renderer.set_device_pixel_ratio(1.5)
+    renderer.initialize(Size(160, 180))
+    renderer.set_device_pixel_ratio(2.0)
+    renderer.update(0.016)
+
+    backend = backends[0]
+    texture = backend.initial_scene.textures[0]
+    assert backend.device_pixel_ratios == [1.5, 2.0]
+    assert texture.min_filter is PetMeshTextureFilter.NEAREST
+    assert texture.mag_filter is PetMeshTextureFilter.LINEAR
+    assert all(
+        transform is runtime.mesh_scene_transforms[0]
+        for transform in runtime.mesh_scene_transforms
+    )
+    assert runtime.mesh_scene_transforms[0].foot_baseline_y == 175.0
+    assert runtime.visible_bounds_calls == 0
     renderer.close()
 
 

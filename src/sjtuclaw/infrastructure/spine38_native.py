@@ -46,6 +46,12 @@ class Spine38BlendMode(IntEnum):
     SCREEN = 3
 
 
+class Spine38TextureFilter(IntEnum):
+    UNKNOWN = 0
+    NEAREST = 1
+    LINEAR = 2
+
+
 class Spine38NativeEventType(IntEnum):
     COMPLETE = 1
     LOOP_BOUNDARY = 2
@@ -101,6 +107,12 @@ class Spine38NativePlaybackEvent:
     loop_ordinal: int
 
 
+@dataclass(frozen=True, slots=True)
+class Spine38TexturePageInfo:
+    min_filter: Spine38TextureFilter
+    mag_filter: Spine38TextureFilter
+
+
 class Spine38CatalogNativePort(Protocol):
     def catalog(self) -> tuple[Spine38AnimationInfo, ...]: ...
 
@@ -119,6 +131,8 @@ class Spine38NativePort(Spine38CatalogNativePort, Protocol):
     def clear_track(self, track: int) -> None: ...
 
     def playback_events(self) -> tuple[Spine38NativePlaybackEvent, ...]: ...
+
+    def texture_page_info(self) -> Spine38TexturePageInfo: ...
 
     def draw_commands(self) -> tuple[Spine38DrawCommand, ...]: ...
 
@@ -167,6 +181,13 @@ class _SjtuclawSpine38EventView(ctypes.Structure):
     ]
 
 
+class _SjtuclawSpine38TexturePageView(ctypes.Structure):
+    _fields_ = [
+        ("min_filter", ctypes.c_uint32),
+        ("mag_filter", ctypes.c_uint32),
+    ]
+
+
 class _NativeFunction(Protocol):
     argtypes: list[object]
     restype: object | None
@@ -190,6 +211,7 @@ class _NativeLibrary(Protocol):
     sjtuclaw_spine38_clear_track: _NativeFunction
     sjtuclaw_spine38_event_count: _NativeFunction
     sjtuclaw_spine38_event_view: _NativeFunction
+    sjtuclaw_spine38_texture_page_view: _NativeFunction
     sjtuclaw_spine38_draw_count: _NativeFunction
     sjtuclaw_spine38_draw_view: _NativeFunction
 
@@ -318,6 +340,12 @@ class Spine38NativeLibrary:
             ctypes.c_size_t,
         ]
         library.sjtuclaw_spine38_event_view.restype = ctypes.c_int
+        library.sjtuclaw_spine38_texture_page_view.argtypes = [
+            ctypes.c_void_p,
+            ctypes.POINTER(_SjtuclawSpine38TexturePageView),
+            ctypes.c_size_t,
+        ]
+        library.sjtuclaw_spine38_texture_page_view.restype = ctypes.c_int
         library.sjtuclaw_spine38_draw_count.argtypes = [ctypes.c_void_p]
         library.sjtuclaw_spine38_draw_count.restype = ctypes.c_size_t
         library.sjtuclaw_spine38_draw_view.argtypes = [
@@ -500,6 +528,27 @@ class _Spine38CatalogNativeHandle:
                 return tuple(self._draw_command(handle, index) for index in range(count))
             except (MemoryError, OverflowError):
                 raise Spine38NativeError(Spine38NativeCode.RUNTIME_FAILURE) from None
+
+    def texture_page_info(self) -> Spine38TexturePageInfo:
+        with self._lock:
+            handle = self._require_open()
+            raw = _SjtuclawSpine38TexturePageView()
+            _require_ok(
+                self._library.sjtuclaw_spine38_texture_page_view(
+                    handle,
+                    ctypes.byref(raw),
+                    ctypes.sizeof(raw),
+                )
+            )
+            try:
+                return Spine38TexturePageInfo(
+                    Spine38TextureFilter(raw.min_filter),
+                    Spine38TextureFilter(raw.mag_filter),
+                )
+            except ValueError:
+                raise Spine38NativeError(
+                    Spine38NativeCode.RUNTIME_FAILURE
+                ) from None
 
     def close(self) -> None:
         with self._lock:

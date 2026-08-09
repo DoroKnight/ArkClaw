@@ -20,6 +20,11 @@ class PetMeshBlendMode(StrEnum):
     PREMULTIPLIED_ALPHA = "premultiplied_alpha"
 
 
+class PetMeshTextureFilter(StrEnum):
+    NEAREST = "nearest"
+    LINEAR = "linear"
+
+
 class PetMeshValidationCode(StrEnum):
     INVALID_VIEWPORT = "pet_mesh_invalid_viewport"
     INVALID_BASELINE = "pet_mesh_invalid_baseline"
@@ -82,6 +87,8 @@ class PetMeshTextureData:
     height: int
     rgba_bytes: bytes
     premultiplied: bool = False
+    min_filter: PetMeshTextureFilter = PetMeshTextureFilter.LINEAR
+    mag_filter: PetMeshTextureFilter = PetMeshTextureFilter.LINEAR
 
 
 @dataclass(frozen=True, slots=True)
@@ -125,6 +132,8 @@ def validate_pet_mesh_scene(scene: PetMeshScene) -> None:
             or texture.width > 4096
             or texture.height > 4096
             or len(texture.rgba_bytes) != texture.width * texture.height * 4
+            or not isinstance(texture.min_filter, PetMeshTextureFilter)
+            or not isinstance(texture.mag_filter, PetMeshTextureFilter)
         ):
             raise PetMeshValidationError(PetMeshValidationCode.INVALID_VIEWPORT)
 

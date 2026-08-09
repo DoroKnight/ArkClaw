@@ -7,7 +7,9 @@ import pytest
 
 from sjtuclaw.application.pet_production_actions import ProductionAction
 from sjtuclaw.application.pet_role_pack import AnimationRoleRegistry
+from sjtuclaw.application.spine38_runtime import Spine38Bounds
 from sjtuclaw.bootstrap.pet_production import (
+    _sample_session_bounds,
     create_optional_production_pet_composition,
     load_role_pack_manifest,
 )
@@ -76,3 +78,50 @@ def test_unconfigured_production_composition_preserves_placeholder(
     monkeypatch.delenv("SJTUCLAW_SPINE38_BRIDGE_DLL", raising=False)
 
     assert create_optional_production_pet_composition() is None
+
+
+class _BoundsRuntime:
+    def __init__(self) -> None:
+        self.animation_names: list[str] = []
+        self._index = 0
+
+    def set_animation(self, track: int, name: str, loop: bool) -> None:
+        assert track == 0
+        assert loop
+        self.animation_names.append(name)
+        self._index = len(self.animation_names) - 1
+
+    def update(self, delta_seconds: float) -> tuple[()]:
+        assert delta_seconds >= 0.0
+        return ()
+
+    def visible_bounds(self) -> Spine38Bounds:
+        offset = float(self._index)
+        return Spine38Bounds(-offset, -offset, 2.0 + offset, 3.0 + offset)
+
+
+def test_session_framing_samples_each_of_six_physical_animations_once(
+    tmp_path: Path,
+) -> None:
+    manifest_path = tmp_path / "schwarz.json"
+    manifest_path.write_text(json.dumps(_manifest_value()), encoding="utf-8")
+    roles = AnimationRoleRegistry.from_manifest(
+        load_role_pack_manifest(manifest_path)
+    )
+    runtime = _BoundsRuntime()
+
+    bounds = _sample_session_bounds(
+        runtime,  # type: ignore[arg-type]
+        roles,
+        {action: 12.0 for action in ProductionAction},
+    )
+
+    assert runtime.animation_names == [
+        "Relax",
+        "Move",
+        "Sit",
+        "Sleep",
+        "Special",
+        "Interact",
+    ]
+    assert bounds == Spine38Bounds(-5.0, -5.0, 7.0, 8.0)

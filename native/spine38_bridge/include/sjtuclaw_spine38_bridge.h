@@ -38,6 +38,7 @@ typedef struct SjtuclawSpine38Bounds {
 
 #define SJTUCLAW_SPINE38_PLAYBACK_ABI 1
 #define SJTUCLAW_SPINE38_EVENT_ABI 1
+#define SJTUCLAW_SPINE38_TEXTURE_ABI 1
 
 typedef enum SjtuclawSpine38BlendMode {
     SJTUCLAW_SPINE38_BLEND_NORMAL = 0,
@@ -45,6 +46,17 @@ typedef enum SjtuclawSpine38BlendMode {
     SJTUCLAW_SPINE38_BLEND_MULTIPLY = 2,
     SJTUCLAW_SPINE38_BLEND_SCREEN = 3
 } SjtuclawSpine38BlendMode;
+
+typedef enum SjtuclawSpine38TextureFilter {
+    SJTUCLAW_SPINE38_FILTER_UNKNOWN = 0,
+    SJTUCLAW_SPINE38_FILTER_NEAREST = 1,
+    SJTUCLAW_SPINE38_FILTER_LINEAR = 2
+} SjtuclawSpine38TextureFilter;
+
+typedef struct SjtuclawSpine38TexturePageView {
+    uint32_t min_filter;
+    uint32_t mag_filter;
+} SjtuclawSpine38TexturePageView;
 
 typedef struct SjtuclawSpine38Vertex {
     float x;
@@ -174,6 +186,11 @@ SJTUCLAW_SPINE38_API SjtuclawSpine38Code sjtuclaw_spine38_event_view(
     const SjtuclawSpine38Handle* handle,
     size_t index,
     SjtuclawSpine38EventView* out_view,
+    size_t view_capacity);
+
+SJTUCLAW_SPINE38_API SjtuclawSpine38Code sjtuclaw_spine38_texture_page_view(
+    const SjtuclawSpine38Handle* handle,
+    SjtuclawSpine38TexturePageView* out_view,
     size_t view_capacity);
 
 SJTUCLAW_SPINE38_API size_t sjtuclaw_spine38_draw_count(

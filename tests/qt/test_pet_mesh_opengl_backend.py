@@ -25,6 +25,7 @@ from sjtuclaw.application.pet_mesh_model import (
     PetMeshPoint,
     PetMeshScene,
     PetMeshTextureData,
+    PetMeshTextureFilter,
     PetMeshVertex,
 )
 from sjtuclaw.presentation.qt.pet_mesh_opengl_renderer import (
@@ -32,6 +33,8 @@ from sjtuclaw.presentation.qt.pet_mesh_opengl_renderer import (
     OpenGLMeshPetRenderer,
     OpenGLMeshSafeCode,
     OpenGLTexturedMeshBackend,
+    physical_viewport_size,
+    qt_texture_filter,
 )
 from sjtuclaw.presentation.qt.pet_mesh_spike import (
     SoftwareTexturedMeshRenderer,
@@ -40,6 +43,31 @@ from sjtuclaw.presentation.qt.pet_mesh_spike import (
 from sjtuclaw.presentation.qt.pet_renderer import SafePetRenderer
 
 _WHITE = PetMeshColor()
+
+
+@pytest.mark.parametrize(
+    ("ratio", "expected"),
+    [
+        (1.0, (161, 181)),
+        (1.25, (202, 227)),
+        (1.5, (242, 272)),
+        (2.0, (322, 362)),
+    ],
+)
+def test_physical_viewport_uses_ceil_for_real_dpr(
+    ratio: float,
+    expected: tuple[int, int],
+) -> None:
+    assert physical_viewport_size(Size(161, 181), ratio) == expected
+
+
+def test_texture_filters_are_independent_and_default_to_linear() -> None:
+    texture = PetMeshTextureData("page", 1, 1, b"\xff\xff\xff\xff")
+
+    assert texture.min_filter is PetMeshTextureFilter.LINEAR
+    assert texture.mag_filter is PetMeshTextureFilter.LINEAR
+    assert qt_texture_filter(PetMeshTextureFilter.NEAREST).name == "Nearest"
+    assert qt_texture_filter(PetMeshTextureFilter.LINEAR).name == "Linear"
 
 
 @pytest.fixture(scope="module")

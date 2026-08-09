@@ -44,6 +44,7 @@ from sjtuclaw.application.pet_mesh_model import (
     PetMeshPoint,
     PetMeshScene,
     PetMeshTextureData,
+    PetMeshTextureFilter,
     PetMeshVertex,
     sorted_draw_commands,
     validate_pet_mesh_scene,
@@ -257,9 +258,9 @@ void main() {
 
     @property
     def physical_size(self) -> tuple[int, int]:
-        return (
-            round(self._viewport.width * self._device_pixel_ratio),
-            round(self._viewport.height * self._device_pixel_ratio),
+        return physical_viewport_size(
+            self._viewport,
+            self._device_pixel_ratio,
         )
 
     @property
@@ -566,8 +567,8 @@ void main() {
         texture = QOpenGLTexture(image)
         if not texture.isCreated():
             raise OpenGLMeshError(OpenGLMeshSafeCode.SCENE_UPLOAD_FAILED)
-        texture.setMinificationFilter(QOpenGLTexture.Filter.Nearest)
-        texture.setMagnificationFilter(QOpenGLTexture.Filter.Nearest)
+        texture.setMinificationFilter(qt_texture_filter(texture_data.min_filter))
+        texture.setMagnificationFilter(qt_texture_filter(texture_data.mag_filter))
         texture.setWrapMode(QOpenGLTexture.WrapMode.ClampToEdge)
         return texture
 
@@ -660,8 +661,10 @@ void main() {
         if self._fault_controller.consume(OpenGLMeshFaultPoint.VIEWPORT_CREATE):
             raise OpenGLMeshError(OpenGLMeshSafeCode.VIEWPORT_FAILED)
         _validate_viewport(viewport, self._device_pixel_ratio)
-        width = round(viewport.width * self._device_pixel_ratio)
-        height = round(viewport.height * self._device_pixel_ratio)
+        width, height = physical_viewport_size(
+            viewport,
+            self._device_pixel_ratio,
+        )
         framebuffer_format = QOpenGLFramebufferObjectFormat()
         framebuffer_format.setAttachment(
             QOpenGLFramebufferObject.Attachment.CombinedDepthStencil
@@ -821,6 +824,13 @@ class OpenGLMeshPetRenderer:
             self._viewport = viewport
             self._backend.set_viewport(viewport)
 
+    def set_device_pixel_ratio(self, value: float) -> None:
+        if self._closed:
+            return
+        callback = getattr(self._backend, "set_device_pixel_ratio", None)
+        if callback is not None:
+            callback(value)
+
     def set_scene(self, scene: PetMeshScene) -> None:
         if not self._closed:
             self._backend.set_scene(scene)
@@ -878,8 +888,32 @@ def _validate_viewport(viewport: Size, device_pixel_ratio: float) -> None:
     values = (viewport.width, viewport.height, device_pixel_ratio)
     if any(not math.isfinite(value) or value <= 0.0 for value in values):
         raise OpenGLMeshError(OpenGLMeshSafeCode.VIEWPORT_FAILED)
-    if viewport.width * device_pixel_ratio > 4096 or viewport.height * device_pixel_ratio > 4096:
+    if (
+        viewport.width * device_pixel_ratio > 4096
+        or viewport.height * device_pixel_ratio > 4096
+    ):
         raise OpenGLMeshError(OpenGLMeshSafeCode.VIEWPORT_FAILED)
+
+
+def physical_viewport_size(
+    viewport: Size,
+    device_pixel_ratio: float,
+) -> tuple[int, int]:
+    """Return the physical FBO dimensions required for one logical viewport."""
+
+    _validate_viewport(viewport, device_pixel_ratio)
+    return (
+        math.ceil(viewport.width * device_pixel_ratio),
+        math.ceil(viewport.height * device_pixel_ratio),
+    )
+
+
+def qt_texture_filter(value: PetMeshTextureFilter) -> QOpenGLTexture.Filter:
+    if value is PetMeshTextureFilter.NEAREST:
+        return QOpenGLTexture.Filter.Nearest
+    if value is PetMeshTextureFilter.LINEAR:
+        return QOpenGLTexture.Filter.Linear
+    raise OpenGLMeshError(OpenGLMeshSafeCode.SCENE_UPLOAD_FAILED)
 
 
 def _percentile(values: tuple[float, ...], fraction: float) -> float:

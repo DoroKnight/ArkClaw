@@ -16,6 +16,7 @@ from sjtuclaw.application.pet_geometry import Size
 from sjtuclaw.application.pet_mesh_model import (
     PetMeshScene,
     PetMeshTextureData,
+    PetMeshTextureFilter,
     PetMeshValidationError,
 )
 from sjtuclaw.application.pet_renderer_model import (
@@ -23,6 +24,7 @@ from sjtuclaw.application.pet_renderer_model import (
     PetRendererActionRequest,
     PetRendererAnimationCapability,
 )
+from sjtuclaw.application.pet_role_pack import RolePackFraming
 from sjtuclaw.application.spine38_runtime import (
     Spine38Bounds,
     Spine38Catalog,
@@ -101,18 +103,28 @@ class Spine38PetRenderer:
         asset_owner: _Closeable | None = None,
         backend_factory: BackendFactory = OpenGLTexturedMeshBackend,
         advance_runtime: bool = True,
+        min_filter: PetMeshTextureFilter = PetMeshTextureFilter.LINEAR,
+        mag_filter: PetMeshTextureFilter = PetMeshTextureFilter.LINEAR,
+        framing: RolePackFraming | None = None,
+        session_bounds: Spine38Bounds | None = None,
     ) -> None:
         self._runtime = runtime
         self._texture_bytes = bytes(verified_texture_bytes)
         self._asset_owner = asset_owner
         self._backend_factory = backend_factory
         self._advance_runtime = advance_runtime
+        self._min_filter = min_filter
+        self._mag_filter = mag_filter
+        self._framing = framing or RolePackFraming(1.0, 0.0, _FOOT_BASELINE_Y)
+        self.foot_baseline_y = self._framing.foot_baseline
+        self._session_bounds = session_bounds
         self._backend: PetMeshImageBackend | None = None
         self._transform: Spine38ViewportTransform | None = None
         self._texture: PetMeshTextureData | None = None
         self._initialized = False
         self._paused = False
         self._closed = False
+        self._device_pixel_ratio = 1.0
 
     @property
     def closed(self) -> bool:
@@ -133,11 +145,9 @@ class Spine38PetRenderer:
         try:
             self._runtime.set_animation(0, "Relax", True)
             self._runtime.update(0.0)
-            transform = Spine38ViewportTransform.fit(
-                self._runtime.visible_bounds(),
-                viewport=viewport,
-                foot_baseline_y=_FOOT_BASELINE_Y,
-                margin=_MARGIN,
+            transform = self._fixed_transform(
+                self._session_bounds or self._runtime.visible_bounds(),
+                viewport,
             )
             scene = self._runtime.mesh_scene(transform, texture)
         except (PetMeshValidationError, Spine38FrameError):
@@ -149,6 +159,9 @@ class Spine38PetRenderer:
         backend: PetMeshImageBackend | None = None
         try:
             backend = self._backend_factory(scene)
+            set_ratio = getattr(backend, "set_device_pixel_ratio", None)
+            if set_ratio is not None:
+                set_ratio(self._device_pixel_ratio)
             backend.initialize(viewport)
         except Exception:
             if backend is not None:
@@ -169,6 +182,25 @@ class Spine38PetRenderer:
             self._backend.set_viewport(viewport)
         except Exception:
             raise Spine38RendererError(Spine38RendererCode.OPENGL_FAILED) from None
+
+    def set_device_pixel_ratio(self, value: float) -> None:
+        self._require_open()
+        if not math.isfinite(value) or value <= 0.0:
+            raise Spine38RendererError(Spine38RendererCode.VIEWPORT_INVALID)
+        if math.isclose(value, self._device_pixel_ratio):
+            return
+        backend = self._backend
+        if backend is not None:
+            set_ratio = getattr(backend, "set_device_pixel_ratio", None)
+            if set_ratio is None:
+                raise Spine38RendererError(Spine38RendererCode.OPENGL_FAILED)
+            try:
+                set_ratio(value)
+            except Exception:
+                raise Spine38RendererError(
+                    Spine38RendererCode.OPENGL_FAILED
+                ) from None
+        self._device_pixel_ratio = value
 
     def set_state(self, request: PetRendererActionRequest) -> None:
         del request
@@ -303,6 +335,8 @@ class Spine38PetRenderer:
                 image.height(),
                 rgba_bytes,
                 premultiplied=False,
+                min_filter=self._min_filter,
+                mag_filter=self._mag_filter,
             )
         except Exception:
             raise Spine38RendererError(
@@ -317,3 +351,26 @@ class Spine38PetRenderer:
     def _require_fixed_viewport(viewport: Size) -> None:
         if viewport != _VIEWPORT:
             raise Spine38RendererError(Spine38RendererCode.VIEWPORT_INVALID)
+
+    def _fixed_transform(
+        self,
+        bounds: Spine38Bounds,
+        viewport: Size,
+    ) -> Spine38ViewportTransform:
+        base = Spine38ViewportTransform.fit(
+            bounds,
+            viewport=viewport,
+            foot_baseline_y=self._framing.foot_baseline,
+            margin=_MARGIN,
+        )
+        scale = base.scale * self._framing.scale
+        center_x = bounds.x + bounds.width / 2.0
+        return Spine38ViewportTransform(
+            scale,
+            viewport.width / 2.0
+            - center_x * scale
+            + self._framing.x_offset,
+            self._framing.foot_baseline + bounds.y * scale,
+            viewport,
+            self._framing.foot_baseline,
+        )

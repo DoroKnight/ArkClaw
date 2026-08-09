@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import random
 from typing import Protocol
 
@@ -202,6 +203,8 @@ class PetWindow(QWidget):
             autonomous_scheduler=autonomous_scheduler,
             clock=selected_clock,
         )
+        self._last_device_pixel_ratio = float(self.devicePixelRatioF())
+        self._renderer.set_device_pixel_ratio(self._last_device_pixel_ratio)
         self._renderer.initialize(Size(_PET_WIDTH, _PET_HEIGHT))
         if self._renderer.safe_code is not PetRendererSafeCode.NONE:
             self._active_role_pack_id = "placeholder"
@@ -601,6 +604,10 @@ class PetWindow(QWidget):
         self.request_safe_exit()
 
     def _advance_animation(self) -> None:
+        current_ratio = float(self.devicePixelRatioF())
+        if not math.isclose(current_ratio, self._last_device_pixel_ratio):
+            self._renderer.set_device_pixel_ratio(current_ratio)
+            self._last_device_pixel_ratio = current_ratio
         now = self._clock.now()
         elapsed = max(0.0, now - self._last_tick)
         self._last_tick = now

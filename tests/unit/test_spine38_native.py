@@ -67,6 +67,13 @@ class FakeEventView(ctypes.Structure):
     ]
 
 
+class FakeTexturePageView(ctypes.Structure):
+    _fields_ = [
+        ("min_filter", ctypes.c_uint32),
+        ("mag_filter", ctypes.c_uint32),
+    ]
+
+
 class FakeLibrary:
     """In-process ABI fake; it replaces only the external DLL boundary."""
 
@@ -79,6 +86,8 @@ class FakeLibrary:
         self.set_animation_code = 0
         self.update_code = 0
         self.draw_view_code = 0
+        self.texture_page_view_code = 0
+        self.texture_filters = (1, 2)
         self.animations = (("idle-猫", 1.25),)
         self.skins = ("default",)
         self.animation_count_override: object | None = None
@@ -132,11 +141,31 @@ class FakeLibrary:
         self.sjtuclaw_spine38_clear_track = FakeFunction(self._clear_track)
         self.sjtuclaw_spine38_event_count = FakeFunction(self._event_count)
         self.sjtuclaw_spine38_event_view = FakeFunction(self._event_view)
+        self.sjtuclaw_spine38_texture_page_view = FakeFunction(
+            self._texture_page_view
+        )
         self.sjtuclaw_spine38_draw_count = FakeFunction(self._draw_count)
         self.sjtuclaw_spine38_draw_view = FakeFunction(self._draw_view)
 
     def _abi_version(self) -> int:
         return self.abi_version
+
+    def _texture_page_view(
+        self,
+        handle: object,
+        out_view: object,
+        view_capacity: object,
+    ) -> int:
+        self._assert_handle(handle)
+        if self.texture_page_view_code != 0:
+            return self.texture_page_view_code
+        assert cast(int, view_capacity) == ctypes.sizeof(FakeTexturePageView)
+        view = ctypes.cast(
+            cast(Any, out_view),
+            ctypes.POINTER(FakeTexturePageView),
+        )[0]
+        view.min_filter, view.mag_filter = self.texture_filters
+        return 0
 
     def _create(
         self,
@@ -496,6 +525,12 @@ def test_native_binding_declares_every_catalog_abi_signature(
         ctypes.c_size_t,
     ]
     assert fake_library.sjtuclaw_spine38_event_view.restype is ctypes.c_int
+    assert fake_library.sjtuclaw_spine38_texture_page_view.argtypes == [
+        ctypes.c_void_p,
+        ctypes.POINTER(native._SjtuclawSpine38TexturePageView),
+        ctypes.c_size_t,
+    ]
+    assert fake_library.sjtuclaw_spine38_texture_page_view.restype is ctypes.c_int
     assert fake_library.sjtuclaw_spine38_draw_count.argtypes == [ctypes.c_void_p]
     assert fake_library.sjtuclaw_spine38_draw_count.restype is ctypes.c_size_t
     assert fake_library.sjtuclaw_spine38_draw_view.argtypes == [
@@ -518,6 +553,10 @@ def test_native_binding_copies_catalog_strings_and_validates_values(
     assert port.catalog() == (native.Spine38AnimationInfo("idle-猫", 1.25),)
     assert port.skins() == ("default",)
     assert port.setup_bounds() == native.Spine38Bounds(-2.0, 3.0, 4.0, 5.0)
+    assert port.texture_page_info() == native.Spine38TexturePageInfo(
+        native.Spine38TextureFilter.NEAREST,
+        native.Spine38TextureFilter.LINEAR,
+    )
     with pytest.raises(AttributeError):
         port.catalog()[0].name = "changed"
 
@@ -552,6 +591,20 @@ def test_native_binding_controls_playback_and_copies_draw_views_immediately(
     fake_library.draw_indices[0] = 2
     assert commands[0].vertices[0].x == 1.0
     assert commands[0].indices == (0, 1, 2)
+
+
+def test_native_binding_rejects_unknown_texture_filter(
+    fake_library: FakeLibrary,
+    snapshot: ExternalPetAssetSnapshot,
+) -> None:
+    native = importlib.import_module("sjtuclaw.infrastructure.spine38_native")
+    fake_library.texture_filters = (99, 2)
+    port = native.Spine38NativeLibrary(fake_library).create(snapshot)
+
+    with pytest.raises(native.Spine38NativeError) as caught:
+        port.texture_page_info()
+
+    assert caught.value.code is native.Spine38NativeCode.RUNTIME_FAILURE
 
 
 def test_native_binding_copies_playback_events_before_native_mutation(

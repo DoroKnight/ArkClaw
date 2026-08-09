@@ -130,6 +130,19 @@ class SafePetRenderer:
         except Exception:
             self._activate_fallback(PetRendererSafeCode.VIEWPORT_FAILED)
 
+    def set_device_pixel_ratio(self, value: float) -> None:
+        """Forward optional DPR support without widening the renderer protocol."""
+
+        if self._closed:
+            return
+        callback = getattr(self._renderer, "set_device_pixel_ratio", None)
+        if callback is None:
+            return
+        try:
+            callback(value)
+        except Exception:
+            self._activate_fallback(PetRendererSafeCode.VIEWPORT_FAILED)
+
     def set_state(self, request: PetRendererActionRequest) -> None:
         if self._closed:
             return
