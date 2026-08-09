@@ -200,7 +200,12 @@ class Spine38Runtime:
         maximum_y = max(ys)
         width = maximum_x - minimum_x
         height = maximum_y - minimum_y
-        if width <= 0.0 or height <= 0.0:
+        if (
+            not math.isfinite(width)
+            or not math.isfinite(height)
+            or width <= 0.0
+            or height <= 0.0
+        ):
             raise Spine38FrameError
         return Spine38Bounds(
             x=minimum_x,

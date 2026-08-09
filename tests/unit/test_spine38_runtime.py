@@ -210,8 +210,30 @@ def test_visible_bounds_keeps_entire_partially_visible_command() -> None:
                 _vertex(2.0, 2.0),
             ),
         ),
+        (
+            _command(
+                _vertex(-1e308, 0.0),
+                _vertex(1e308, 0.0),
+                _vertex(0.0, 1.0),
+            ),
+        ),
+        (
+            _command(
+                _vertex(0.0, -1e308),
+                _vertex(0.0, 1e308),
+                _vertex(1.0, 0.0),
+            ),
+        ),
     ],
-    ids=("no_commands", "all_transparent", "non_finite_xy", "zero_width", "zero_height"),
+    ids=(
+        "no_commands",
+        "all_transparent",
+        "non_finite_xy",
+        "zero_width",
+        "zero_height",
+        "overflow_width",
+        "overflow_height",
+    ),
 )
 def test_visible_bounds_rejects_invalid_geometry(
     draw_commands: tuple[Spine38DrawCommand, ...],

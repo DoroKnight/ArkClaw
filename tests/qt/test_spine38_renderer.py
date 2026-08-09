@@ -61,6 +61,8 @@ class _FakeRuntime:
         self.set_animation_calls: list[tuple[int, str, bool]] = []
         self.update_calls: list[float] = []
         self.visible_bounds_calls = 0
+        self.initialization_events: list[str] = []
+        self.mesh_scene_transforms: list[Any] = []
         self.close_count = 0
         self.fail_update = False
         self.fail_zero_delta_update = False
@@ -73,6 +75,7 @@ class _FakeRuntime:
 
     def set_animation(self, track: int, name: str, loop: bool) -> None:
         self.set_animation_calls.append((track, name, loop))
+        self.initialization_events.append("set_animation")
 
     def update(self, delta_seconds: float) -> None:
         if self.fail_update:
@@ -80,11 +83,13 @@ class _FakeRuntime:
         if self.fail_zero_delta_update and delta_seconds == 0.0:
             raise Spine38FrameError
         self.update_calls.append(delta_seconds)
+        self.initialization_events.append(f"update({delta_seconds})")
 
     def visible_bounds(self) -> Spine38Bounds:
         self.visible_bounds_calls += 1
         if self.fail_visible_bounds:
             raise Spine38FrameError
+        self.initialization_events.append("visible_bounds")
         index = min(self.visible_bounds_calls - 1, len(self.visible_bounds_values) - 1)
         return self.visible_bounds_values[index]
 
@@ -110,6 +115,8 @@ class _FakeRuntime:
             PetMeshVertex,
         )
 
+        self.mesh_scene_transforms.append(transform)
+        self.initialization_events.append("mesh_scene")
         commands = tuple(
             PetMeshDrawCommand(
                 texture_id=texture.texture_id,
@@ -205,6 +212,12 @@ def test_renderer_sets_relax_once_and_only_advances_time(
     assert runtime.set_animation_calls == [(0, "Relax", True)]
     assert runtime.update_calls == [0.0, 0.016, 0.016]
     assert runtime.visible_bounds_calls == 1
+    assert runtime.initialization_events[:4] == [
+        "set_animation",
+        "update(0.0)",
+        "visible_bounds",
+        "mesh_scene",
+    ]
     assert len(backends) == 1
     assert len(backends[0].scenes) == 2
     assert backends[0].initial_scene.foot_baseline_y == pytest.approx(176.0)
@@ -234,6 +247,11 @@ def test_renderer_keeps_visible_frame_transform_after_initialization(
     renderer.update(0.016)
 
     assert runtime.visible_bounds_calls == 1
+    assert len(runtime.mesh_scene_transforms) == 3
+    assert all(
+        transform is runtime.mesh_scene_transforms[0]
+        for transform in runtime.mesh_scene_transforms
+    )
     updated_vertices = backends[0].scenes[-1].draw_commands[0].vertices
     assert min(vertex.position.y for vertex in updated_vertices) == pytest.approx(4.0)
     assert max(vertex.position.y for vertex in updated_vertices) == pytest.approx(176.0)
