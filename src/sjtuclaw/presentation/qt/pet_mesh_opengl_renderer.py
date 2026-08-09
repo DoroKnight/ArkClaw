@@ -695,10 +695,18 @@ void main() { fragmentColor = texture(sourceTexture, uv) * color; }
             gl.glStencilFunc(0x0202, 1, 0xFF)
             gl.glStencilOp(0x1E00, 0x1E00, 0x1E00)
             gl.glEnable(0x0BE2)
-        if command.source.blend_mode is PetMeshBlendMode.PREMULTIPLIED_ALPHA:
-            gl.glBlendFuncSeparate(1, 0x0303, 1, 0x0303)
+        blend_mode = command.source.blend_mode
+        if blend_mode is PetMeshBlendMode.NORMAL_PREMULTIPLIED:
+            source_rgb, destination_rgb = 1, 0x0303
+        elif blend_mode is PetMeshBlendMode.ADDITIVE:
+            source_rgb, destination_rgb = 0x0302, 1
+        elif blend_mode is PetMeshBlendMode.MULTIPLY:
+            source_rgb, destination_rgb = 0x0306, 0x0303
+        elif blend_mode is PetMeshBlendMode.SCREEN:
+            source_rgb, destination_rgb = 1, 0x0301
         else:
-            gl.glBlendFuncSeparate(0x0302, 0x0303, 1, 0x0303)
+            source_rgb, destination_rgb = 0x0302, 0x0303
+        gl.glBlendFuncSeparate(source_rgb, destination_rgb, 1, 0x0303)
         _draw_geometry(gl, command.geometry)
         if clip is not None:
             gl.glStencilMask(0xFF)

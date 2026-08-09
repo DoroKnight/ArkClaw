@@ -52,8 +52,12 @@ The contract is:
 - UV `(0, 0)` addresses the top-left texture texel;
 - draw commands use stable ascending draw order;
 - vertex RGBA multiplies the sampled texture;
-- straight-alpha sources use separate RGB and alpha blend factors;
-- premultiplied-alpha sources use the matching premultiplied factors;
+- `PetMeshTextureData.premultiplied` records the texture byte convention,
+  independently of draw-command compositing;
+- normal straight, normal premultiplied, additive, multiply, and screen are
+  renderer-neutral draw modes with explicit RGB factors;
+- every draw mode uses the same separate alpha factors, preserving ordinary
+  source-over alpha accumulation;
 - the readback is `Format_RGBA8888_Premultiplied`; and
 - the background remains transparent.
 
@@ -67,6 +71,23 @@ The correctness tests use tiny, original RGBA byte arrays generated at test
 runtime. A software triangle rasterizer provides the pixel reference for UV
 orientation, rotated UVs, alpha, vertex color, order, and clipping. No binary
 image fixture is committed.
+
+For source color and alpha \(C_s, A_s\) and destination color and alpha
+\(C_d, A_d\), the backend applies these clamped RGB equations:
+
+- normal straight: \(C_s A_s + C_d(1 - A_s)\), using `GL_SRC_ALPHA` and
+  `GL_ONE_MINUS_SRC_ALPHA`;
+- normal premultiplied: \(C_s + C_d(1 - A_s)\), using `GL_ONE` and
+  `GL_ONE_MINUS_SRC_ALPHA`;
+- additive: \(C_s A_s + C_d\), using `GL_SRC_ALPHA` and `GL_ONE`;
+- multiply: \(C_s C_d + C_d(1 - A_s)\), using `GL_DST_COLOR` and
+  `GL_ONE_MINUS_SRC_ALPHA`; and
+- screen: \(C_s + C_d(1 - C_s)\), using `GL_ONE` and
+  `GL_ONE_MINUS_SRC_COLOR`.
+
+All five modes use `GL_ONE` and `GL_ONE_MINUS_SRC_ALPHA` for alpha, yielding
+\(A_s + A_d(1 - A_s)\). The backend calls `glBlendFuncSeparate` for every
+draw command, so one command's mode cannot leak into the next command.
 
 ## DPI and transparent-window composition
 

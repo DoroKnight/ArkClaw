@@ -8,7 +8,13 @@ from enum import StrEnum
 
 
 class PetMeshBlendMode(StrEnum):
-    """Alpha convention used by a single draw command."""
+    """Renderer-neutral source convention and compositing equation."""
+
+    NORMAL_STRAIGHT = "straight_alpha"
+    NORMAL_PREMULTIPLIED = "premultiplied_alpha"
+    ADDITIVE = "additive"
+    MULTIPLY = "multiply"
+    SCREEN = "screen"
 
     STRAIGHT_ALPHA = "straight_alpha"
     PREMULTIPLIED_ALPHA = "premultiplied_alpha"
@@ -63,7 +69,7 @@ class PetMeshDrawCommand:
     vertices: tuple[PetMeshVertex, ...]
     triangle_indices: tuple[int, ...]
     draw_order: int
-    blend_mode: PetMeshBlendMode = PetMeshBlendMode.STRAIGHT_ALPHA
+    blend_mode: PetMeshBlendMode = PetMeshBlendMode.NORMAL_STRAIGHT
     clip_polygon: tuple[PetMeshPoint, ...] | None = None
 
 

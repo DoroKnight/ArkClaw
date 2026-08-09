@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from sjtuclaw.application.pet_mesh_model import (
+    PetMeshBlendMode,
     PetMeshDrawCommand,
     PetMeshPoint,
     PetMeshScene,
@@ -101,6 +102,23 @@ def test_model_is_minimal_and_contains_no_spine_structures() -> None:
         "clip_polygon",
     }
     assert fields.isdisjoint({"bone", "slot", "skin", "attachment", "deform"})
+
+
+def test_renderer_neutral_blend_modes_preserve_alpha_compatibility_aliases() -> None:
+    modes = PetMeshBlendMode
+
+    assert modes.__members__["STRAIGHT_ALPHA"] is modes.NORMAL_STRAIGHT
+    assert (
+        modes.__members__["PREMULTIPLIED_ALPHA"]
+        is modes.NORMAL_PREMULTIPLIED
+    )
+    assert {
+        modes.NORMAL_STRAIGHT,
+        modes.NORMAL_PREMULTIPLIED,
+        modes.ADDITIVE,
+        modes.MULTIPLY,
+        modes.SCREEN,
+    } == set(modes)
 
 
 @pytest.mark.parametrize(

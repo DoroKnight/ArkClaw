@@ -18,7 +18,14 @@ from PySide6.QtGui import QImage
 from PySide6.QtWidgets import QApplication
 
 from sjtuclaw.application.pet_geometry import Size
-from sjtuclaw.application.pet_mesh_model import PetMeshScene
+from sjtuclaw.application.pet_mesh_model import (
+    PetMeshBlendMode,
+    PetMeshDrawCommand,
+    PetMeshPoint,
+    PetMeshScene,
+    PetMeshTextureData,
+    PetMeshVertex,
+)
 from sjtuclaw.presentation.qt.pet_mesh_opengl_renderer import (
     OpenGLMeshError,
     OpenGLMeshPetRenderer,
@@ -140,6 +147,127 @@ def test_backend_errors_are_fixed_and_do_not_expose_driver_details() -> None:
     assert "context" not in str(error).lower()
 
 
+def _blend_quad(
+    texture_id: str,
+    blend_mode: PetMeshBlendMode,
+    draw_order: int,
+) -> PetMeshDrawCommand:
+    return PetMeshDrawCommand(
+        texture_id=texture_id,
+        vertices=(
+            PetMeshVertex(PetMeshPoint(0.0, 0.0), 0.0, 0.0),
+            PetMeshVertex(PetMeshPoint(8.0, 0.0), 1.0, 0.0),
+            PetMeshVertex(PetMeshPoint(8.0, 8.0), 1.0, 1.0),
+            PetMeshVertex(PetMeshPoint(0.0, 8.0), 0.0, 1.0),
+        ),
+        triangle_indices=(0, 1, 2, 0, 2, 3),
+        draw_order=draw_order,
+        blend_mode=blend_mode,
+    )
+
+
+def _render_blend_probe() -> dict[str, list[int]]:
+    application = QApplication.instance()
+    if application is None:
+        application = QApplication([])
+    background = PetMeshTextureData(
+        "background",
+        1,
+        1,
+        bytes((40, 80, 120, 255)),
+    )
+    straight = PetMeshTextureData(
+        "straight",
+        1,
+        1,
+        bytes((200, 100, 50, 128)),
+    )
+    premultiplied = PetMeshTextureData(
+        "premultiplied",
+        1,
+        1,
+        bytes((100, 50, 25, 128)),
+        premultiplied=True,
+    )
+    observed: dict[str, list[int]] = {}
+    cases = (
+        (PetMeshBlendMode.NORMAL_STRAIGHT, straight),
+        (PetMeshBlendMode.NORMAL_PREMULTIPLIED, premultiplied),
+        (PetMeshBlendMode.ADDITIVE, straight),
+        (PetMeshBlendMode.MULTIPLY, straight),
+        (PetMeshBlendMode.SCREEN, straight),
+    )
+    for blend_mode, foreground in cases:
+        scene = PetMeshScene(
+            width=8,
+            height=8,
+            foot_baseline_y=7.0,
+            textures=(background, foreground),
+            draw_commands=(
+                _blend_quad("background", PetMeshBlendMode.NORMAL_STRAIGHT, 0),
+                _blend_quad(foreground.texture_id, blend_mode, 1),
+            ),
+        )
+        backend = OpenGLTexturedMeshBackend(scene)
+        try:
+            backend.initialize(Size(8, 8))
+            color = backend.render_scene().pixelColor(4, 4)
+            observed[blend_mode.name] = [
+                color.red(),
+                color.green(),
+                color.blue(),
+                color.alpha(),
+            ]
+        finally:
+            backend.close()
+    del application
+    return observed
+
+
+def test_real_backend_applies_renderer_neutral_blend_modes_per_command() -> None:
+    repository = Path(__file__).resolve().parents[2]
+    environment = os.environ.copy()
+    environment["QT_QPA_PLATFORM"] = "windows"
+    environment.pop("QT_QPA_FONTDIR", None)
+    environment["PYTHONPATH"] = os.pathsep.join(
+        filter(
+            None,
+            (str(repository / "src"), environment.get("PYTHONPATH", "")),
+        )
+    )
+    completed = subprocess.run(
+        [sys.executable, str(Path(__file__).resolve()), "--blend-probe"],
+        cwd=repository,
+        env=environment,
+        check=False,
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        timeout=180,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert completed.stderr == ""
+    observed = json.loads(completed.stdout)
+    expected = {
+        "NORMAL_STRAIGHT": [120, 90, 85, 255],
+        "NORMAL_PREMULTIPLIED": [120, 90, 85, 255],
+        "ADDITIVE": [140, 130, 145, 255],
+        "MULTIPLY": [51, 71, 83, 255],
+        "SCREEN": [209, 149, 146, 255],
+    }
+    assert observed.keys() == expected.keys()
+    for mode, expected_rgba in expected.items():
+        assert all(
+            abs(actual - wanted) <= 2
+            for actual, wanted in zip(
+                observed[mode],
+                expected_rgba,
+                strict=True,
+            )
+        ), mode
+
+
 def test_real_windows_backend_smoke_and_metrics() -> None:
     repository = Path(__file__).resolve().parents[2]
     environment = os.environ.copy()
@@ -181,3 +309,7 @@ def test_real_windows_backend_smoke_and_metrics() -> None:
     }
     assert result["dpi"]["logical_baseline_stable"] is True
     assert result["dpi"]["logical_bounds_stable"] is True
+
+
+if __name__ == "__main__" and sys.argv[1:] == ["--blend-probe"]:
+    print(json.dumps(_render_blend_probe(), sort_keys=True))
