@@ -1,7 +1,7 @@
 # Schwarz Production Animation Acceptance Repair Design
 
 **Date:** 2026-08-10
-**Status:** Approved design, pending implementation plan
+**Status:** Revised after user review, pending final approval
 
 ## 1. Purpose
 
@@ -105,27 +105,43 @@ positive velocity.
 The renderer retains exactly one transform for the role-pack session. It must
 not reframe per action, per loop, or per frame.
 
-The transform is calibrated from verified real Schwarz samples with the
-following acceptance priorities:
+Window placement and in-window character placement have separate owners:
 
-1. the visible `Relax` character height is between 85% and 95% of the
-   `180`-pixel logical window (`153` through `171` pixels inclusive);
-2. visible feet land in logical rows `172` through `180` and appear directly
-   above the current workspace/taskbar boundary;
-3. head and torso remain visible for all six physical animations;
-4. `Relax`, `Move`, `Sit`, and `Sleep` must not crop the principal character
-   body;
-5. extreme weapon, attachment, or effect geometry in `Special` and
-   `Interact` may touch or slightly cross a viewport edge;
-6. the logical footprint remains stable across DPR `1.0`, `1.25`, `1.5`, and
+- workspace containment positions the logical pet window and requires
+  `window_bottom == active_workspace_bottom`;
+- the renderer transform positions Schwarz inside that window;
+- the renderer must never move the logical window into the taskbar merely to
+  align the character feet.
+
+Scale calibration is deterministic and uses the real verified samples as
+follows:
+
+1. twelve `Relax` poses determine the target body scale. Their body envelope
+   is scaled toward `162` logical pixels high, with an allowed visible-height
+   range of `153` through `171` pixels;
+2. twelve poses from each of `Relax`, `Move`, `Sit`, and `Sleep` validate that
+   the principal body is not cropped by the resulting immutable transform;
+3. twelve poses from each of `Special` and `Interact` are validation-only.
+   They never participate in scale reduction;
+4. `Special` and `Interact` must keep the head and torso visible, but extreme
+   weapon, attachment, or effect geometry may touch or slightly cross a
+   viewport edge;
+5. the visible Schwarz foot baseline lies in logical rows `178` through `180`;
+6. calibrated `Relax` contains no transparent bottom padding larger than two
+   logical pixels;
+7. the logical footprint remains stable across DPR `1.0`, `1.25`, `1.5`, and
    `2.0`.
 
-The production preparation pass continues to sample all physical animations
-for validation and diagnostics, but transient `Special`/`Interact` extremes
-must not reduce the body scale. The chosen scale and offsets are established
-once before renderer publication. No persisted window position may override
-workspace clamping: startup and screen changes re-clamp the window so that
-the logical foot baseline maps to the current workspace bottom.
+Equivalently, after window placement, the on-screen foot error satisfies:
+
+```text
+0 <= active_workspace_bottom - visible_foot_screen_y <= 2
+```
+
+The chosen scale and offsets are established once before renderer
+publication. Persisted positions and screen changes are clamped so the
+logical window bottom, not an internal renderer baseline, equals the active
+workspace bottom.
 
 If the body-priority constraints cannot be satisfied for a candidate role
 pack, candidate publication fails closed to the existing placeholder. The
@@ -151,18 +167,28 @@ If no dedicated drag animation is registered, healthy production rendering
 uses confirmed looping `Relax` as the visual fallback. A missing drag
 animation must never reject the physical drag transition.
 
+During `DRAGGING`, horizontal position is clamped so that at least a
+16-logical-pixel recoverable strip of the pet window remains inside the active
+workspace:
+
+```text
+workspace_left - (pet_width - 16) <= x <= workspace_right - 16
+```
+
 ### 6.2 Release and recovery
 
 On left-button release:
 
 1. clear the drag offset;
-2. enter `FALLING` with zero horizontal velocity and the existing bounded
+2. clamp the complete logical window horizontally into the active workspace,
+   so `workspace_left <= x <= workspace_right - pet_width`;
+3. enter `FALLING` with zero horizontal velocity and the existing bounded
    gravity policy;
-3. update the window position from motion physics without autonomous work;
-4. contain the fall at the current workspace bottom;
-5. enter the landing recovery path;
-6. establish and confirm `Relax` playback;
-7. sample a fresh `Relax` dwell and re-enter `AUTONOMOUS`.
+4. update the window position from motion physics without autonomous work;
+5. contain the fall at the current workspace bottom;
+6. enter the landing recovery path;
+7. establish and confirm `Relax` playback;
+8. sample a fresh `Relax` dwell and re-enter `AUTONOMOUS`.
 
 If playback health is degraded or unknown, velocity remains zero and the
 engine stays `SUSPENDED`; it must not resume autonomous motion silently.
@@ -170,26 +196,45 @@ engine stays `SUSPENDED`; it must not resume autonomous motion silently.
 ## 7. Autonomous Playback Liveness
 
 A fresh healthy production launch must establish `Relax`, confirm playback,
-sample a dwell, and enter `AUTONOMOUS` without a tray command.
+sample a dwell, and enter `AUTONOMOUS` without a tray command. The same
+obligation applies after every healthy return to autonomous `Relax`; liveness
+is not a one-time startup property.
 
 The only scheduling clock is the monotonic autonomous scheduler clock. Native
 loop-boundary events flow through `Spine38AnimationPlayer`, `PetWindow`, and
 `PetAnimationEngine`. A proposal changes scheduler state only after the
 arbiter accepts it and the semantic/playback/motion transaction commits.
 
-Healthy eligible autonomy must satisfy a bounded liveness rule:
+Every healthy eligible autonomous period must satisfy this event cycle:
+
+```text
+enter autonomous state
+    -> sample one fresh dwell
+    -> wait until that deadline and the next valid loop boundary
+    -> produce exactly one eligible proposal
+    -> commit it after accepted playback, or reschedule after rejection
+```
+
+Healthy eligible autonomy also satisfies a bounded liveness rule:
 
 - `STAY` remains a valid randomized outcome;
 - after two consecutive eligible `STAY` decisions in the same autonomous
   state, the next eligible draw excludes `STAY` once;
 - the destination is still selected randomly from the state-dependent
   non-`STAY` weights;
-- under a healthy continuous launch, at least one non-`Relax` action must be
-  committed within 60 seconds;
+- no eligible autonomous `Relax` period may continue indefinitely;
+- after every healthy return to autonomous `Relax`, at least one non-`Relax`
+  action must be committed within 60 seconds of eligible scheduler time;
 - rejected or ineligible proposals do not consume the liveness budget;
 - explicit hold, protected playback, drag, pause, safety, containment,
   degraded health, and shutdown suspend the liveness deadline rather than
   forcing an action.
+
+Both `Move Left` and `Move Right` have explicit nonzero reachable weights from
+autonomous `Relax`. A selected autonomous Move must be able to commit matching
+Track 0 `Move` playback, facing, mirroring, and velocity. The 60-second rule
+does not require a Move on every period; it guarantees continuing autonomous
+activity while the nonzero Move weights preserve occasional walking.
 
 This is bounded randomness, not a playlist. The scheduler may choose different
 destinations on different runs and continues using the frozen transition
@@ -203,6 +248,19 @@ a new eligibility window.
 
 No Move transaction may place any part of the logical pet window outside the
 current workspace.
+
+Containment occurs in the same transaction as motion integration. For right
+motion:
+
+```text
+x_max = workspace_right - pet_width
+x_new = min(x_old + velocity_x * delta_seconds, x_max)
+```
+
+Left motion uses the corresponding `max(..., workspace_left)` calculation.
+Even when the pet begins one pixel from a boundary and a large delta would
+cross it by many pixels, no committed or externally observable frame may
+contain an out-of-workspace position.
 
 When an explicit held Move reaches the matching boundary, safety ends the
 hold, zeros velocity, and recovers through confirmed `Relax` before autonomy.
@@ -241,16 +299,28 @@ Tests are added vertically, one red-green slice at a time, at public seams.
 ### 10.1 Renderer tests
 
 - `LEFT` and `RIGHT` requests produce horizontally reflected logical scenes;
-- facing persists across every physical animation;
+- `Move Left -> Relax -> Sit -> Sleep -> Special -> Interact` remains `LEFT` at
+  every step;
+- `Move Right -> Relax -> Sit -> Sleep -> Special -> Interact` remains `RIGHT`
+  at every step;
 - the immutable transform is reused across state changes;
 - real Schwarz alpha bounds meet the approved height and foot-baseline ranges;
+- the logical window bottom equals the active workspace bottom while the
+  renderer independently keeps visible foot error at no more than two pixels;
+- `Special` and `Interact` validation never reduces the scale selected from
+  the `Relax` body calibration;
 - DPR changes preserve logical bounds and rebuild only physical framebuffer
   resources.
 
 ### 10.2 Window and motion tests
 
 - production Track 0 cannot prevent mouse press from entering `DRAGGING`;
-- pointer movement updates window position while dragging;
+- `QTest.mousePress`, `QTest.mouseMove`, and `QTest.mouseRelease` target the
+  actual production receiving widget/window and traverse the real Qt event
+  chain into `PetWindow` and `PetAnimationEngine`;
+- pointer movement updates window position while dragging and retains at least
+  the recoverable 16-pixel strip;
+- release fully clamps horizontal position before falling begins;
 - release enters `FALLING`, gravity advances, and landing establishes Relax;
 - dragging clears explicit hold and protected continuation;
 - persisted positions and screen changes clamp to the active workspace.
@@ -258,17 +328,29 @@ Tests are added vertically, one red-green slice at a time, at public seams.
 ### 10.3 Autonomous tests
 
 - fresh production startup enters eligible autonomous Relax;
+- every later return to autonomous Relax samples a fresh dwell and eventually
+  reaches a new proposal; the guarantee is tested across repeated cycles;
 - native loop boundaries reach the scheduler exactly once;
-- two consecutive eligible `STAY` outcomes force one randomized non-STAY
-  draw;
-- seeded healthy execution commits a non-Relax action inside 60 seconds;
+- `FakeClock` and an injected `FakeRandom` deterministically produce two
+  `STAY` draws and prove the next candidate set excludes `STAY`;
+- core scheduler tests assert rules and candidate sets rather than a concrete
+  Python seeded sequence;
+- a seeded real integration smoke may additionally demonstrate continuing
+  non-Relax execution inside the eligible 60-second bounds;
+- both left and right Move are reachable from autonomous Relax using injected
+  draws, and each commits matching playback, facing, mirroring, and velocity;
 - explicit hold and suspended modes do not consume the liveness budget;
 - accepted proposals commit scheduler, semantic, playback, facing, and
   velocity state atomically.
 
 ### 10.4 Boundary and integration tests
 
+- a real Schwarz end-to-end Move test observes Track 0 `Move`, semantic
+  facing, rendered mirrored/canonical scene, velocity sign, and actual window
+  x displacement for both directions;
 - left and right Move stop at their respective workspace limits;
+- starting one pixel from either boundary with high velocity and a large
+  `delta_seconds` never publishes an overshoot position;
 - explicit boundary containment recovers through Relax;
 - autonomous mid-loop turns commit the opposite Move without Relax;
 - a failed turn leaves zero velocity and stopped autonomy;
@@ -279,23 +361,31 @@ Tests are added vertically, one red-green slice at a time, at public seams.
 
 The repair is complete only when:
 
-1. Schwarz occupies the approved near-full-window body scale and its feet sit
-   directly above the taskbar on the target Windows display;
-2. all six animations respect persistent left/right facing;
-3. `Move Left` and `Move Right` combine matching animation direction, facing,
-   and window velocity;
-4. fresh healthy startup visibly commits a non-Relax autonomous action within
-   60 seconds without user input;
-5. explicit looping actions still hold until replacement, mandatory
+1. the logical pet-window bottom equals the active workspace bottom;
+2. Schwarz occupies the approved near-full-window body scale, its visible foot
+   error above the workspace bottom is no more than two logical pixels, and
+   calibrated Relax has no larger transparent bottom padding;
+3. both left-facing and right-facing multi-animation sequences preserve their
+   semantic facing through all six physical animations;
+4. the real Schwarz end-to-end Move transaction combines Track 0 `Move`,
+   matching facing, mirrored/canonical rendering, velocity sign, and actual
+   window displacement in both directions;
+5. every healthy eligible return to autonomous Relax commits a non-Relax
+   action within 60 seconds of eligible scheduler time, not only after launch;
+6. both Move directions remain reachable autonomous destinations and commit
+   their complete movement transactions under injected RNG control;
+7. explicit looping actions still hold until replacement, mandatory
    interruption, or `Resume Autonomous`;
-6. the production pet can be dragged, released, observed falling, and safely
-   recovered after landing;
-7. explicit Move never crosses the workspace boundary;
-8. autonomous boundary turns follow the confirmed opposite-Move exception;
-9. renderer or playback failure leaves velocity zero and autonomy stopped;
-10. focused unit, Qt, native, integration, artifact-scope, and Agent-isolation
+8. real Qt mouse events can drag the production pet, release it, observe
+   falling, and safely recover after landing;
+9. drag release restores a fully recoverable horizontal position;
+10. explicit Move never exposes an out-of-workspace position, including a
+    large-delta overshoot attempt;
+11. autonomous boundary turns follow the confirmed opposite-Move exception;
+12. renderer or playback failure leaves velocity zero and autonomy stopped;
+13. focused unit, Qt, native, integration, artifact-scope, and Agent-isolation
     gates pass;
-11. the user repeats Windows manual acceptance at the target DPR values.
+14. the user repeats Windows manual acceptance at the target DPR values.
 
 ## 12. Non-Goals
 
