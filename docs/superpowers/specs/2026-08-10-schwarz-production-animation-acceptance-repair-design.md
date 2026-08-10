@@ -1,7 +1,7 @@
 # Schwarz Production Animation Acceptance Repair Design
 
 **Date:** 2026-08-10
-**Status:** Revised after user review, pending final approval
+**Status:** Final implementation candidate, pending user approval
 
 ## 1. Purpose
 
@@ -105,16 +105,49 @@ positive velocity.
 The renderer retains exactly one transform for the role-pack session. It must
 not reframe per action, per loop, or per frame.
 
+All workspace and pet-window geometry uses Qt logical coordinates with
+half-open intervals. For a `QRect geometry` returned by Qt:
+
+```text
+workspace_left   = geometry.x()
+workspace_top    = geometry.y()
+workspace_right  = geometry.x() + geometry.width()
+workspace_bottom = geometry.y() + geometry.height()
+
+horizontal extent = [workspace_left, workspace_right)
+vertical extent   = [workspace_top, workspace_bottom)
+```
+
+The domain `Rect.right` and `Rect.bottom` values mean these exclusive edges.
+Conversion code must not substitute Qt's inclusive `QRect.right()` or
+`QRect.bottom()` accessors. Likewise, a pet window at `(x, y)` occupies
+`[x, x + pet_width) x [y, y + pet_height)`, so its bottom edge is
+`y + pet_height`. This convention owns every containment, foot-baseline,
+drag, fall, and Move-boundary calculation in this document.
+
 Window placement and in-window character placement have separate owners:
 
-- workspace containment positions the logical pet window and requires
-  `window_bottom == active_workspace_bottom`;
+- settled workspace containment positions the logical pet window after
+  landing and requires `window_bottom == active_workspace_bottom`; dragging
+  and in-air falling positions are the explicitly defined temporary
+  exceptions;
 - the renderer transform positions Schwarz inside that window;
 - the renderer must never move the logical window into the taskbar merely to
   align the character feet.
 
 Scale calibration is deterministic and uses the real verified samples as
 follows:
+
+Every twelve-pose set uses the same fixed sampling rule. For an animation
+with validated playback duration `T`, sample exactly:
+
+```text
+t_i = (i / 12) * T, for i = 0, 1, ..., 11
+```
+
+The samples are therefore uniformly spaced over `[0, T)`. The duplicate loop
+endpoint `t = T` is never sampled, and implementations or tests may not choose
+their own random or adaptive pose times.
 
 1. twelve `Relax` poses determine the target body scale. Their body envelope
    is scaled toward `162` logical pixels high, with an allowed visible-height
@@ -182,13 +215,20 @@ On left-button release:
 1. clear the drag offset;
 2. clamp the complete logical window horizontally into the active workspace,
    so `workspace_left <= x <= workspace_right - pet_width`;
-3. enter `FALLING` with zero horizontal velocity and the existing bounded
-   gravity policy;
-4. update the window position from motion physics without autonomous work;
-5. contain the fall at the current workspace bottom;
-6. enter the landing recovery path;
+3. compute `pet_bottom = y + pet_height` using the half-open coordinate
+   contract;
+4. if `pet_bottom >= workspace_bottom`, clamp immediately to
+   `y = workspace_bottom - pet_height`, keep both velocity components zero,
+   skip `FALLING`, and enter landing recovery directly;
+5. otherwise enter `FALLING` with zero horizontal velocity and the existing
+   bounded gravity policy, update position without autonomous work, and
+   contain the fall at `workspace_bottom`;
+6. enter the common landing recovery path;
 7. establish and confirm `Relax` playback;
 8. sample a fresh `Relax` dwell and re-enter `AUTONOMOUS`.
+
+No release path may publish a pet-window bottom below `workspace_bottom`,
+including the event turn in which a below-floor drag is released.
 
 If playback health is degraded or unknown, velocity remains zero and the
 engine stays `SUSPENDED`; it must not resume autonomous motion silently.
@@ -305,6 +345,9 @@ Tests are added vertically, one red-green slice at a time, at public seams.
   at every step;
 - the immutable transform is reused across state changes;
 - real Schwarz alpha bounds meet the approved height and foot-baseline ranges;
+- `test_body_calibration_uses_fixed_uniform_samples_without_loop_endpoint`
+  proves every twelve-pose calibration or validation set samples exactly
+  `t_i = (i / 12) * T` for `i = 0..11`, never `t = T`;
 - the logical window bottom equals the active workspace bottom while the
   renderer independently keeps visible foot error at no more than two pixels;
 - `Special` and `Interact` validation never reduces the scale selected from
@@ -322,6 +365,10 @@ Tests are added vertically, one red-green slice at a time, at public seams.
   the recoverable 16-pixel strip;
 - release fully clamps horizontal position before falling begins;
 - release enters `FALLING`, gravity advances, and landing establishes Relax;
+- `test_drag_below_workspace_floor_release_clamps_then_recovers` drags below
+  the workspace floor and proves release clamps directly to the valid floor
+  position, skips an invalid falling origin, enters landing recovery, confirms
+  Relax, and re-enters `AUTONOMOUS`;
 - dragging clears explicit hold and protected continuation;
 - persisted positions and screen changes clamp to the active workspace.
 
@@ -349,6 +396,9 @@ Tests are added vertically, one red-green slice at a time, at public seams.
   facing, rendered mirrored/canonical scene, velocity sign, and actual window
   x displacement for both directions;
 - left and right Move stop at their respective workspace limits;
+- `test_qrect_workspace_conversion_uses_half_open_edges` proves exclusive
+  edges are computed from `x + width` and `y + height`, without using
+  inclusive `right()` or `bottom()` values;
 - starting one pixel from either boundary with high velocity and a large
   `delta_seconds` never publishes an overshoot position;
 - explicit boundary containment recovers through Relax;
@@ -361,7 +411,9 @@ Tests are added vertically, one red-green slice at a time, at public seams.
 
 The repair is complete only when:
 
-1. the logical pet-window bottom equals the active workspace bottom;
+1. workspace and pet geometry consistently use the defined half-open interval
+   contract, and the settled logical pet-window bottom equals the active
+   workspace bottom without an inclusive-edge one-pixel error;
 2. Schwarz occupies the approved near-full-window body scale, its visible foot
    error above the workspace bottom is no more than two logical pixels, and
    calibrated Relax has no larger transparent bottom padding;
@@ -377,15 +429,19 @@ The repair is complete only when:
 7. explicit looping actions still hold until replacement, mandatory
    interruption, or `Resume Autonomous`;
 8. real Qt mouse events can drag the production pet, release it, observe
-   falling, and safely recover after landing;
-9. drag release restores a fully recoverable horizontal position;
+   falling when released above the floor, and safely recover after landing;
+9. drag release restores a fully recoverable horizontal position, while a
+   release at or below the floor clamps directly to the valid floor and enters
+   landing recovery without publishing an invalid falling position;
 10. explicit Move never exposes an out-of-workspace position, including a
     large-delta overshoot attempt;
 11. autonomous boundary turns follow the confirmed opposite-Move exception;
 12. renderer or playback failure leaves velocity zero and autonomy stopped;
 13. focused unit, Qt, native, integration, artifact-scope, and Agent-isolation
     gates pass;
-14. the user repeats Windows manual acceptance at the target DPR values.
+14. all body calibration and validation uses the fixed twelve samples over
+    `[0, T)` and never samples the duplicate endpoint `T`;
+15. the user repeats Windows manual acceptance at the target DPR values.
 
 ## 12. Non-Goals
 
