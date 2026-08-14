@@ -16,21 +16,21 @@ from PySide6.QtCore import QBuffer, QByteArray, QIODevice
 from PySide6.QtGui import QColor, QImage, QPainter
 from PySide6.QtWidgets import QApplication
 
-from arkclaw.application.pet_geometry import Point, Rect, Size
-from arkclaw.application.pet_mesh_model import PetMeshTextureFilter
-from arkclaw.application.pet_render_layout import (
+from arkclaw.application.pet.pet_geometry import Point, Rect, Size
+from arkclaw.application.pet.pet_mesh_model import PetMeshTextureFilter
+from arkclaw.application.pet.pet_render_layout import (
     PetRenderLayout,
     PetRenderLayoutQuality,
     PetRenderSurfaceMode,
     RolePackRenderProfile,
 )
-from arkclaw.application.pet_renderer_model import (
+from arkclaw.application.pet.pet_renderer_model import (
     PetRendererAction,
     PetRendererActionRequest,
 )
-from arkclaw.application.pet_role_pack import RolePackFraming
-from arkclaw.application.pet_state import PetFacing
-from arkclaw.application.spine38_runtime import (
+from arkclaw.application.pet.pet_role_pack import RolePackFraming
+from arkclaw.application.pet.pet_state import PetFacing
+from arkclaw.application.pet.spine38_runtime import (
     Spine38AnimationInfo,
     Spine38Bounds,
     Spine38Catalog,
@@ -41,7 +41,7 @@ from arkclaw.infrastructure.spine38_native import (
     Spine38DrawCommand,
     Spine38Vertex,
 )
-from arkclaw.presentation.qt.pet_renderer import SafePetRenderer
+from arkclaw.presentation.qt.pet.pet_renderer import SafePetRenderer
 
 
 @pytest.fixture(scope="module")
@@ -121,7 +121,7 @@ class _FakeRuntime:
         )
 
     def mesh_scene(self, transform: Any, texture: Any) -> Any:
-        from arkclaw.application.pet_mesh_model import (
+        from arkclaw.application.pet.pet_mesh_model import (
             PetMeshDrawCommand,
             PetMeshScene,
             PetMeshVertex,
@@ -221,7 +221,7 @@ def test_render_surface_returns_the_same_frame_drawn_with_one_backend_readback(
     verified_texture_bytes: bytes,
 ) -> None:
     del qt_application
-    module = importlib.import_module("arkclaw.presentation.qt.spine38_renderer")
+    module = importlib.import_module("arkclaw.presentation.qt.pet.spine38_renderer")
     backends: list[_FakeBackend] = []
     renderer = module.Spine38PetRenderer(
         _FakeRuntime(),
@@ -251,7 +251,7 @@ def test_renderer_sets_relax_once_and_only_advances_time(
     verified_texture_bytes: bytes,
 ) -> None:
     del qt_application
-    module = importlib.import_module("arkclaw.presentation.qt.spine38_renderer")
+    module = importlib.import_module("arkclaw.presentation.qt.pet.spine38_renderer")
     runtime = _FakeRuntime()
     backends: list[_FakeBackend] = []
     renderer = module.Spine38PetRenderer(
@@ -289,7 +289,7 @@ def test_renderer_propagates_real_dpr_filters_and_one_fixed_framing(
     verified_texture_bytes: bytes,
 ) -> None:
     del qt_application
-    module = importlib.import_module("arkclaw.presentation.qt.spine38_renderer")
+    module = importlib.import_module("arkclaw.presentation.qt.pet.spine38_renderer")
     runtime = _FakeRuntime()
     backends: list[_FakeBackend] = []
     renderer = module.Spine38PetRenderer(
@@ -326,7 +326,7 @@ def test_renderer_keeps_visible_frame_transform_after_initialization(
     verified_texture_bytes: bytes,
 ) -> None:
     del qt_application
-    module = importlib.import_module("arkclaw.presentation.qt.spine38_renderer")
+    module = importlib.import_module("arkclaw.presentation.qt.pet.spine38_renderer")
     runtime = _FakeRuntime()
     backends: list[_FakeBackend] = []
     renderer = module.Spine38PetRenderer(
@@ -356,7 +356,7 @@ def test_relax_body_priority_transform_targets_full_height_and_foot_rows(
     verified_texture_bytes: bytes,
 ) -> None:
     del qt_application
-    module = importlib.import_module("arkclaw.presentation.qt.spine38_renderer")
+    module = importlib.import_module("arkclaw.presentation.qt.pet.spine38_renderer")
     runtime = _FakeRuntime()
     backends: list[_FakeBackend] = []
     renderer = module.Spine38PetRenderer(
@@ -384,7 +384,7 @@ def test_renderer_mirrors_scene_when_facing_changes(
     verified_texture_bytes: bytes,
 ) -> None:
     del qt_application
-    module = importlib.import_module("arkclaw.presentation.qt.spine38_renderer")
+    module = importlib.import_module("arkclaw.presentation.qt.pet.spine38_renderer")
     runtime = _FakeRuntime()
     backends: list[_FakeBackend] = []
     renderer = module.Spine38PetRenderer(
@@ -427,7 +427,7 @@ def test_left_facing_is_applied_before_the_first_published_scene(
     verified_texture_bytes: bytes,
 ) -> None:
     del qt_application
-    module = importlib.import_module("arkclaw.presentation.qt.spine38_renderer")
+    module = importlib.import_module("arkclaw.presentation.qt.pet.spine38_renderer")
     runtime = _FakeRuntime()
     backends: list[_FakeBackend] = []
     renderer = module.Spine38PetRenderer(
@@ -468,7 +468,7 @@ def test_renderer_initialization_visible_frame_failure_publishes_no_scene(
     expected_code: str,
 ) -> None:
     del qt_application
-    module = importlib.import_module("arkclaw.presentation.qt.spine38_renderer")
+    module = importlib.import_module("arkclaw.presentation.qt.pet.spine38_renderer")
     runtime = _FakeRuntime()
     runtime.fail_zero_delta_update = failure == "zero_delta"
     runtime.fail_visible_bounds = failure == "visible_bounds"
@@ -495,7 +495,7 @@ def test_renderer_decodes_rgba_and_requires_exact_atlas_dimensions(
     verified_texture_bytes: bytes,
 ) -> None:
     del qt_application
-    module = importlib.import_module("arkclaw.presentation.qt.spine38_renderer")
+    module = importlib.import_module("arkclaw.presentation.qt.pet.spine38_renderer")
     runtime = _FakeRuntime()
     backends: list[_FakeBackend] = []
     renderer = module.Spine38PetRenderer(
@@ -529,7 +529,7 @@ def test_renderer_redacts_unexpected_catalog_failure(
     verified_texture_bytes: bytes,
 ) -> None:
     del qt_application
-    module = importlib.import_module("arkclaw.presentation.qt.spine38_renderer")
+    module = importlib.import_module("arkclaw.presentation.qt.pet.spine38_renderer")
     runtime = _FakeRuntime()
 
     def fail_catalog(name: str) -> None:
@@ -556,7 +556,7 @@ def test_renderer_failure_is_contained_and_close_order_is_idempotent(
     verified_texture_bytes: bytes,
 ) -> None:
     del qt_application
-    module = importlib.import_module("arkclaw.presentation.qt.spine38_renderer")
+    module = importlib.import_module("arkclaw.presentation.qt.pet.spine38_renderer")
     events: list[str] = []
     runtime = _FakeRuntime(events)
     asset_owner = SimpleNamespace(
@@ -588,7 +588,7 @@ def test_renderer_advertises_only_idle_without_completion_metadata(
     verified_texture_bytes: bytes,
 ) -> None:
     del qt_application
-    module = importlib.import_module("arkclaw.presentation.qt.spine38_renderer")
+    module = importlib.import_module("arkclaw.presentation.qt.pet.spine38_renderer")
     renderer = module.Spine38PetRenderer(_FakeRuntime(), verified_texture_bytes)
 
     idle = renderer.animation_capability(PetRendererAction.IDLE)
@@ -619,7 +619,7 @@ def test_sit_uses_full_sampled_surface_and_preserves_body_transform(
     expected_offset: Point,
 ) -> None:
     del qt_application
-    module = importlib.import_module("arkclaw.presentation.qt.spine38_renderer")
+    module = importlib.import_module("arkclaw.presentation.qt.pet.spine38_renderer")
     runtime = _FakeRuntime()
     backends: list[_FakeBackend] = []
     profile = RolePackRenderProfile(
@@ -694,7 +694,7 @@ def test_special_overflow_expands_surface_without_moving_body_transform(
     verified_texture_bytes: bytes,
 ) -> None:
     del qt_application
-    module = importlib.import_module("arkclaw.presentation.qt.spine38_renderer")
+    module = importlib.import_module("arkclaw.presentation.qt.pet.spine38_renderer")
     runtime = _FakeRuntime()
     backends: list[_FakeBackend] = []
     profile = RolePackRenderProfile(
@@ -752,7 +752,7 @@ def test_real_schwarz_profile_plans_full_scale_at_both_desktop_edges(
     """
 
     del qt_application
-    module = importlib.import_module("arkclaw.presentation.qt.spine38_renderer")
+    module = importlib.import_module("arkclaw.presentation.qt.pet.spine38_renderer")
     runtime = _FakeRuntime()
     backends: list[_FakeBackend] = []
     profile = RolePackRenderProfile(

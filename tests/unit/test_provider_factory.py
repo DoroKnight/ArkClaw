@@ -6,7 +6,7 @@ from tests.fakes.openai_sdk import (
     FakeOpenAIScenario,
 )
 
-from arkclaw.application.context_manager import ContextManager
+from arkclaw.application.agent.context_manager import ContextManager
 from arkclaw.config.models import ProviderName, RuntimeConfig
 from arkclaw.config.secrets import InMemorySecretStore, SecretValue
 from arkclaw.domain.events import LLMEvent, LLMEventType

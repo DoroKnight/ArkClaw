@@ -11,7 +11,7 @@ os.environ.pop("QT_QPA_FONTDIR", None)
 
 from PySide6.QtGui import QGuiApplication
 
-from arkclaw.presentation.qt.pet_mesh_spike import (
+from arkclaw.presentation.qt.pet.pet_mesh_spike import (
     MeshSpikeError,
     OffscreenOpenGLMeshRenderer,
     SoftwareTexturedMeshRenderer,

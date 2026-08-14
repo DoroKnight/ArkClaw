@@ -6,8 +6,8 @@ from types import MappingProxyType
 
 import pytest
 
-from arkclaw.application.pet_geometry import Point, Rect
-from arkclaw.application.pet_render_layout import (
+from arkclaw.application.pet.pet_geometry import Point, Rect
+from arkclaw.application.pet.pet_render_layout import (
     LAYOUT_SCALE_EPSILON,
     MIN_EFFECT_SCALE_MULTIPLIER,
     PetBodyTransform,
@@ -23,9 +23,9 @@ from arkclaw.application.pet_render_layout import (
     plan_pet_render_layout,
     project_action_envelope,
 )
-from arkclaw.application.pet_renderer_model import PetRendererAction
-from arkclaw.application.pet_state import PetFacing
-from arkclaw.application.spine38_runtime import Spine38Bounds
+from arkclaw.application.pet.pet_renderer_model import PetRendererAction
+from arkclaw.application.pet.pet_state import PetFacing
+from arkclaw.application.pet.spine38_runtime import Spine38Bounds
 
 BODY = Rect(500.0, 700.0, 160.0, 180.0)
 WORKSPACE = Rect(0.0, 0.0, 1920.0, 880.0)

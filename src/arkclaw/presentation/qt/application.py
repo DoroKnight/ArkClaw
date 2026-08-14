@@ -15,11 +15,11 @@ from arkclaw.bootstrap.autostart import (
 from arkclaw.bootstrap.qt_runtime import (
     ProductionQtRuntimeCompositionRoot,
 )
-from arkclaw.presentation.qt.autostart_controller import (
+from arkclaw.presentation.qt.platform.runtime_bridge import QtRuntimeBridge
+from arkclaw.presentation.qt.ui.autostart_controller import (
     AutostartUiController,
 )
-from arkclaw.presentation.qt.main_window import MainWindow
-from arkclaw.presentation.qt.runtime_bridge import QtRuntimeBridge
+from arkclaw.presentation.qt.ui.main_window import MainWindow
 
 
 def default_provider_metadata_path() -> Path:

@@ -8,7 +8,7 @@ from typing import Self
 
 import pytest
 
-from arkclaw.application.autostart_service import AUTOSTART_VALUE_NAME
+from arkclaw.application.system.autostart_service import AUTOSTART_VALUE_NAME
 from arkclaw.infrastructure.autostart import windows_run_key
 from arkclaw.infrastructure.autostart.windows_run_key import (
     AutostartBackendError,

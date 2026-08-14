@@ -19,33 +19,31 @@ from PySide6.QtGui import QPainter
 from PySide6.QtTest import QSignalSpy
 from PySide6.QtWidgets import QApplication
 
-from arkclaw.application.pet_animation import PetRenderFrame
-from arkclaw.application.pet_geometry import Size
-from arkclaw.application.pet_renderer_model import (
+from arkclaw.application.pet.pet_animation import PetRenderFrame
+from arkclaw.application.pet.pet_geometry import Size
+from arkclaw.application.pet.pet_renderer_model import (
     PetRendererAction,
     PetRendererActionRequest,
     PetRendererAnimationCapability,
     placeholder_animation_capability,
 )
-from arkclaw.application.pet_settings import (
+from arkclaw.application.pet.pet_settings import (
     PetSettings,
     PetSettingsLoadResult,
     PetSettingsRepository,
 )
-from arkclaw.presentation.qt import (
-    pet_application,
-    pet_settings_controller,
-)
-from arkclaw.presentation.qt.main_window import MainWindow
+from arkclaw.presentation.qt import pet_application
+from arkclaw.presentation.qt.pet.pet_window import PetWindow
 from arkclaw.presentation.qt.pet_application import (
     PetApplicationCoordinator,
 )
-from arkclaw.presentation.qt.pet_settings_controller import (
+from arkclaw.presentation.qt.platform.runtime_bridge import QtRuntimeBridge
+from arkclaw.presentation.qt.platform.system_tray import SystemTrayController
+from arkclaw.presentation.qt.ui import pet_settings_controller
+from arkclaw.presentation.qt.ui.main_window import MainWindow
+from arkclaw.presentation.qt.ui.pet_settings_controller import (
     PetSettingsController,
 )
-from arkclaw.presentation.qt.pet_window import PetWindow
-from arkclaw.presentation.qt.runtime_bridge import QtRuntimeBridge
-from arkclaw.presentation.qt.system_tray import SystemTrayController
 
 
 class _ManualShutdownBridge(QObject):

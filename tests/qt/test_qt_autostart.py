@@ -18,34 +18,34 @@ from PySide6.QtGui import QAction, QContextMenuEvent
 from PySide6.QtTest import QSignalSpy, QTest
 from PySide6.QtWidgets import QApplication
 
-from arkclaw.application.autostart_operation_journal import (
+from arkclaw.application.system.autostart_operation_journal import (
     AutostartOperationEvent,
     AutostartOperationJournal,
     AutostartOperationOrigin,
 )
-from arkclaw.application.autostart_service import (
+from arkclaw.application.system.autostart_service import (
     REGISTRY_STRING_VALUE_TYPE,
     AutostartService,
     AutostartStatus,
     AutostartStoredValue,
 )
-from arkclaw.application.startup_mode import parse_startup_mode
+from arkclaw.application.system.startup_mode import parse_startup_mode
 from arkclaw.bootstrap.qt_runtime import ProductionQtRuntimeCompositionRoot
 from arkclaw.config.secrets import InMemorySecretStore, SecretValue
 from arkclaw.domain.models import CredentialId
-from arkclaw.presentation.qt.autostart_controller import (
-    AutostartUiController,
-)
-from arkclaw.presentation.qt.main_window import MainWindow
-from arkclaw.presentation.qt.pet_window import PetWindow
-from arkclaw.presentation.qt.provider_settings_dialog import (
-    ProviderSettingsDialog,
-)
-from arkclaw.presentation.qt.runtime_bridge import QtRuntimeBridge
-from arkclaw.presentation.qt.system_tray import (
+from arkclaw.presentation.qt.pet.pet_window import PetWindow
+from arkclaw.presentation.qt.platform.runtime_bridge import QtRuntimeBridge
+from arkclaw.presentation.qt.platform.system_tray import (
     PetTrayState,
     SystemTrayController,
     TrayCallbacks,
+)
+from arkclaw.presentation.qt.ui.autostart_controller import (
+    AutostartUiController,
+)
+from arkclaw.presentation.qt.ui.main_window import MainWindow
+from arkclaw.presentation.qt.ui.provider_settings_dialog import (
+    ProviderSettingsDialog,
 )
 
 

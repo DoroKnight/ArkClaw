@@ -8,7 +8,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QCoreApplication, QThread, QTimer
 
-from arkclaw.application.provider_profile_service import (
+from arkclaw.application.system.provider_profile_service import (
     ProviderActivationOptions,
 )
 from arkclaw.bootstrap.qt_runtime import (
@@ -16,7 +16,7 @@ from arkclaw.bootstrap.qt_runtime import (
     FakeQtRuntimeCompositionRoot,
 )
 from arkclaw.domain.models import FAKE_DEFAULT_PROFILE_ID
-from arkclaw.presentation.qt.runtime_bridge import QtRuntimeBridge
+from arkclaw.presentation.qt.platform.runtime_bridge import QtRuntimeBridge
 
 _OPTIONS = ProviderActivationOptions(
     timeout_seconds=30.0,

@@ -21,13 +21,12 @@ from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from PySide6.QtWidgets import QApplication
 
 from arkclaw.presentation.qt import pet_application
-from arkclaw.presentation.qt.main_window import MainWindow
+from arkclaw.presentation.qt.pet.pet_window import PetWindow
 from arkclaw.presentation.qt.pet_application import (
     PetApplicationCoordinator,
 )
-from arkclaw.presentation.qt.pet_window import PetWindow
-from arkclaw.presentation.qt.runtime_bridge import QtRuntimeBridge
-from arkclaw.presentation.qt.single_instance import (
+from arkclaw.presentation.qt.platform.runtime_bridge import QtRuntimeBridge
+from arkclaw.presentation.qt.platform.single_instance import (
     ActivationMessageStatus,
     SingleInstanceManager,
     SingleInstanceResult,
@@ -35,6 +34,7 @@ from arkclaw.presentation.qt.single_instance import (
     _ClientSession,
     classify_activation_message,
 )
+from arkclaw.presentation.qt.ui.main_window import MainWindow
 
 
 class _ManualShutdownBridge(QObject):

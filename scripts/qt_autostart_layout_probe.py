@@ -16,20 +16,20 @@ from PySide6.QtCore import QEventLoop, QPoint, QRect, Qt, QTimer
 from PySide6.QtTest import QSignalSpy, QTest
 from PySide6.QtWidgets import QApplication
 
-from arkclaw.application.autostart_service import (
+from arkclaw.application.system.autostart_service import (
     REGISTRY_STRING_VALUE_TYPE,
     AutostartService,
     AutostartStatus,
     AutostartStoredValue,
 )
 from arkclaw.bootstrap.qt_runtime import FakeQtRuntimeCompositionRoot
-from arkclaw.presentation.qt.autostart_controller import (
+from arkclaw.presentation.qt.platform.runtime_bridge import QtRuntimeBridge
+from arkclaw.presentation.qt.ui.autostart_controller import (
     AutostartUiController,
 )
-from arkclaw.presentation.qt.provider_settings_dialog import (
+from arkclaw.presentation.qt.ui.provider_settings_dialog import (
     ProviderSettingsDialog,
 )
-from arkclaw.presentation.qt.runtime_bridge import QtRuntimeBridge
 
 
 class _FakeAutostartBackend:

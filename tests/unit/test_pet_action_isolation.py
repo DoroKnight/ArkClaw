@@ -5,20 +5,20 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-from arkclaw.application.pet_action_sequence import PetActionName
-from arkclaw.application.pet_track0 import (
+from arkclaw.application.pet.pet_action_sequence import PetActionName
+from arkclaw.application.pet.pet_track0 import (
     ActionOutcome,
     AnimationPlayerCapabilities,
 )
-from arkclaw.presentation.qt.pet_window import PlaceholderAnimationPlayer
+from arkclaw.presentation.qt.pet.pet_window import PlaceholderAnimationPlayer
 
 _ROOT = Path(__file__).parents[2]
 _ACTION_SEQUENCE_MODULE = (
-    _ROOT / "src" / "arkclaw" / "application" / "pet_action_sequence.py"
+    _ROOT / "src" / "arkclaw" / "application" / "pet" / "pet_action_sequence.py"
 )
-_TRACK0_MODULE = _ROOT / "src" / "arkclaw" / "application" / "pet_track0.py"
+_TRACK0_MODULE = _ROOT / "src" / "arkclaw" / "application" / "pet" / "pet_track0.py"
 _PET_WINDOW_MODULE = (
-    _ROOT / "src" / "arkclaw" / "presentation" / "qt" / "pet_window.py"
+    _ROOT / "src" / "arkclaw" / "presentation" / "qt" / "pet" / "pet_window.py"
 )
 
 

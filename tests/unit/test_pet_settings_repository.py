@@ -9,14 +9,14 @@ from pathlib import Path
 
 import pytest
 
-from arkclaw.application.pet_geometry import (
+from arkclaw.application.pet.pet_geometry import (
     Point,
     Rect,
     Size,
     physical_to_logical_rect,
 )
-from arkclaw.application.pet_motion import PetMotionModel
-from arkclaw.application.pet_settings import (
+from arkclaw.application.pet.pet_motion import PetMotionModel
+from arkclaw.application.pet.pet_settings import (
     PET_SETTINGS_COORDINATE_LIMIT,
     PetSettings,
     PetSettingsLoadResult,
@@ -25,7 +25,7 @@ from arkclaw.application.pet_settings import (
 from arkclaw.infrastructure.config.json_pet_settings_repository import (
     JsonPetSettingsRepository,
 )
-from arkclaw.presentation.qt.pet_settings_controller import (
+from arkclaw.presentation.qt.ui.pet_settings_controller import (
     PetSettingsController,
 )
 

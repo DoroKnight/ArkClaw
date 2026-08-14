@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from arkclaw.application.pet_mesh_model import (
+from arkclaw.application.pet.pet_mesh_model import (
     PetMeshBlendMode,
     PetMeshDrawCommand,
     PetMeshPoint,

@@ -10,10 +10,10 @@ from typing import cast
 
 import pytest
 
-from arkclaw.application.autostart_eligibility import (
+from arkclaw.application.system.autostart_eligibility import (
     AutostartEligibilityReason,
 )
-from arkclaw.application.autostart_service import (
+from arkclaw.application.system.autostart_service import (
     AUTOSTART_ARGUMENT,
     AUTOSTART_VALUE_NAME,
     REGISTRY_STRING_VALUE_TYPE,
@@ -378,7 +378,7 @@ def test_command_over_fixed_length_limit_is_rejected(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from arkclaw.application import autostart_service
+    from arkclaw.application.system import autostart_service
 
     executable = _packaged_executable(tmp_path)
     backend = _FakeBackend()

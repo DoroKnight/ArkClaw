@@ -12,7 +12,7 @@ from pathlib import Path
 from threading import RLock
 from typing import Protocol, cast
 
-from arkclaw.application.provider_profile_repository import (
+from arkclaw.application.system.provider_profile_repository import (
     ProviderMetadataConflictError,
     ProviderMetadataCorruptedError,
     ProviderMetadataNotFoundError,

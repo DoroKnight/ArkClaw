@@ -2,7 +2,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from arkclaw.application.context_manager import ContextConfig, ContextManager
+from arkclaw.application.agent.context_manager import ContextConfig, ContextManager
 from arkclaw.domain.errors import ContextBudgetError
 from arkclaw.domain.models import (
     ChatMessage,

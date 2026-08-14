@@ -106,10 +106,10 @@ _FORBIDDEN_PRODUCTION_DISTRIBUTIONS = frozenset(
 )
 _REQUIRED_AUTOSTART_MODULES = frozenset(
     {
-        "arkclaw.application.autostart_service",
+        "arkclaw.application.system.autostart_service",
         "arkclaw.infrastructure.autostart.windows_run_key",
-        "arkclaw.presentation.qt.autostart_controller",
-        "arkclaw.presentation.qt.provider_settings_dialog",
+        "arkclaw.presentation.qt.ui.autostart_controller",
+        "arkclaw.presentation.qt.ui.provider_settings_dialog",
     }
 )
 _KNOWN_SYSTEM_DLLS = frozenset(

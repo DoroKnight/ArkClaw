@@ -7,8 +7,8 @@ import logging
 import sys
 from collections.abc import Sequence
 
-from arkclaw.application.agent_loop import AgentLoop
-from arkclaw.application.context_manager import ContextConfig, ContextManager
+from arkclaw.application.agent.agent_loop import AgentLoop
+from arkclaw.application.agent.context_manager import ContextConfig, ContextManager
 from arkclaw.config.errors import ConfigError, SecretStoreError
 from arkclaw.config.loader import ConfigLoader
 from arkclaw.config.models import ProviderName, RuntimeConfig

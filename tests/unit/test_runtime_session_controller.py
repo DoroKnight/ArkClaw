@@ -6,22 +6,22 @@ from pathlib import Path
 
 import pytest
 
-from arkclaw.application.active_turn_coordinator import (
+from arkclaw.application.agent.active_turn_coordinator import (
     DefaultActiveTurnCoordinator,
 )
-from arkclaw.application.agent_loop import AgentLoop
-from arkclaw.application.context_manager import ContextManager
-from arkclaw.application.provider_profile_service import (
-    ActiveTurnHandling,
-    ProviderActivationOptions,
-    ProviderLifecycleState,
-    ProviderProfileService,
-)
-from arkclaw.application.runtime_session_controller import (
+from arkclaw.application.agent.agent_loop import AgentLoop
+from arkclaw.application.agent.context_manager import ContextManager
+from arkclaw.application.agent.runtime_session_controller import (
     RuntimeEvent,
     RuntimeEventType,
     RuntimeSessionController,
     RuntimeState,
+)
+from arkclaw.application.system.provider_profile_service import (
+    ActiveTurnHandling,
+    ProviderActivationOptions,
+    ProviderLifecycleState,
+    ProviderProfileService,
 )
 from arkclaw.domain.events import LLMEvent
 from arkclaw.domain.models import (
@@ -686,7 +686,7 @@ def test_shutdown_cancels_turn_closes_provider_and_leaves_no_tasks(
 
 def test_application_runtime_modules_do_not_import_qt() -> None:
     application_directory = (
-        Path(__file__).parents[2] / "src" / "arkclaw" / "application"
+        Path(__file__).parents[2] / "src" / "arkclaw" / "application" / "agent"
     )
     for filename in (
         "active_turn_coordinator.py",

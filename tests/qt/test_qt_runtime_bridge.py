@@ -12,21 +12,21 @@ import pytest
 from PySide6.QtCore import QCoreApplication, QEventLoop, QThread, QTimer
 from PySide6.QtTest import QSignalSpy
 
-from arkclaw.application.active_turn_coordinator import (
+from arkclaw.application.agent.active_turn_coordinator import (
     DefaultActiveTurnCoordinator,
 )
-from arkclaw.application.agent_loop import AgentLoop
-from arkclaw.application.context_manager import ContextManager
-from arkclaw.application.provider_profile_service import (
-    ActiveTurnHandling,
-    ProviderActivationOptions,
-    ProviderProfileService,
-)
-from arkclaw.application.runtime_session_controller import (
+from arkclaw.application.agent.agent_loop import AgentLoop
+from arkclaw.application.agent.context_manager import ContextManager
+from arkclaw.application.agent.runtime_session_controller import (
     RuntimeCommandResult,
     RuntimeEventSink,
     RuntimeSessionController,
     RuntimeSnapshot,
+)
+from arkclaw.application.system.provider_profile_service import (
+    ActiveTurnHandling,
+    ProviderActivationOptions,
+    ProviderProfileService,
 )
 from arkclaw.bootstrap.qt_runtime import (
     QT_SMOKE_SECONDARY_PROFILE_ID,
@@ -46,8 +46,8 @@ from arkclaw.infrastructure.config.json_provider_profile_repository import (
     JsonProviderProfileRepository,
 )
 from arkclaw.infrastructure.llm.fake_provider import FakeProvider
-from arkclaw.presentation.qt.runtime_bridge import QtRuntimeBridge
-from arkclaw.presentation.qt.runtime_thread import (
+from arkclaw.presentation.qt.platform.runtime_bridge import QtRuntimeBridge
+from arkclaw.presentation.qt.platform.runtime_thread import (
     RuntimeControllerFactory,
     RuntimeThread,
     RuntimeThreadCommand,
@@ -1709,6 +1709,7 @@ def test_qt_rejects_commands_before_start_and_never_uses_terminate(
         / "arkclaw"
         / "presentation"
         / "qt"
+        / "platform"
         / "runtime_thread.py"
     ).read_text(encoding="utf-8")
     assert ".terminate(" not in source

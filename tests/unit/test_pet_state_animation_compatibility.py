@@ -6,8 +6,8 @@ from itertools import combinations
 
 import pytest
 
-from arkclaw.application.pet_action_sequence import PetActionName, PlaybackHealth
-from arkclaw.application.pet_state import (
+from arkclaw.application.pet.pet_action_sequence import PetActionName, PlaybackHealth
+from arkclaw.application.pet.pet_state import (
     STATE_ACTION_COMPATIBILITY,
     AnimationCompatibilityError,
     PetActivityState,

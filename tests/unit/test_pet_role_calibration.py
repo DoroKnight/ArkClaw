@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from arkclaw.application.pet_production_actions import ProductionAction
-from arkclaw.application.pet_role_calibration import (
+from arkclaw.application.pet.pet_production_actions import ProductionAction
+from arkclaw.application.pet.pet_role_calibration import (
     RootMotionKind,
     classify_root_motion_samples,
 )
-from arkclaw.application.spine38_runtime import Spine38RootTransform
+from arkclaw.application.pet.spine38_runtime import Spine38RootTransform
 
 
 def test_relax_move_sit_root_motion_is_classified_before_grounding_policy() -> None:

@@ -14,8 +14,8 @@ from tests.fakes.openai_sdk import (
     FakeOpenAIScenario,
 )
 
-from arkclaw.application.agent_loop import AgentLoop, CancellationToken
-from arkclaw.application.context_manager import ContextManager
+from arkclaw.application.agent.agent_loop import AgentLoop, CancellationToken
+from arkclaw.application.agent.context_manager import ContextManager
 from arkclaw.config.secrets import InMemorySecretStore, SecretValue
 from arkclaw.domain.errors import ProviderError
 from arkclaw.domain.events import AgentEvent, AgentEventType, LLMEvent, LLMEventType

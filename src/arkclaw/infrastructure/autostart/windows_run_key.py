@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import winreg as winreg
 
-from arkclaw.application.autostart_service import (
+from arkclaw.application.system.autostart_service import (
     AUTOSTART_VALUE_NAME,
     AutostartStoredValue,
 )

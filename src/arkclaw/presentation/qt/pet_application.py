@@ -10,18 +10,18 @@ from typing import NoReturn
 from PySide6.QtCore import QObject, QTimer, Signal, Slot
 from PySide6.QtWidgets import QApplication
 
-from arkclaw.application.autostart_operation_journal import (
+from arkclaw.application.pet.pet_production_actions import ProductionAction
+from arkclaw.application.pet.pet_settings import PetSettings
+from arkclaw.application.pet.pet_state import PetLifecycleState
+from arkclaw.application.pet.pet_track0 import ActionOutcome
+from arkclaw.application.system.autostart_operation_journal import (
     AutostartOperationContext,
     AutostartOperationEvent,
     AutostartOperationJournalError,
     AutostartOperationOrigin,
     AutostartOperationRuntimeState,
 )
-from arkclaw.application.pet_production_actions import ProductionAction
-from arkclaw.application.pet_settings import PetSettings
-from arkclaw.application.pet_state import PetLifecycleState
-from arkclaw.application.pet_track0 import ActionOutcome
-from arkclaw.application.startup_mode import (
+from arkclaw.application.system.startup_mode import (
     StartupModeArgumentError,
     parse_startup_mode,
 )
@@ -40,15 +40,22 @@ from arkclaw.bootstrap.qt_runtime import (
 from arkclaw.presentation.qt.application import (
     default_provider_metadata_path,
 )
-from arkclaw.presentation.qt.autostart_controller import (
+from arkclaw.presentation.qt.pet.pet_window import PetWindow
+from arkclaw.presentation.qt.platform.runtime_bridge import QtRuntimeBridge
+from arkclaw.presentation.qt.platform.single_instance import (
+    SingleInstanceRole,
+    create_production_single_instance,
+)
+from arkclaw.presentation.qt.platform.system_tray import SystemTrayController
+from arkclaw.presentation.qt.ui.autostart_controller import (
     AutostartUiController,
 )
-from arkclaw.presentation.qt.autostart_operation_diagnostics import (
+from arkclaw.presentation.qt.ui.autostart_operation_diagnostics import (
     AutostartOperationDiagnosticArgumentError,
     prepare_autostart_operation_diagnostic_launch,
 )
-from arkclaw.presentation.qt.main_window import MainWindow
-from arkclaw.presentation.qt.owner_ui_readiness import (
+from arkclaw.presentation.qt.ui.main_window import MainWindow
+from arkclaw.presentation.qt.ui.owner_ui_readiness import (
     OwnerStartupFailure,
     OwnerStartupStage,
     OwnerUiCheckpointRecorder,
@@ -57,17 +64,10 @@ from arkclaw.presentation.qt.owner_ui_readiness import (
     classify_owner_ui_readiness,
     prepare_owner_ui_diagnostic_launch,
 )
-from arkclaw.presentation.qt.pet_settings_controller import (
+from arkclaw.presentation.qt.ui.pet_settings_controller import (
     PetSettingsController,
     create_production_pet_settings_controller,
 )
-from arkclaw.presentation.qt.pet_window import PetWindow
-from arkclaw.presentation.qt.runtime_bridge import QtRuntimeBridge
-from arkclaw.presentation.qt.single_instance import (
-    SingleInstanceRole,
-    create_production_single_instance,
-)
-from arkclaw.presentation.qt.system_tray import SystemTrayController
 
 
 class PetApplicationCoordinator(QObject):

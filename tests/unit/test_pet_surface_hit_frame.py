@@ -6,7 +6,7 @@ import pytest
 from PySide6.QtCore import QPointF
 from PySide6.QtGui import QColor, QImage
 
-from arkclaw.presentation.qt.pet_surface_hit_frame import PetSurfaceHitFrame
+from arkclaw.presentation.qt.pet.pet_surface_hit_frame import PetSurfaceHitFrame
 
 
 def _image_with_alpha(

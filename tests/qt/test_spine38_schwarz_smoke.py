@@ -16,15 +16,15 @@ from typing import Any, NoReturn, cast
 
 import pytest
 
-from arkclaw.application.pet_action_sequence import PetActionName
-from arkclaw.application.pet_geometry import Point, Rect, Size
-from arkclaw.application.pet_render_layout import PetRenderLayout
-from arkclaw.application.pet_renderer_model import (
+from arkclaw.application.pet.pet_action_sequence import PetActionName
+from arkclaw.application.pet.pet_geometry import Point, Rect, Size
+from arkclaw.application.pet.pet_render_layout import PetRenderLayout
+from arkclaw.application.pet.pet_renderer_model import (
     PetRendererAction,
     PetRendererActionRequest,
 )
-from arkclaw.application.pet_state import PetFacing
-from arkclaw.application.pet_track0 import PlaybackRequest
+from arkclaw.application.pet.pet_state import PetFacing
+from arkclaw.application.pet.pet_track0 import PlaybackRequest
 
 _SAMPLE_LABELS = [
     "loop_1_start",
@@ -217,7 +217,7 @@ def test_real_schwarz_overflow_alpha_hit_reuses_one_render_scene() -> None:
     from arkclaw.bootstrap.pet_production import (
         create_optional_production_pet_composition,
     )
-    from arkclaw.presentation.qt.pet_effect_overlay import PetEffectOverlayWindow
+    from arkclaw.presentation.qt.pet.pet_effect_overlay import PetEffectOverlayWindow
 
     application = QApplication.instance() or QApplication([])
     if application.platformName() != "windows":
@@ -349,7 +349,7 @@ def test_real_schwarz_overflow_alpha_hit_reuses_one_render_scene() -> None:
 def test_wrong_hash_phase_observes_zero_bridge_factory_calls() -> None:
     script = importlib.import_module("scripts.qt_spine38_vertical_slice")
     assets = importlib.import_module(
-        "arkclaw.application.pet_external_assets"
+        "arkclaw.application.pet.pet_external_assets"
     )
     bridge_calls: list[object] = []
 
@@ -384,7 +384,7 @@ def test_wrong_hash_phase_observes_zero_bridge_factory_calls() -> None:
 def test_wrong_hash_phase_attempts_monitored_bridge_on_loader_success() -> None:
     script = importlib.import_module("scripts.qt_spine38_vertical_slice")
     assets = importlib.import_module(
-        "arkclaw.application.pet_external_assets"
+        "arkclaw.application.pet.pet_external_assets"
     )
     bridge_calls: list[object] = []
 

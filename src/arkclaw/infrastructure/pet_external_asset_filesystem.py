@@ -9,7 +9,7 @@ from ctypes import wintypes
 from pathlib import PureWindowsPath
 from typing import Any, BinaryIO, ClassVar
 
-from arkclaw.application.pet_external_assets import (
+from arkclaw.application.pet.pet_external_assets import (
     ExternalAssetFilesystemError,
     ExternalAssetRootHandle,
     ExternalFileIdentity,

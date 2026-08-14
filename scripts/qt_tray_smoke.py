@@ -15,19 +15,19 @@ if __package__ in {None, ""}:
 from PySide6.QtCore import QObject, QTimer, qInstallMessageHandler
 from PySide6.QtWidgets import QApplication
 
-from arkclaw.application.pet_state import PetLifecycleState
+from arkclaw.application.pet.pet_state import PetLifecycleState
 from arkclaw.bootstrap.qt_runtime import FakeQtRuntimeCompositionRoot
-from arkclaw.presentation.qt.main_window import MainWindow
+from arkclaw.presentation.qt.pet.pet_window import PetWindow
 from arkclaw.presentation.qt.pet_application import (
     PetApplicationCoordinator,
 )
-from arkclaw.presentation.qt.pet_window import PetWindow
-from arkclaw.presentation.qt.runtime_bridge import QtRuntimeBridge
-from arkclaw.presentation.qt.system_tray import (
+from arkclaw.presentation.qt.platform.runtime_bridge import QtRuntimeBridge
+from arkclaw.presentation.qt.platform.system_tray import (
     PetTrayState,
     SystemTrayController,
     TrayCallbacks,
 )
+from arkclaw.presentation.qt.ui.main_window import MainWindow
 from scripts.qt_pet_smoke import (
     _EXPECTED_QT_PLATFORM_WARNING_COUNTS,
     _QtMessageAudit,

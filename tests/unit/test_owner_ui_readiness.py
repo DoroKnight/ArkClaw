@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from arkclaw.presentation.qt.owner_ui_readiness import (
+from arkclaw.presentation.qt.ui.owner_ui_readiness import (
     OWNER_UI_DIAGNOSTIC_ARGUMENT,
     OwnerStartupFailure,
     OwnerStartupStage,

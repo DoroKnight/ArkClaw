@@ -29,9 +29,9 @@ def test_real_schwarz_catalog_confirms_six_production_animations() -> None:
             "ARKCLAW_SPINE38_ASSET_ROOT"
         )
 
-    assets = importlib.import_module("arkclaw.application.pet_external_assets")
-    model = importlib.import_module("arkclaw.application.pet_renderer_model")
-    runtime = importlib.import_module("arkclaw.application.spine38_runtime")
+    assets = importlib.import_module("arkclaw.application.pet.pet_external_assets")
+    model = importlib.import_module("arkclaw.application.pet.pet_renderer_model")
+    runtime = importlib.import_module("arkclaw.application.pet.spine38_runtime")
     filesystem = importlib.import_module(
         "arkclaw.infrastructure.pet_external_asset_filesystem"
     )

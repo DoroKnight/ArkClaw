@@ -17,7 +17,7 @@ from typing import Any, NoReturn, cast
 
 import pytest
 
-from arkclaw.application.pet_external_assets import ExternalPetAssetSnapshot
+from arkclaw.application.pet.pet_external_assets import ExternalPetAssetSnapshot
 
 
 class FakeFunction:

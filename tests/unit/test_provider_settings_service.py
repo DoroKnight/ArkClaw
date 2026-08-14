@@ -7,15 +7,15 @@ from pathlib import Path
 
 import pytest
 
-from arkclaw.application.active_turn_coordinator import (
+from arkclaw.application.agent.active_turn_coordinator import (
     DefaultActiveTurnCoordinator,
 )
-from arkclaw.application.provider_profile_service import (
+from arkclaw.application.system.provider_profile_service import (
     ActiveTurnHandling,
     ProviderActivationOptions,
     ProviderProfileServiceError,
 )
-from arkclaw.application.provider_settings_service import (
+from arkclaw.application.system.provider_settings_service import (
     ProviderSettingsService,
     ProviderSettingsServiceError,
 )

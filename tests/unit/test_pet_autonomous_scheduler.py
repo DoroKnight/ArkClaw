@@ -3,13 +3,13 @@ from __future__ import annotations
 import random
 from dataclasses import replace
 
-from arkclaw.application.pet_autonomous_scheduler import (
+from arkclaw.application.pet.pet_autonomous_scheduler import (
     AutonomousActionScheduler,
     AutonomousBoundaryEvent,
     AutonomousRuntimeSnapshot,
     AutonomousState,
 )
-from arkclaw.application.pet_production_actions import (
+from arkclaw.application.pet.pet_production_actions import (
     ActionOrigin,
     ActionSource,
     AutonomousExecutionMode,

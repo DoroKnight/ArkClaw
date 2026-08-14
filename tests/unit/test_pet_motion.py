@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from arkclaw.application.pet_geometry import (
+from arkclaw.application.pet.pet_geometry import (
     Point,
     Rect,
     Size,
@@ -10,11 +10,11 @@ from arkclaw.application.pet_geometry import (
     physical_to_logical_rect,
     select_workspace,
 )
-from arkclaw.application.pet_motion import (
+from arkclaw.application.pet.pet_motion import (
     PetMotionConfig,
     PetMotionModel,
 )
-from arkclaw.application.pet_state import (
+from arkclaw.application.pet.pet_state import (
     PetActivityState,
     PetBehaviorState,
     PetFacing,

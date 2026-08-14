@@ -22,17 +22,17 @@ if __package__ in {None, ""}:
         str(Path(__file__).resolve().parents[1] / "src"),
     )
 
-from arkclaw.application.pet_external_assets import (
+from arkclaw.application.pet.pet_external_assets import (
     ExternalPetAssetLoader,
     ExternalPetAssetLoadResult,
     ExternalPetAssetSnapshot,
     ExternalPetAssetStatus,
 )
-from arkclaw.application.pet_renderer_model import (
+from arkclaw.application.pet.pet_renderer_model import (
     ExternalPetAssetDescriptor,
     ExternalPetAssetHashes,
 )
-from arkclaw.application.spine38_runtime import (
+from arkclaw.application.pet.spine38_runtime import (
     Spine38CatalogError,
     Spine38Runtime,
 )
@@ -331,8 +331,8 @@ def _forced_hash_failure_evidence(
     asset_loader: _WrongHashAssetLoader,
     bridge_factory: _BridgeFactory,
 ) -> dict[str, Any]:
-    from arkclaw.application.pet_geometry import Size
-    from arkclaw.presentation.qt.pet_renderer import (
+    from arkclaw.application.pet.pet_geometry import Size
+    from arkclaw.presentation.qt.pet.pet_renderer import (
         PetRendererSafeCode,
         PlaceholderPetRenderer,
         SafePetRenderer,
@@ -583,13 +583,13 @@ def _run_three_loop_smoke(
             from PySide6.QtCore import Qt, QTimer
             from PySide6.QtWidgets import QApplication
 
-            from arkclaw.application.pet_geometry import Size
-            from arkclaw.presentation.qt.pet_renderer import (
+            from arkclaw.application.pet.pet_geometry import Size
+            from arkclaw.presentation.qt.pet.pet_renderer import (
                 PetRendererSafeCode,
                 SafePetRenderer,
             )
-            from arkclaw.presentation.qt.pet_window import PetWindow
-            from arkclaw.presentation.qt.spine38_renderer import (
+            from arkclaw.presentation.qt.pet.pet_window import PetWindow
+            from arkclaw.presentation.qt.pet.spine38_renderer import (
                 Spine38PetRenderer,
             )
 
@@ -710,7 +710,7 @@ def _run_three_loop_smoke(
                     "samples": samples,
                     "forced_hash_failure": forced_hash_failure,
                     "agent_modules_imported": (
-                        "arkclaw.application.agent_loop" in sys.modules
+                        "arkclaw.application.agent.agent_loop" in sys.modules
                     ),
                     "visual_review_required": True,
                 }
@@ -776,13 +776,13 @@ def _run_visible(
 
             from PySide6.QtWidgets import QApplication
 
-            from arkclaw.application.pet_geometry import Size
-            from arkclaw.presentation.qt.pet_renderer import (
+            from arkclaw.application.pet.pet_geometry import Size
+            from arkclaw.presentation.qt.pet.pet_renderer import (
                 PetRendererSafeCode,
                 SafePetRenderer,
             )
-            from arkclaw.presentation.qt.pet_window import PetWindow
-            from arkclaw.presentation.qt.spine38_renderer import (
+            from arkclaw.presentation.qt.pet.pet_window import PetWindow
+            from arkclaw.presentation.qt.pet.spine38_renderer import (
                 Spine38PetRenderer,
             )
 

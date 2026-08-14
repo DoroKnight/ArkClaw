@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import inspect
 
-from arkclaw.presentation.qt import spine38_player
+from arkclaw.presentation.qt.pet import spine38_player
 
 
 def test_spine_player_adapter_remains_qt_free() -> None:

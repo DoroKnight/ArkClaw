@@ -14,12 +14,12 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtCore import QPoint
 from PySide6.QtWidgets import QApplication, QMenu
 
-from arkclaw.application.pet_production_actions import ProductionAction
-from arkclaw.application.pet_track0 import ActionOutcome
+from arkclaw.application.pet.pet_production_actions import ProductionAction
+from arkclaw.application.pet.pet_track0 import ActionOutcome
 from arkclaw.bootstrap.pet_production import (
     create_optional_production_pet_composition,
 )
-from arkclaw.presentation.qt.pet_window import PetWindow
+from arkclaw.presentation.qt.pet.pet_window import PetWindow
 
 
 def _process_until(application: QApplication, predicate: object) -> bool:

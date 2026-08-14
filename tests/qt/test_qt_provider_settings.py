@@ -21,19 +21,19 @@ from PySide6.QtWidgets import (
     QPlainTextEdit,
 )
 
-from arkclaw.application.provider_profile_service import (
+from arkclaw.application.agent.runtime_session_controller import (
+    RuntimeEventSink,
+    RuntimeSessionController,
+)
+from arkclaw.application.system.provider_profile_service import (
     ActiveTurnHandling,
     ProviderActivationOptions,
 )
-from arkclaw.application.provider_settings_service import (
+from arkclaw.application.system.provider_settings_service import (
     CredentialBindingView,
     ProviderCapabilitiesView,
     ProviderProfileView,
     ProviderSettingsSnapshot,
-)
-from arkclaw.application.runtime_session_controller import (
-    RuntimeEventSink,
-    RuntimeSessionController,
 )
 from arkclaw.bootstrap.qt_runtime import (
     ProductionQtRuntimeCompositionRoot,
@@ -50,14 +50,14 @@ from arkclaw.domain.models import (
 )
 from arkclaw.infrastructure.llm.fake_provider import FakeProvider
 from arkclaw.infrastructure.llm.provider_factory import ProviderFactory
-from arkclaw.presentation.qt.main_window import MainWindow
-from arkclaw.presentation.qt.provider_settings_dialog import (
-    ProviderSettingsDialog,
-)
-from arkclaw.presentation.qt.runtime_bridge import QtRuntimeBridge
-from arkclaw.presentation.qt.runtime_thread import (
+from arkclaw.presentation.qt.platform.runtime_bridge import QtRuntimeBridge
+from arkclaw.presentation.qt.platform.runtime_thread import (
     RuntimeThreadCommand,
     RuntimeThreadCommandType,
+)
+from arkclaw.presentation.qt.ui.main_window import MainWindow
+from arkclaw.presentation.qt.ui.provider_settings_dialog import (
+    ProviderSettingsDialog,
 )
 
 _FAKE_SECRET = "sk-test-never-use-qt-settings"

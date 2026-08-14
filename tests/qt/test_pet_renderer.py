@@ -13,9 +13,9 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtGui import QImage, QPainter
 from PySide6.QtWidgets import QApplication
 
-from arkclaw.application.pet_animation import PetRenderFrame
-from arkclaw.application.pet_geometry import Size
-from arkclaw.application.pet_renderer_model import (
+from arkclaw.application.pet.pet_animation import PetRenderFrame
+from arkclaw.application.pet.pet_geometry import Size
+from arkclaw.application.pet.pet_renderer_model import (
     ExternalPetAssetDescriptor,
     PetRendererAction,
     PetRendererActionRequest,
@@ -24,13 +24,13 @@ from arkclaw.application.pet_renderer_model import (
     PetRendererKind,
     placeholder_animation_capability,
 )
-from arkclaw.presentation.qt.pet_renderer import (
+from arkclaw.presentation.qt.pet.pet_renderer import (
     PetRendererSafeCode,
     SafePetRenderer,
     create_configured_pet_renderer,
     create_safe_pet_renderer,
 )
-from arkclaw.presentation.qt.pet_window import PetWindow
+from arkclaw.presentation.qt.pet.pet_window import PetWindow
 
 
 @pytest.fixture(scope="module")

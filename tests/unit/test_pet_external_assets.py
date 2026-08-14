@@ -11,13 +11,13 @@ from pathlib import Path
 
 import pytest
 
-from arkclaw.application.pet_external_assets import (
+from arkclaw.application.pet.pet_external_assets import (
     ExternalAssetFilesystemError,
     ExternalFileIdentity,
     ExternalPetAssetLoader,
     ExternalPetAssetStatus,
 )
-from arkclaw.application.pet_renderer_model import (
+from arkclaw.application.pet.pet_renderer_model import (
     ExternalPetAssetDescriptor,
     ExternalPetAssetHashes,
     ExternalPetAssetLimits,

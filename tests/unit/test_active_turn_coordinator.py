@@ -5,11 +5,11 @@ from collections.abc import Iterator
 
 import pytest
 
-from arkclaw.application.active_turn_coordinator import (
+from arkclaw.application.agent.active_turn_coordinator import (
     DefaultActiveTurnCoordinator,
 )
-from arkclaw.application.agent_loop import CancellationToken
-from arkclaw.application.provider_profile_service import (
+from arkclaw.application.agent.agent_loop import CancellationToken
+from arkclaw.application.system.provider_profile_service import (
     ActiveTurnHandling,
 )
 from arkclaw.domain.models import ProfileId

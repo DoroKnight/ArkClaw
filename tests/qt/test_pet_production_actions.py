@@ -14,22 +14,22 @@ from PySide6.QtGui import QAction, QContextMenuEvent
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QMenu
 
-from arkclaw.application.pet_production_actions import ActionSource, ProductionAction
-from arkclaw.application.pet_role_pack import (
+from arkclaw.application.pet.pet_production_actions import ActionSource, ProductionAction
+from arkclaw.application.pet.pet_role_pack import (
     AnimationRoleRegistry,
     RoleAnimationBinding,
     build_track0_animation_registry,
 )
-from arkclaw.application.pet_state import PetMotionState
-from arkclaw.application.pet_track0 import (
+from arkclaw.application.pet.pet_state import PetMotionState
+from arkclaw.application.pet.pet_track0 import (
     ActionOutcome,
     AnimationPlayerCapabilities,
     PetTrack0Controller,
     PlaybackRequest,
     PlaybackToken,
 )
-from arkclaw.presentation.qt.pet_window import PetWindow
-from arkclaw.presentation.qt.system_tray import (
+from arkclaw.presentation.qt.pet.pet_window import PetWindow
+from arkclaw.presentation.qt.platform.system_tray import (
     PetTrayState,
     TrayCallbacks,
     _QtSystemTrayView,

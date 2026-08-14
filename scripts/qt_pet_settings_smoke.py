@@ -24,15 +24,15 @@ from arkclaw.bootstrap.qt_runtime import FakeQtRuntimeCompositionRoot
 from arkclaw.infrastructure.config.json_pet_settings_repository import (
     JsonPetSettingsRepository,
 )
-from arkclaw.presentation.qt.main_window import MainWindow
+from arkclaw.presentation.qt.pet.pet_window import PetWindow
 from arkclaw.presentation.qt.pet_application import (
     PetApplicationCoordinator,
 )
-from arkclaw.presentation.qt.pet_settings_controller import (
+from arkclaw.presentation.qt.platform.runtime_bridge import QtRuntimeBridge
+from arkclaw.presentation.qt.ui.main_window import MainWindow
+from arkclaw.presentation.qt.ui.pet_settings_controller import (
     PetSettingsController,
 )
-from arkclaw.presentation.qt.pet_window import PetWindow
-from arkclaw.presentation.qt.runtime_bridge import QtRuntimeBridge
 
 _KNOWN_PLATFORM_WARNING_PARTS = (
     "QFontDatabase: Cannot find font directory",

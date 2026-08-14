@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import pytest
 
-from arkclaw.application.pet_action_sequence import (
+from arkclaw.application.pet.pet_action_sequence import (
     SEQUENCE_CATALOG,
     PetActionName,
     SequenceName,
     SequenceTerminal,
 )
-from arkclaw.application.pet_track0 import (
+from arkclaw.application.pet.pet_track0 import (
     ActionOutcome,
     ConfirmedPlaybackEpoch,
     PetSequenceRunner,

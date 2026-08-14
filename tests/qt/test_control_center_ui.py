@@ -8,22 +8,22 @@ import pytest
 from PySide6.QtCore import QCoreApplication
 from PySide6.QtWidgets import QApplication, QMenu, QPushButton
 
-from arkclaw.application.pet_production_actions import ProductionAction
-from arkclaw.application.pet_state import PetLifecycleState
+from arkclaw.application.pet.pet_production_actions import ProductionAction
+from arkclaw.application.pet.pet_state import PetLifecycleState
 from arkclaw.bootstrap.qt_runtime import FakeQtRuntimeCompositionRoot
-from arkclaw.presentation.qt.control_center import (
+from arkclaw.presentation.qt.pet.pet_window import PetWindow
+from arkclaw.presentation.qt.pet_application import PetApplicationCoordinator
+from arkclaw.presentation.qt.platform.runtime_bridge import QtRuntimeBridge
+from arkclaw.presentation.qt.ui.control_center import (
     SCHWARZ_ACTIONS,
     ControlCenterView,
     PetPresentationSnapshot,
 )
-from arkclaw.presentation.qt.main_window import MainWindow
-from arkclaw.presentation.qt.pet_application import PetApplicationCoordinator
-from arkclaw.presentation.qt.pet_window import PetWindow
-from arkclaw.presentation.qt.production_action_menu import (
+from arkclaw.presentation.qt.ui.main_window import MainWindow
+from arkclaw.presentation.qt.ui.production_action_menu import (
     ProductionActionMenuSection,
     prepare_arkclaw_menu,
 )
-from arkclaw.presentation.qt.runtime_bridge import QtRuntimeBridge
 
 
 @pytest.fixture

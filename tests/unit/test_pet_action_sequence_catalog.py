@@ -5,7 +5,7 @@ from dataclasses import FrozenInstanceError
 
 import pytest
 
-from arkclaw.application.pet_action_sequence import (
+from arkclaw.application.pet.pet_action_sequence import (
     SEQUENCE_CATALOG,
     AnimationBinding,
     AnimationRegistry,

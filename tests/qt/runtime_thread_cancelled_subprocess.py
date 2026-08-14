@@ -9,13 +9,13 @@ from pathlib import Path
 
 from PySide6.QtCore import QCoreApplication, QEventLoop, QTimer
 
-from arkclaw.application.runtime_session_controller import (
+from arkclaw.application.agent.runtime_session_controller import (
     RuntimeCommandResult,
     RuntimeSessionController,
 )
 from arkclaw.bootstrap.qt_runtime import FakeQtRuntimeCompositionRoot
-from arkclaw.presentation.qt.runtime_bridge import QtRuntimeBridge
-from arkclaw.presentation.qt.runtime_thread import (
+from arkclaw.presentation.qt.platform.runtime_bridge import QtRuntimeBridge
+from arkclaw.presentation.qt.platform.runtime_thread import (
     RuntimeThread,
     RuntimeThreadCommand,
 )

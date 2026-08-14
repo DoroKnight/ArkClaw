@@ -10,12 +10,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
-from arkclaw.application.pet_autonomous_scheduler import AutonomousActionScheduler
-from arkclaw.application.pet_external_assets import ExternalPetAssetLoader
-from arkclaw.application.pet_geometry import Rect, Size
-from arkclaw.application.pet_mesh_model import PetMeshTextureFilter
-from arkclaw.application.pet_production_actions import ProductionAction
-from arkclaw.application.pet_render_layout import (
+from arkclaw.application.pet.pet_autonomous_scheduler import AutonomousActionScheduler
+from arkclaw.application.pet.pet_external_assets import ExternalPetAssetLoader
+from arkclaw.application.pet.pet_geometry import Rect, Size
+from arkclaw.application.pet.pet_mesh_model import PetMeshTextureFilter
+from arkclaw.application.pet.pet_production_actions import ProductionAction
+from arkclaw.application.pet.pet_render_layout import (
     PetBodyTransform,
     PetRenderLayoutFailure,
     PetRenderLayoutFailureReason,
@@ -24,16 +24,16 @@ from arkclaw.application.pet_render_layout import (
     plan_pet_render_layout,
     project_action_envelope,
 )
-from arkclaw.application.pet_renderer_model import (
+from arkclaw.application.pet.pet_renderer_model import (
     ExternalPetAssetDescriptor,
     ExternalPetAssetHashes,
     PetRendererAction,
 )
-from arkclaw.application.pet_role_calibration import (
+from arkclaw.application.pet.pet_role_calibration import (
     RootMotionClassification,
     classify_root_motion_samples,
 )
-from arkclaw.application.pet_role_pack import (
+from arkclaw.application.pet.pet_role_pack import (
     AnimationRoleRegistry,
     MoveDirectionPolicy,
     RoleAnimationNames,
@@ -42,9 +42,9 @@ from arkclaw.application.pet_role_pack import (
     RolePackManifest,
     build_track0_animation_registry,
 )
-from arkclaw.application.pet_state import PetFacing
-from arkclaw.application.pet_track0 import PetTrack0Controller
-from arkclaw.application.spine38_runtime import (
+from arkclaw.application.pet.pet_state import PetFacing
+from arkclaw.application.pet.pet_track0 import PetTrack0Controller
+from arkclaw.application.pet.spine38_runtime import (
     Spine38Bounds,
     Spine38RootTransform,
     Spine38Runtime,
@@ -56,8 +56,8 @@ from arkclaw.infrastructure.spine38_native import (
     Spine38NativeLibrary,
     Spine38TextureFilter,
 )
-from arkclaw.presentation.qt.spine38_player import Spine38AnimationPlayer
-from arkclaw.presentation.qt.spine38_renderer import Spine38PetRenderer
+from arkclaw.presentation.qt.pet.spine38_player import Spine38AnimationPlayer
+from arkclaw.presentation.qt.pet.spine38_renderer import Spine38PetRenderer
 
 _MANIFEST_ENV = "ARKCLAW_PET_ROLE_MANIFEST"
 _BRIDGE_ENV = "ARKCLAW_SPINE38_BRIDGE_DLL"

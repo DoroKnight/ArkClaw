@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from arkclaw.application.pet_production_actions import ProductionAction
-from arkclaw.application.pet_role_pack import (
+from arkclaw.application.pet.pet_production_actions import ProductionAction
+from arkclaw.application.pet.pet_role_pack import (
     AnimationRoleRegistry,
     MoveDirectionPolicy,
     RoleAnimationNames,

@@ -27,7 +27,7 @@ def _forbidden_imports() -> list[str]:
 
 
 def _import_production_surface(root: Path) -> bool:
-    from arkclaw.application.provider_profile_service import (
+    from arkclaw.application.system.provider_profile_service import (
         ProviderProfileService,
     )
     from arkclaw.infrastructure.llm.deepseek_provider import (
@@ -35,14 +35,14 @@ def _import_production_surface(root: Path) -> bool:
     )
     from arkclaw.infrastructure.llm.fake_provider import FakeProvider
     from arkclaw.infrastructure.llm.openai_provider import OpenAIProvider
-    from arkclaw.presentation.qt.pet_settings_controller import (
-        PetSettingsController,
-    )
-    from arkclaw.presentation.qt.runtime_bridge import QtRuntimeBridge
-    from arkclaw.presentation.qt.single_instance import (
+    from arkclaw.presentation.qt.platform.runtime_bridge import QtRuntimeBridge
+    from arkclaw.presentation.qt.platform.single_instance import (
         SingleInstanceManager,
     )
-    from arkclaw.presentation.qt.system_tray import SystemTrayController
+    from arkclaw.presentation.qt.platform.system_tray import SystemTrayController
+    from arkclaw.presentation.qt.ui.pet_settings_controller import (
+        PetSettingsController,
+    )
 
     imported = (
         ProviderProfileService,

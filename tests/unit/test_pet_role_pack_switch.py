@@ -2,22 +2,22 @@ from __future__ import annotations
 
 import pytest
 
-from arkclaw.application.pet_action_sequence import PlaybackHealth
-from arkclaw.application.pet_role_pack import (
+from arkclaw.application.pet.pet_action_sequence import PlaybackHealth
+from arkclaw.application.pet.pet_role_pack import (
     MoveDirectionPolicy,
     RoleAnimationNames,
     RolePackFraming,
     RolePackHashes,
     ValidatedRolePackIdentity,
 )
-from arkclaw.application.pet_role_pack_switch import (
+from arkclaw.application.pet.pet_role_pack_switch import (
     ActiveRolePack,
     RolePackCandidate,
     RolePackPreparationError,
     RolePackSwitchCoordinator,
     RolePackSwitchOutcome,
 )
-from arkclaw.application.pet_track0 import ActionOutcome
+from arkclaw.application.pet.pet_track0 import ActionOutcome
 
 
 class _Resource:

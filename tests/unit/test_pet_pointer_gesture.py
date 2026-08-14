@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from arkclaw.application.pet_geometry import Point
+from arkclaw.application.pet.pet_geometry import Point
 from arkclaw.presentation.pet_pointer_gesture import (
     GestureCancelReason,
     GestureDecision,

@@ -5,7 +5,7 @@ from dataclasses import replace
 import pytest
 from tests.fakes.pet_animation_player import FakeAnimationPlayer
 
-from arkclaw.application.pet_action_sequence import (
+from arkclaw.application.pet.pet_action_sequence import (
     SEQUENCE_CATALOG,
     AnimationRegistry,
     InterruptClass,
@@ -13,7 +13,7 @@ from arkclaw.application.pet_action_sequence import (
     SequenceName,
     default_animation_registry,
 )
-from arkclaw.application.pet_track0 import (
+from arkclaw.application.pet.pet_track0 import (
     ActionOutcome,
     ActionRequest,
     AnimationPlayerCapabilities,

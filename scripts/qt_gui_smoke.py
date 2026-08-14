@@ -15,10 +15,10 @@ from PySide6.QtWidgets import QApplication
 from arkclaw.bootstrap.qt_runtime import (
     FakeQtRuntimeCompositionRoot,
 )
-from arkclaw.presentation.qt.main_window import MainWindow
-from arkclaw.presentation.qt.runtime_bridge import (
+from arkclaw.presentation.qt.platform.runtime_bridge import (
     QtRuntimeBridge,
 )
+from arkclaw.presentation.qt.ui.main_window import MainWindow
 
 
 def main() -> int:

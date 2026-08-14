@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from arkclaw.application.pet_animation import (
+from arkclaw.application.pet.pet_animation import (
     PetAnimationConfig,
     PetAnimationEngine,
 )
-from arkclaw.application.pet_geometry import Point, Rect, Size
-from arkclaw.application.pet_motion import PetMotionModel
-from arkclaw.application.pet_renderer_model import (
+from arkclaw.application.pet.pet_geometry import Point, Rect, Size
+from arkclaw.application.pet.pet_motion import PetMotionModel
+from arkclaw.application.pet.pet_renderer_model import (
     ExternalAssetConfigStatus,
     ExternalPetAssetDescriptor,
     PetRendererAction,
@@ -19,7 +19,7 @@ from arkclaw.application.pet_renderer_model import (
     validate_external_asset_descriptor,
     validate_pet_renderer_config,
 )
-from arkclaw.application.pet_state import PetFacing
+from arkclaw.application.pet.pet_state import PetFacing
 
 
 def _engine() -> PetAnimationEngine:

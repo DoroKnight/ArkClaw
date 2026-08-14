@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from arkclaw.application.provider_profile_repository import (
+from arkclaw.application.system.provider_profile_repository import (
     ProviderMetadataConflictError,
     ProviderMetadataCorruptedError,
     ProviderMetadataReferenceError,

@@ -8,15 +8,15 @@ from typing import cast
 
 import pytest
 
-from arkclaw.application.autostart_eligibility import (
+from arkclaw.application.system.autostart_eligibility import (
     AutostartEligibilityReason,
     AutostartEligibilityResult,
 )
-from arkclaw.application.autostart_service import (
+from arkclaw.application.system.autostart_service import (
     AutostartService,
     AutostartStatus,
 )
-from arkclaw.application.startup_mode import (
+from arkclaw.application.system.startup_mode import (
     AUTOSTART_DIAGNOSTIC_ARGUMENT,
 )
 from arkclaw.bootstrap import autostart_diagnostics

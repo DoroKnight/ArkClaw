@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from arkclaw.application.autostart_operation_journal import (
+from arkclaw.application.system.autostart_operation_journal import (
     AutostartOperationContext,
     AutostartOperationEvent,
     AutostartOperationJournal,
@@ -13,8 +13,8 @@ from arkclaw.application.autostart_operation_journal import (
     AutostartOperationOrigin,
     AutostartOperationRuntimeState,
 )
-from arkclaw.application.autostart_service import AutostartService
-from arkclaw.presentation.qt.autostart_operation_diagnostics import (
+from arkclaw.application.system.autostart_service import AutostartService
+from arkclaw.presentation.qt.ui.autostart_operation_diagnostics import (
     AutostartOperationDiagnosticArgumentError,
     prepare_autostart_operation_diagnostic_launch,
 )
@@ -32,7 +32,7 @@ class _Backend:
         return self.value
 
     def write_value(self, command: str) -> None:
-        from arkclaw.application.autostart_service import (
+        from arkclaw.application.system.autostart_service import (
             REGISTRY_STRING_VALUE_TYPE,
             AutostartStoredValue,
         )
@@ -104,7 +104,7 @@ def test_delete_is_blocked_when_entered_event_cannot_be_persisted(
 ) -> None:
     from typing import cast
 
-    from arkclaw.application.autostart_service import AutostartBackend
+    from arkclaw.application.system.autostart_service import AutostartBackend
 
     executable = tmp_path / "ArkClaw.exe"
     executable.write_bytes(b"offline-placeholder")
@@ -155,7 +155,7 @@ def test_external_delete_has_no_application_delete_event(
 ) -> None:
     from typing import cast
 
-    from arkclaw.application.autostart_service import AutostartBackend
+    from arkclaw.application.system.autostart_service import AutostartBackend
 
     executable = tmp_path / "ArkClaw.exe"
     executable.write_bytes(b"offline-placeholder")
@@ -187,7 +187,7 @@ def test_backend_delete_is_correlated_only_to_explicit_disable(
 ) -> None:
     from typing import cast
 
-    from arkclaw.application.autostart_service import AutostartBackend
+    from arkclaw.application.system.autostart_service import AutostartBackend
 
     executable = tmp_path / "ArkClaw.exe"
     executable.write_bytes(b"offline-placeholder")

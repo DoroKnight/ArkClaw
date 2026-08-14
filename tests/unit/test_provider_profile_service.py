@@ -11,12 +11,12 @@ import pytest
 from tests.fakes.deepseek_sdk import FakeDeepSeekClientFactory
 from tests.fakes.openai_sdk import FakeOpenAIClientFactory
 
-from arkclaw.application.agent_loop import AgentLoop
-from arkclaw.application.context_manager import ContextManager
-from arkclaw.application.provider_profile_repository import (
+from arkclaw.application.agent.agent_loop import AgentLoop
+from arkclaw.application.agent.context_manager import ContextManager
+from arkclaw.application.system.provider_profile_repository import (
     ProviderMetadataWriteError,
 )
-from arkclaw.application.provider_profile_service import (
+from arkclaw.application.system.provider_profile_service import (
     ActiveTurnCoordinator,
     ActiveTurnHandling,
     ProviderActivationOptions,

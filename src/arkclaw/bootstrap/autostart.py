@@ -5,16 +5,16 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from arkclaw.application.autostart_eligibility import (
+from arkclaw.application.system.autostart_eligibility import (
     MAX_AUTOSTART_COMMAND_LENGTH,
     AutostartEligibilityResult,
     inspect_autostart_executable,
     inspect_nuitka_runtime,
 )
-from arkclaw.application.autostart_operation_journal import (
+from arkclaw.application.system.autostart_operation_journal import (
     AutostartOperationJournal,
 )
-from arkclaw.application.autostart_service import (
+from arkclaw.application.system.autostart_service import (
     AUTOSTART_ARGUMENT,
     AutostartService,
 )

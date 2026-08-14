@@ -5,11 +5,11 @@ from pathlib import Path
 
 import pytest
 
-from arkclaw.application.pet_production_actions import ProductionAction
-from arkclaw.application.pet_renderer_model import PetRendererAction
-from arkclaw.application.pet_role_calibration import RootMotionKind
-from arkclaw.application.pet_role_pack import AnimationRoleRegistry
-from arkclaw.application.spine38_runtime import Spine38Bounds, Spine38RootTransform
+from arkclaw.application.pet.pet_production_actions import ProductionAction
+from arkclaw.application.pet.pet_renderer_model import PetRendererAction
+from arkclaw.application.pet.pet_role_calibration import RootMotionKind
+from arkclaw.application.pet.pet_role_pack import AnimationRoleRegistry
+from arkclaw.application.pet.spine38_runtime import Spine38Bounds, Spine38RootTransform
 from arkclaw.bootstrap.pet_production import (
     _classify_root_motion,
     _sample_action_profile,

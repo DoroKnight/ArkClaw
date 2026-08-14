@@ -9,7 +9,7 @@ from contextlib import suppress
 from pathlib import Path
 from typing import cast
 
-from arkclaw.application.pet_settings import (
+from arkclaw.application.pet.pet_settings import (
     PET_SETTINGS_SCHEMA_VERSION,
     PetSettings,
     PetSettingsLoadResult,

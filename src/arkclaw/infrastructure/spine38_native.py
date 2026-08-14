@@ -11,7 +11,7 @@ from enum import IntEnum
 from pathlib import Path
 from typing import Protocol, cast
 
-from arkclaw.application.pet_external_assets import ExternalPetAssetSnapshot
+from arkclaw.application.pet.pet_external_assets import ExternalPetAssetSnapshot
 
 _EXPECTED_ABI_VERSION = 1
 # Adapter safety limits bound catalog work even if a loaded DLL is corrupt.

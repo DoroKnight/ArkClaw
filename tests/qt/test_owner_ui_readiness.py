@@ -9,12 +9,12 @@ import pytest
 from PySide6.QtCore import QObject, Signal
 from PySide6.QtWidgets import QApplication, QWidget
 
-from arkclaw.presentation.qt.owner_ui_readiness import (
-    OwnerStartupStage,
-    OwnerUiCheckpointRecorder,
-)
 from arkclaw.presentation.qt.pet_application import (
     _OwnerUiStartupObserver,
+)
+from arkclaw.presentation.qt.ui.owner_ui_readiness import (
+    OwnerStartupStage,
+    OwnerUiCheckpointRecorder,
 )
 
 _NONCE = "fedcba9876543210fedcba9876543210"

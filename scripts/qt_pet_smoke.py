@@ -24,23 +24,23 @@ from PySide6.QtGui import QPainter
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 
-from arkclaw.application.pet_animation import (
+from arkclaw.application.pet.pet_animation import (
     PetAnimationConfig,
     PetRenderFrame,
 )
-from arkclaw.application.pet_state import (
+from arkclaw.application.pet.pet_state import (
     PetBehaviorState,
     PetFacing,
     PetMotionState,
 )
 from arkclaw.bootstrap.qt_runtime import FakeQtRuntimeCompositionRoot
-from arkclaw.presentation.qt.main_window import MainWindow
+from arkclaw.presentation.qt.pet.pet_renderer import PlaceholderPetRenderer
+from arkclaw.presentation.qt.pet.pet_window import PetWindow
 from arkclaw.presentation.qt.pet_application import (
     PetApplicationCoordinator,
 )
-from arkclaw.presentation.qt.pet_renderer import PlaceholderPetRenderer
-from arkclaw.presentation.qt.pet_window import PetWindow
-from arkclaw.presentation.qt.runtime_bridge import QtRuntimeBridge
+from arkclaw.presentation.qt.platform.runtime_bridge import QtRuntimeBridge
+from arkclaw.presentation.qt.ui.main_window import MainWindow
 
 _PYSIDE_FONT_DIRECTORY = (
     Path(PySide6.__file__).resolve().parent / "lib" / "fonts"

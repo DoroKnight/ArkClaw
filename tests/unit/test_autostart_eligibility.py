@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from arkclaw.application.autostart_eligibility import (
+from arkclaw.application.system.autostart_eligibility import (
     AutostartEligibilityReason,
     AutostartEligibilityResult,
     ExecutableFacts,

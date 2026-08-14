@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 from enum import StrEnum
 
-from arkclaw.application.pet_geometry import Point
+from arkclaw.application.pet.pet_geometry import Point
 
 
 class PointerGestureState(StrEnum):

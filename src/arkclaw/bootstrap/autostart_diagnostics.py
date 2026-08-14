@@ -7,7 +7,7 @@ import sys
 from collections.abc import Sequence
 from typing import TextIO
 
-from arkclaw.application.startup_mode import (
+from arkclaw.application.system.startup_mode import (
     AUTOSTART_DIAGNOSTIC_ARGUMENT,
 )
 from arkclaw.bootstrap.autostart import (

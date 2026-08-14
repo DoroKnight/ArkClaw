@@ -5,31 +5,31 @@ from dataclasses import replace
 import pytest
 from tests.fakes.pet_animation_player import FakeAnimationPlayer
 
-from arkclaw.application.pet_action_sequence import (
+from arkclaw.application.pet.pet_action_sequence import (
     AnimationRegistry,
     default_animation_registry,
 )
-from arkclaw.application.pet_animation import PetAnimationEngine, PetAnimationEvent
-from arkclaw.application.pet_autonomous_scheduler import AutonomousActionScheduler
-from arkclaw.application.pet_geometry import Point, Size
-from arkclaw.application.pet_motion import PetMotionModel
-from arkclaw.application.pet_production_actions import (
+from arkclaw.application.pet.pet_animation import PetAnimationEngine, PetAnimationEvent
+from arkclaw.application.pet.pet_autonomous_scheduler import AutonomousActionScheduler
+from arkclaw.application.pet.pet_geometry import Point, Size
+from arkclaw.application.pet.pet_motion import PetMotionModel
+from arkclaw.application.pet.pet_production_actions import (
     ActionSource,
     AutonomousExecutionMode,
     ProductionAction,
 )
-from arkclaw.application.pet_role_pack import (
+from arkclaw.application.pet.pet_role_pack import (
     AnimationRoleRegistry,
     RoleAnimationBinding,
     build_track0_animation_registry,
     production_track0_action,
 )
-from arkclaw.application.pet_state import (
+from arkclaw.application.pet.pet_state import (
     PetActivityState,
     PetFacing,
     PetLayeredStateMachine,
 )
-from arkclaw.application.pet_track0 import (
+from arkclaw.application.pet.pet_track0 import (
     ActionOutcome,
     PetTrack0Controller,
     PlaybackEvent,

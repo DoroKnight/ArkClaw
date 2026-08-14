@@ -4,8 +4,8 @@ from collections.abc import Callable
 
 import pytest
 
-from arkclaw.application.agent_loop import AgentLoop, CancellationToken
-from arkclaw.application.context_manager import ContextManager
+from arkclaw.application.agent.agent_loop import AgentLoop, CancellationToken
+from arkclaw.application.agent.context_manager import ContextManager
 from arkclaw.domain.errors import ProviderError
 from arkclaw.domain.events import AgentEvent, AgentEventType, LLMEvent, LLMEventType
 from arkclaw.domain.models import (

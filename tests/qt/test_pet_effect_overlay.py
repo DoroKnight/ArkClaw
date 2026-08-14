@@ -22,20 +22,20 @@ from PySide6.QtGui import (
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QWidget
 
-from arkclaw.application.pet_geometry import Point, Rect, Size
-from arkclaw.application.pet_render_layout import (
+from arkclaw.application.pet.pet_geometry import Point, Rect, Size
+from arkclaw.application.pet.pet_render_layout import (
     PetRenderLayout,
     PetRenderLayoutQuality,
     PetRenderSurfaceMode,
 )
-from arkclaw.application.pet_renderer_model import (
+from arkclaw.application.pet.pet_renderer_model import (
     PetRendererAction,
     PetRendererAnimationCapability,
     placeholder_animation_capability,
 )
-from arkclaw.application.pet_state import PetFacing
-from arkclaw.presentation.qt.pet_effect_overlay import PetEffectOverlayWindow
-from arkclaw.presentation.qt.pet_window import PetWindow
+from arkclaw.application.pet.pet_state import PetFacing
+from arkclaw.presentation.qt.pet.pet_effect_overlay import PetEffectOverlayWindow
+from arkclaw.presentation.qt.pet.pet_window import PetWindow
 
 
 @pytest.fixture(scope="module")

@@ -15,9 +15,9 @@ from PySide6.QtGui import QImage
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 
-from arkclaw.application.pet_animation import PetAnimationConfig
-from arkclaw.application.pet_geometry import Size
-from arkclaw.application.pet_mesh_model import (
+from arkclaw.application.pet.pet_animation import PetAnimationConfig
+from arkclaw.application.pet.pet_geometry import Size
+from arkclaw.application.pet.pet_mesh_model import (
     PetMeshBlendMode,
     PetMeshColor,
     PetMeshDrawCommand,
@@ -26,8 +26,8 @@ from arkclaw.application.pet_mesh_model import (
     PetMeshTextureData,
     PetMeshVertex,
 )
-from arkclaw.application.pet_state import PetMotionState
-from arkclaw.presentation.qt.pet_mesh_opengl_renderer import (
+from arkclaw.application.pet.pet_state import PetMotionState
+from arkclaw.presentation.qt.pet.pet_mesh_opengl_renderer import (
     OpenGLMeshError,
     OpenGLMeshFaultController,
     OpenGLMeshFaultPoint,
@@ -35,11 +35,11 @@ from arkclaw.presentation.qt.pet_mesh_opengl_renderer import (
     OpenGLMeshSafeCode,
     OpenGLTexturedMeshBackend,
 )
-from arkclaw.presentation.qt.pet_mesh_spike import (
+from arkclaw.presentation.qt.pet.pet_mesh_spike import (
     SoftwareTexturedMeshRenderer,
     generate_mesh_spike_scene,
 )
-from arkclaw.presentation.qt.pet_window import PetWindow
+from arkclaw.presentation.qt.pet.pet_window import PetWindow
 
 _WHITE = PetMeshColor()
 

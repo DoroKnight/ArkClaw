@@ -33,58 +33,58 @@ from PySide6.QtTest import QSignalSpy, QTest
 from PySide6.QtWidgets import QApplication, QMenu, QWidget
 from scripts.qt_pet_smoke import _QtMessageAudit
 
-from arkclaw.application.pet_animation import (
+from arkclaw.application.pet.pet_animation import (
     PetAnimationConfig,
     PetRenderFrame,
 )
-from arkclaw.application.pet_geometry import Point, Rect, Size
-from arkclaw.application.pet_production_actions import (
+from arkclaw.application.pet.pet_geometry import Point, Rect, Size
+from arkclaw.application.pet.pet_production_actions import (
     ActionSource,
     ProductionAction,
 )
-from arkclaw.application.pet_render_layout import (
+from arkclaw.application.pet.pet_render_layout import (
     PetRenderLayout,
     PetRenderLayoutQuality,
     PetRenderSurfaceMode,
 )
-from arkclaw.application.pet_renderer_model import (
+from arkclaw.application.pet.pet_renderer_model import (
     PetRendererAction,
     PetRendererActionRequest,
     PetRendererAnimationCapability,
     placeholder_animation_capability,
 )
-from arkclaw.application.pet_role_pack import (
+from arkclaw.application.pet.pet_role_pack import (
     AnimationRoleRegistry,
     RoleAnimationBinding,
     build_track0_animation_registry,
 )
-from arkclaw.application.pet_state import (
+from arkclaw.application.pet.pet_state import (
     PetFacing,
     PetLifecycleState,
     PetMotionState,
 )
-from arkclaw.application.pet_track0 import (
+from arkclaw.application.pet.pet_track0 import (
     ActionOutcome,
     PetTrack0Controller,
     PlaybackEvent,
 )
 from arkclaw.bootstrap.qt_runtime import FakeQtRuntimeCompositionRoot
-from arkclaw.presentation.qt.main_window import MainWindow
+from arkclaw.presentation.qt.pet.pet_renderer import (
+    PlaceholderPetRenderer,
+)
+from arkclaw.presentation.qt.pet.pet_window import PetWindow
 from arkclaw.presentation.qt.pet_application import (
     PetApplicationCoordinator,
 )
-from arkclaw.presentation.qt.pet_renderer import (
-    PlaceholderPetRenderer,
-)
-from arkclaw.presentation.qt.pet_window import PetWindow
-from arkclaw.presentation.qt.runtime_bridge import QtRuntimeBridge
-from arkclaw.presentation.qt.system_tray import (
+from arkclaw.presentation.qt.platform.runtime_bridge import QtRuntimeBridge
+from arkclaw.presentation.qt.platform.system_tray import (
     PetTrayState,
     SystemTrayController,
     TrayCallbacks,
     _create_programmatic_tray_icon,
     _QtSystemTrayView,
 )
+from arkclaw.presentation.qt.ui.main_window import MainWindow
 from tests.fakes.pet_animation_player import FakeAnimationPlayer
 
 
@@ -94,7 +94,7 @@ class _ManualShutdownBridge(QObject):
 
 def test_workspace_exclusive_edges_are_derived_from_origin_plus_size() -> None:
     module = __import__(
-        "arkclaw.presentation.qt.pet_window",
+        "arkclaw.presentation.qt.pet.pet_window",
         fromlist=["workspace_rect_from_qrect"],
     )
 
@@ -108,7 +108,7 @@ def test_workspace_exclusive_edges_are_derived_from_origin_plus_size() -> None:
 
 def test_sit_workspace_and_display_are_selected_from_same_negative_screen() -> None:
     module = __import__(
-        "arkclaw.presentation.qt.pet_window",
+        "arkclaw.presentation.qt.pet.pet_window",
         fromlist=["select_workspace_display_pair"],
     )
     primary = (
@@ -146,9 +146,9 @@ def test_pet_window_import_does_not_import_agent_loop() -> None:
             "-c",
             (
                 "import sys, typing; "
-                "from arkclaw.presentation.qt.pet_window import PetWindow; "
+                "from arkclaw.presentation.qt.pet.pet_window import PetWindow; "
                 "print('agent_loop_imported=' + "
-                "str('arkclaw.application.agent_loop' in sys.modules).lower()); "
+                "str('arkclaw.application.agent.agent_loop' in sys.modules).lower()); "
                 "hints = typing.get_type_hints(PetWindow.__init__); "
                 "print('autostart_hint_resolved=' + "
                 "str('autostart_controller' in hints).lower()); "
@@ -171,7 +171,7 @@ def test_pet_window_import_does_not_import_agent_loop() -> None:
     assert completed.stdout == (
         "agent_loop_imported=false\n"
         "autostart_hint_resolved=true\n"
-        "runtime_bridge=arkclaw.presentation.qt.runtime_bridge."
+        "runtime_bridge=arkclaw.presentation.qt.platform.runtime_bridge."
         "QtRuntimeBridge\n"
     )
 

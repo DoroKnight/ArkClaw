@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from arkclaw.application.autostart_service import AUTOSTART_ARGUMENT
-from arkclaw.application.startup_mode import (
+from arkclaw.application.system.autostart_service import AUTOSTART_ARGUMENT
+from arkclaw.application.system.startup_mode import (
     StartupModeArgumentError,
     parse_startup_mode,
 )

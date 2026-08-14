@@ -563,7 +563,7 @@ from arkclaw.bootstrap.qt_runtime import ProductionQtRuntimeCompositionRoot
 from arkclaw.infrastructure.security.windows_credential_store import (
     WindowsCredentialSecretStore,
 )
-from arkclaw.presentation.qt.runtime_thread import RuntimeThread
+from arkclaw.presentation.qt.platform.runtime_thread import RuntimeThread
 
 def forbidden(*args, **kwargs):
     raise AssertionError("packaging entry import crossed a runtime or I/O boundary")
