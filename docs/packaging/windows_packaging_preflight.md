@@ -1370,10 +1370,10 @@ The fresh Nuitka compilation report contains all four required autostart
 modules:
 
 ```text
-arkclaw.application.autostart_service
+arkclaw.application.system.autostart_service
 arkclaw.infrastructure.autostart.windows_run_key
-arkclaw.presentation.qt.autostart_controller
-arkclaw.presentation.qt.provider_settings_dialog
+arkclaw.presentation.qt.ui.autostart_controller
+arkclaw.presentation.qt.ui.provider_settings_dialog
 ```
 
 Post-build offline regression results were:

@@ -26,13 +26,22 @@
 
 ```text
 src/arkclaw/
-├─ domain/             # 框架无关的领域类型与端口
-├─ application/        # Agent、桌宠动作、运动、状态与布局
-├─ bootstrap/          # 正式 composition root
-├─ infrastructure/     # Spine native adapter、Provider、持久化
-├─ presentation/qt/    # Qt 窗口、renderer、overlay 和托盘
-├─ config/
-└─ security/
+├─ domain/                  # 框架无关的领域类型与端口
+├─ application/
+│  ├─ agent/                # Agent 会话、任务循环与运行会话控制
+│  ├─ pet/                  # 桌宠动作、运动、状态、角色包与 Track 0 编排
+│  └─ system/               # 开机启动、Provider profile 与启动模式
+├─ bootstrap/               # 正式 composition root
+├─ infrastructure/
+│  ├─ autostart/            # Windows 开机启动适配器
+│  ├─ config/               # 配置持久化仓库
+│  ├─ llm/                  # Provider 适配器
+│  └─ security/             # Windows Credential Manager 等安全适配器
+├─ presentation/qt/
+│  ├─ pet/                  # 桌宠窗口、renderer、overlay 与 Spine38 Qt 适配
+│  ├─ ui/                   # 控制中心、菜单、对话框与设置控制器
+│  └─ platform/             # 托盘、单实例与运行时桥接
+└─ config/
 ```
 
 正式 GUI 入口为：
@@ -128,4 +137,4 @@ README 是运行和验收的首要入口；`docs/rendering/` 保存 Spine/Schwar
 - 正式版本与原型共享单实例保护，不能同时运行；
 - `PlaceholderPetRenderer` 不等于默认产品，它是原型视觉实现和生产安全 fallback；
 - 不要为了“分离原型”移动正式包内的 fallback 类，否则会破坏生产故障恢复；
-- 当前工作树包含第一阶段实现的未提交改动，整理时不得丢弃或覆盖这些改动。
+- 当前工作树基线（`src/arkclaw/` 完整实现）已提交。结构整理只允许移动文件并同步依赖路径，不得改变任何运行行为。

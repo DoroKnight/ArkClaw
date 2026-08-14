@@ -68,12 +68,21 @@ ArkClaw/
 ├─ uv.lock                    # 可复现依赖锁定
 ├─ src/arkclaw/               # 当前正式产品源码
 │  ├─ domain/                 # 领域模型、事件、策略和端口
-│  ├─ application/            # 动作、状态、运动、角色包和 Agent 用例
+│  ├─ application/
+│  │  ├─ agent/               # Agent 会话、任务循环与运行会话控制
+│  │  ├─ pet/                 # 桌宠动作、运动、状态、角色包与 Track 0 编排
+│  │  └─ system/              # 开机启动、Provider profile 与启动模式
 │  ├─ bootstrap/              # 生产组合根
-│  ├─ infrastructure/         # Native、Provider、配置和 Windows 适配器
-│  ├─ presentation/qt/        # 桌宠、控制中心、菜单、托盘和渲染器
-│  ├─ config/                 # 配置模型与加载规则
-│  └─ security/               # 安全相关公共定义
+│  ├─ infrastructure/
+│  │  ├─ autostart/            # Windows 开机启动适配器
+│  │  ├─ config/               # 配置持久化仓库
+│  │  ├─ llm/                  # Provider 适配器
+│  │  └─ security/             # Windows Credential Manager 等安全适配器
+│  ├─ presentation/qt/
+│  │  ├─ pet/                 # 桌宠窗口、渲染器、overlay 与 Spine38 Qt 适配
+│  │  ├─ ui/                  # 控制中心、菜单、对话框与设置控制器
+│  │  └─ platform/            # 托盘、单实例与运行时桥接
+│  └─ config/                 # 配置模型与加载规则
 ├─ native/spine38_bridge/     # Spine 3.8 C++ 桥接 DLL
 ├─ tests/                     # unit、qt、integration 和 fakes
 ├─ scripts/                   # 启动、构建、检查和 smoke 脚本
@@ -585,6 +594,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start_schwarz_pet.
 | 共享 `.venv` 可能指向其他工作树 | 已通过启动脚本的 `PYTHONPATH` 规避，主干切换后应重建环境 |
 | 完整测试中的 autostart/DPI probe 超时 | 已观察到；需要在目标 Windows 环境复核，不应误报为全部测试通过 |
 | Schwarz 素材分发授权 | **Unknown**；素材当前在仓库外，正式发布前需法律/产品确认 |
+| GPL 迁移审计 | 审计进行中：`docs/legal/gpl_migration_audit.md` 整体 gate 为 **BLOCKED**，LICENSE/README 来源声明与包元数据保持 fail-closed |
 | 多纹理页角色支持 | 当前不支持；是否需要为 **Unknown** |
 | 不同 Spine 数据版本 | 当前只支持 3.8；升级计划为 **Unknown** |
 | 旧 SJTUClaw 用户数据迁移 | **Unknown**；需确定是否提供显式迁移 |
