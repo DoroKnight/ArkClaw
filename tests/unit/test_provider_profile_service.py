@@ -11,12 +11,12 @@ import pytest
 from tests.fakes.deepseek_sdk import FakeDeepSeekClientFactory
 from tests.fakes.openai_sdk import FakeOpenAIClientFactory
 
-from sjtuclaw.application.agent_loop import AgentLoop
-from sjtuclaw.application.context_manager import ContextManager
-from sjtuclaw.application.provider_profile_repository import (
+from arkclaw.application.agent_loop import AgentLoop
+from arkclaw.application.context_manager import ContextManager
+from arkclaw.application.provider_profile_repository import (
     ProviderMetadataWriteError,
 )
-from sjtuclaw.application.provider_profile_service import (
+from arkclaw.application.provider_profile_service import (
     ActiveTurnCoordinator,
     ActiveTurnHandling,
     ProviderActivationOptions,
@@ -24,12 +24,12 @@ from sjtuclaw.application.provider_profile_service import (
     ProviderProfileService,
     ProviderProfileServiceError,
 )
-from sjtuclaw.config.provider_profile_policy import (
+from arkclaw.config.provider_profile_policy import (
     builtin_managed_profiles,
 )
-from sjtuclaw.config.secrets import InMemorySecretStore
-from sjtuclaw.domain.events import AgentEvent, AgentEventType, LLMEvent
-from sjtuclaw.domain.models import (
+from arkclaw.config.secrets import InMemorySecretStore
+from arkclaw.domain.events import AgentEvent, AgentEventType, LLMEvent
+from arkclaw.domain.models import (
     DEEPSEEK_DEFAULT_PROFILE_ID,
     DEEPSEEK_MANUAL_TEST_CREDENTIAL_ID,
     DEEPSEEK_PROVIDER_ID,
@@ -52,12 +52,12 @@ from sjtuclaw.domain.models import (
     ProviderProfile,
     UserMessageCommand,
 )
-from sjtuclaw.domain.ports import LLMProvider
-from sjtuclaw.infrastructure.config.json_provider_profile_repository import (
+from arkclaw.domain.ports import LLMProvider
+from arkclaw.infrastructure.config.json_provider_profile_repository import (
     JsonProviderProfileRepository,
 )
-from sjtuclaw.infrastructure.llm.provider_factory import ProviderFactory
-from sjtuclaw.infrastructure.llm.provider_registry import (
+from arkclaw.infrastructure.llm.provider_factory import ProviderFactory
+from arkclaw.infrastructure.llm.provider_registry import (
     CredentialBindingRegistry,
 )
 

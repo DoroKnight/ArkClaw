@@ -12,13 +12,13 @@ from tests.fakes.deepseek_sdk import (
     FakeDeepSeekScenario,
 )
 
-from sjtuclaw.config.errors import SecretStoreError
-from sjtuclaw.config.secrets import SecretValue
-from sjtuclaw.domain.models import (
+from arkclaw.config.errors import SecretStoreError
+from arkclaw.config.secrets import SecretValue
+from arkclaw.domain.models import (
     DEEPSEEK_MANUAL_TEST_CREDENTIAL_ID,
     CredentialId,
 )
-from sjtuclaw.infrastructure.llm.deepseek_sdk import (
+from arkclaw.infrastructure.llm.deepseek_sdk import (
     DeepSeekEvent,
     DeepSeekEventKind,
     DeepSeekRequest,

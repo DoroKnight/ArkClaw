@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from sjtuclaw.application.pet_production_actions import ProductionAction
-from sjtuclaw.application.pet_role_pack import (
+from arkclaw.application.pet_production_actions import ProductionAction
+from arkclaw.application.pet_role_pack import (
     AnimationRoleRegistry,
     MoveDirectionPolicy,
     RoleAnimationNames,
@@ -38,7 +38,7 @@ def _manifest(tmp_path: Path) -> RolePackManifest:
             interact="Interact",
         ),
         direction_policy=MoveDirectionPolicy.MIRROR_MOVE,
-        framing=RolePackFraming(scale=1.0, x_offset=0.0, foot_baseline=176.0),
+        framing=RolePackFraming(scale=1.0, x_offset=0.0, foot_baseline=180.0),
         texture_page_count=1,
     )
 

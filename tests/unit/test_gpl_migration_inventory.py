@@ -128,7 +128,7 @@ def test_json_output_contains_only_relative_paths_and_no_environment_values(
     inventory_module: Any = _load_inventory_module()
     repo = _temporary_repository(tmp_path)
     secret = "inventory-secret-must-not-leak"
-    monkeypatch.setenv("SJTUCLAW_INVENTORY_TEST_SECRET", secret)
+    monkeypatch.setenv("ARKCLAW_INVENTORY_TEST_SECRET", secret)
 
     rendered = json.dumps(inventory_module.build_inventory(repo), sort_keys=True)
 
@@ -137,4 +137,4 @@ def test_json_output_contains_only_relative_paths_and_no_environment_values(
     for value in inventory_module.iter_inventory_paths(json.loads(rendered)):
         assert not Path(value).is_absolute()
         assert ".." not in Path(value).parts
-    assert os.environ["SJTUCLAW_INVENTORY_TEST_SECRET"] == secret
+    assert os.environ["ARKCLAW_INVENTORY_TEST_SECRET"] == secret

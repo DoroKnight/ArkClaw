@@ -30,10 +30,10 @@ else:
         OPENAI_MANUAL_TEST_TARGET,
         ManualCredentialTargetResolver,
     )
-from sjtuclaw.config.errors import SecretStoreError
-from sjtuclaw.config.secrets import SecretStore, SecretValue
-from sjtuclaw.domain.events import LLMEvent, LLMEventType
-from sjtuclaw.domain.models import (
+from arkclaw.config.errors import SecretStoreError
+from arkclaw.config.secrets import SecretStore, SecretValue
+from arkclaw.domain.events import LLMEvent, LLMEventType
+from arkclaw.domain.models import (
     OPENAI_DEFAULT_CREDENTIAL_ID,
     OPENAI_MANUAL_TEST_CREDENTIAL_ID,
     ChatMessage,
@@ -42,8 +42,8 @@ from sjtuclaw.domain.models import (
     MessageRole,
     ProviderContinuation,
 )
-from sjtuclaw.infrastructure.llm.openai_provider import OpenAIProvider
-from sjtuclaw.infrastructure.llm.openai_sdk import (
+from arkclaw.infrastructure.llm.openai_provider import OpenAIProvider
+from arkclaw.infrastructure.llm.openai_sdk import (
     JSONObject,
     OfficialOpenAIClientFactory,
     OpenAIClientFactory,
@@ -52,7 +52,7 @@ from sjtuclaw.infrastructure.llm.openai_sdk import (
     OpenAIResponsesClient,
     OpenAIResponseStream,
 )
-from sjtuclaw.infrastructure.security.windows_credential_store import (
+from arkclaw.infrastructure.security.windows_credential_store import (
     WindowsCredentialSecretStore,
 )
 

@@ -46,7 +46,7 @@ official `spine-cpp` 3.8, Qt OpenGL 3.3 FBO, ruff, mypy.
 
 **Files:**
 - Merge: committed history from `codex/arkpets-action-runtime`
-- Resolve: `src/sjtuclaw/presentation/qt/pet_window.py`
+- Resolve: `src/arkclaw/presentation/qt/pet_window.py`
 - Resolve: `tests/qt/test_pet_window.py`
 - Preserve: `docs/legal/gpl_migration_audit.md` from branch history only
 
@@ -86,19 +86,19 @@ baseline test may fail when included.
 - [ ] **Step 4: Commit the resolved merge**
 
 ```powershell
-git add src/sjtuclaw/presentation/qt/pet_window.py tests/qt/test_pet_window.py
+git add src/arkclaw/presentation/qt/pet_window.py tests/qt/test_pet_window.py
 git commit
 ```
 
 ### Task 2: Freeze Production Actions, Sources, and Role-Pack Registry
 
 **Files:**
-- Create: `src/sjtuclaw/application/pet_production_actions.py`
-- Create: `src/sjtuclaw/application/pet_role_pack.py`
+- Create: `src/arkclaw/application/pet_production_actions.py`
+- Create: `src/arkclaw/application/pet_role_pack.py`
 - Create: `tests/unit/test_pet_production_actions.py`
 - Create: `tests/unit/test_pet_role_pack.py`
-- Modify: `src/sjtuclaw/application/pet_state.py`
-- Modify: `src/sjtuclaw/application/pet_action_sequence.py`
+- Modify: `src/arkclaw/application/pet_state.py`
+- Modify: `src/arkclaw/application/pet_action_sequence.py`
 
 **Interfaces:**
 - Produces:
@@ -161,14 +161,14 @@ hashes, bindings, direction, and framing—not manifest path.
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest tests/unit/test_pet_production_actions.py tests/unit/test_pet_role_pack.py tests/unit/test_pet_state_animation_compatibility.py -q
-git add src/sjtuclaw/application/pet_production_actions.py src/sjtuclaw/application/pet_role_pack.py src/sjtuclaw/application/pet_state.py src/sjtuclaw/application/pet_action_sequence.py tests/unit/test_pet_production_actions.py tests/unit/test_pet_role_pack.py
+git add src/arkclaw/application/pet_production_actions.py src/arkclaw/application/pet_role_pack.py src/arkclaw/application/pet_state.py src/arkclaw/application/pet_action_sequence.py tests/unit/test_pet_production_actions.py tests/unit/test_pet_role_pack.py
 git commit -m "feat: define production pet actions and role packs"
 ```
 
 ### Task 3: Build the Pure Autonomous Scheduler
 
 **Files:**
-- Create: `src/sjtuclaw/application/pet_autonomous_scheduler.py`
+- Create: `src/arkclaw/application/pet_autonomous_scheduler.py`
 - Create: `tests/unit/test_pet_autonomous_scheduler.py`
 
 **Interfaces:**
@@ -210,15 +210,15 @@ pre-deadline unique boundaries, and never sample destination dwell before
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest tests/unit/test_pet_autonomous_scheduler.py -q
-git add src/sjtuclaw/application/pet_autonomous_scheduler.py tests/unit/test_pet_autonomous_scheduler.py
+git add src/arkclaw/application/pet_autonomous_scheduler.py tests/unit/test_pet_autonomous_scheduler.py
 git commit -m "feat: add deterministic autonomous action scheduler"
 ```
 
 ### Task 4: Extend Arbitration and Engine Control Modes
 
 **Files:**
-- Modify: `src/sjtuclaw/application/pet_track0.py`
-- Modify: `src/sjtuclaw/application/pet_animation.py`
+- Modify: `src/arkclaw/application/pet_track0.py`
+- Modify: `src/arkclaw/application/pet_animation.py`
 - Create: `tests/unit/test_pet_explicit_action_control.py`
 - Modify: `tests/unit/test_pet_action_arbiter.py`
 - Modify: `tests/unit/test_pet_animation_transactions.py`
@@ -262,19 +262,19 @@ both continuation fields.
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest tests/unit/test_pet_action_arbiter.py tests/unit/test_pet_animation_transactions.py tests/unit/test_pet_explicit_action_control.py -q
-git add src/sjtuclaw/application/pet_track0.py src/sjtuclaw/application/pet_animation.py tests/unit/test_pet_action_arbiter.py tests/unit/test_pet_animation_transactions.py tests/unit/test_pet_explicit_action_control.py
+git add src/arkclaw/application/pet_track0.py src/arkclaw/application/pet_animation.py tests/unit/test_pet_action_arbiter.py tests/unit/test_pet_animation_transactions.py tests/unit/test_pet_explicit_action_control.py
 git commit -m "feat: coordinate explicit and autonomous pet actions"
 ```
 
 ### Task 5: Expose Verified Spine Track Events and Player Adapter
 
 **Files:**
-- Modify: `native/spine38_bridge/include/sjtuclaw_spine38_bridge.h`
-- Modify: `native/spine38_bridge/src/sjtuclaw_spine38_bridge.cpp`
+- Modify: `native/spine38_bridge/include/arkclaw_spine38_bridge.h`
+- Modify: `native/spine38_bridge/src/arkclaw_spine38_bridge.cpp`
 - Modify: `native/spine38_bridge/tests/spine38_bridge_contract_test.cpp`
-- Modify: `src/sjtuclaw/infrastructure/spine38_native.py`
-- Modify: `src/sjtuclaw/application/spine38_runtime.py`
-- Create: `src/sjtuclaw/presentation/qt/spine38_player.py`
+- Modify: `src/arkclaw/infrastructure/spine38_native.py`
+- Modify: `src/arkclaw/application/spine38_runtime.py`
+- Create: `src/arkclaw/presentation/qt/spine38_player.py`
 - Create: `tests/unit/test_spine38_player_events.py`
 - Create: `tests/qt/test_spine38_player.py`
 
@@ -313,15 +313,15 @@ generation/token and stable boundary index.
 cmake --build build\spine38 --config Release
 ctest --test-dir build\spine38 -C Release --output-on-failure
 .\.venv\Scripts\python.exe -m pytest tests/unit/test_spine38_native.py tests/unit/test_spine38_runtime.py tests/unit/test_spine38_player_events.py tests/qt/test_spine38_player.py -q
-git add native/spine38_bridge src/sjtuclaw/infrastructure/spine38_native.py src/sjtuclaw/application/spine38_runtime.py src/sjtuclaw/presentation/qt/spine38_player.py tests/unit/test_spine38_player_events.py tests/qt/test_spine38_player.py
+git add native/spine38_bridge src/arkclaw/infrastructure/spine38_native.py src/arkclaw/application/spine38_runtime.py src/arkclaw/presentation/qt/spine38_player.py tests/unit/test_spine38_player_events.py tests/qt/test_spine38_player.py
 git commit -m "feat: expose verified Spine playback events"
 ```
 
 ### Task 6: Make Motion and Playback One Transaction
 
 **Files:**
-- Modify: `src/sjtuclaw/application/pet_motion.py`
-- Modify: `src/sjtuclaw/application/pet_animation.py`
+- Modify: `src/arkclaw/application/pet_motion.py`
+- Modify: `src/arkclaw/application/pet_animation.py`
 - Modify: `tests/unit/test_pet_motion.py`
 - Create: `tests/unit/test_pet_production_motion.py`
 
@@ -350,17 +350,17 @@ suspended.
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest tests/unit/test_pet_motion.py tests/unit/test_pet_production_motion.py tests/unit/test_pet_animation_transactions.py -q
-git add src/sjtuclaw/application/pet_motion.py src/sjtuclaw/application/pet_animation.py tests/unit/test_pet_motion.py tests/unit/test_pet_production_motion.py
+git add src/arkclaw/application/pet_motion.py src/arkclaw/application/pet_animation.py tests/unit/test_pet_motion.py tests/unit/test_pet_production_motion.py
 git commit -m "feat: synchronize pet movement and Spine playback"
 ```
 
 ### Task 7: Add Transactional Role-Pack Construction and Switching
 
 **Files:**
-- Modify: `src/sjtuclaw/application/pet_external_assets.py`
-- Modify: `src/sjtuclaw/application/pet_role_pack.py`
-- Create: `src/sjtuclaw/application/pet_role_pack_switch.py`
-- Modify: `src/sjtuclaw/presentation/qt/spine38_renderer.py`
+- Modify: `src/arkclaw/application/pet_external_assets.py`
+- Modify: `src/arkclaw/application/pet_role_pack.py`
+- Create: `src/arkclaw/application/pet_role_pack_switch.py`
+- Modify: `src/arkclaw/presentation/qt/spine38_renderer.py`
 - Create: `tests/unit/test_pet_role_pack_switch.py`
 - Create: `tests/qt/test_spine38_role_pack_switch.py`
 
@@ -393,16 +393,16 @@ Never use destructive fallback when active/candidate resources cannot coexist.
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest tests/unit/test_pet_external_assets.py tests/unit/test_pet_role_pack.py tests/unit/test_pet_role_pack_switch.py tests/qt/test_spine38_role_pack_switch.py -q
-git add src/sjtuclaw/application/pet_external_assets.py src/sjtuclaw/application/pet_role_pack.py src/sjtuclaw/application/pet_role_pack_switch.py src/sjtuclaw/presentation/qt/spine38_renderer.py tests/unit/test_pet_role_pack_switch.py tests/qt/test_spine38_role_pack_switch.py
+git add src/arkclaw/application/pet_external_assets.py src/arkclaw/application/pet_role_pack.py src/arkclaw/application/pet_role_pack_switch.py src/arkclaw/presentation/qt/spine38_renderer.py tests/unit/test_pet_role_pack_switch.py tests/qt/test_spine38_role_pack_switch.py
 git commit -m "feat: switch external pet role packs transactionally"
 ```
 
 ### Task 8: Wire the Production Tray and Persistent Lifecycle
 
 **Files:**
-- Modify: `src/sjtuclaw/presentation/qt/system_tray.py`
-- Modify: `src/sjtuclaw/presentation/qt/pet_application.py`
-- Modify: `src/sjtuclaw/presentation/qt/pet_window.py`
+- Modify: `src/arkclaw/presentation/qt/system_tray.py`
+- Modify: `src/arkclaw/presentation/qt/pet_application.py`
+- Modify: `src/arkclaw/presentation/qt/pet_window.py`
 - Create: `tests/qt/test_pet_production_actions.py`
 - Create: `tests/qt/test_pet_production_lifecycle.py`
 
@@ -436,21 +436,21 @@ and one tray; inject the player/engine without importing Agent modules.
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest tests/qt/test_pet_production_actions.py tests/qt/test_pet_production_lifecycle.py tests/qt/test_pet_window.py tests/qt/test_single_instance.py -q
-git add src/sjtuclaw/presentation/qt/system_tray.py src/sjtuclaw/presentation/qt/pet_application.py src/sjtuclaw/presentation/qt/pet_window.py tests/qt/test_pet_production_actions.py tests/qt/test_pet_production_lifecycle.py
+git add src/arkclaw/presentation/qt/system_tray.py src/arkclaw/presentation/qt/pet_application.py src/arkclaw/presentation/qt/pet_window.py tests/qt/test_pet_production_actions.py tests/qt/test_pet_production_lifecycle.py
 git commit -m "feat: run Schwarz actions through the production tray"
 ```
 
 ### Task 9: Correct DPR, Atlas Filtering, and Fixed Framing
 
 **Files:**
-- Modify: `native/spine38_bridge/include/sjtuclaw_spine38_bridge.h`
-- Modify: `native/spine38_bridge/src/sjtuclaw_spine38_bridge.cpp`
+- Modify: `native/spine38_bridge/include/arkclaw_spine38_bridge.h`
+- Modify: `native/spine38_bridge/src/arkclaw_spine38_bridge.cpp`
 - Modify: `native/spine38_bridge/tests/spine38_bridge_contract_test.cpp`
-- Modify: `src/sjtuclaw/infrastructure/spine38_native.py`
-- Modify: `src/sjtuclaw/application/pet_mesh_model.py`
-- Modify: `src/sjtuclaw/presentation/qt/pet_mesh_opengl_renderer.py`
-- Modify: `src/sjtuclaw/presentation/qt/spine38_renderer.py`
-- Modify: `src/sjtuclaw/presentation/qt/pet_window.py`
+- Modify: `src/arkclaw/infrastructure/spine38_native.py`
+- Modify: `src/arkclaw/application/pet_mesh_model.py`
+- Modify: `src/arkclaw/presentation/qt/pet_mesh_opengl_renderer.py`
+- Modify: `src/arkclaw/presentation/qt/spine38_renderer.py`
+- Modify: `src/arkclaw/presentation/qt/pet_window.py`
 - Modify: `tests/qt/test_pet_mesh_opengl_backend.py`
 - Modify: `tests/qt/test_spine38_renderer.py`
 
@@ -487,7 +487,7 @@ nontransparent crop or per-frame reframe.
 cmake --build build\spine38 --config Release
 ctest --test-dir build\spine38 -C Release --output-on-failure
 .\.venv\Scripts\python.exe -m pytest tests/qt/test_pet_mesh_opengl_backend.py tests/qt/test_spine38_renderer.py tests/unit/test_spine38_native.py -q
-git add native/spine38_bridge src/sjtuclaw/infrastructure/spine38_native.py src/sjtuclaw/application/pet_mesh_model.py src/sjtuclaw/presentation/qt/pet_mesh_opengl_renderer.py src/sjtuclaw/presentation/qt/spine38_renderer.py src/sjtuclaw/presentation/qt/pet_window.py tests/qt/test_pet_mesh_opengl_backend.py tests/qt/test_spine38_renderer.py
+git add native/spine38_bridge src/arkclaw/infrastructure/spine38_native.py src/arkclaw/application/pet_mesh_model.py src/arkclaw/presentation/qt/pet_mesh_opengl_renderer.py src/arkclaw/presentation/qt/spine38_renderer.py src/arkclaw/presentation/qt/pet_window.py tests/qt/test_pet_mesh_opengl_backend.py tests/qt/test_spine38_renderer.py
 git commit -m "fix: render Spine pets at the real window DPR"
 ```
 

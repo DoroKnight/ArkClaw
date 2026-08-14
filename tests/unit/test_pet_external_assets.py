@@ -11,18 +11,18 @@ from pathlib import Path
 
 import pytest
 
-from sjtuclaw.application.pet_external_assets import (
+from arkclaw.application.pet_external_assets import (
     ExternalAssetFilesystemError,
     ExternalFileIdentity,
     ExternalPetAssetLoader,
     ExternalPetAssetStatus,
 )
-from sjtuclaw.application.pet_renderer_model import (
+from arkclaw.application.pet_renderer_model import (
     ExternalPetAssetDescriptor,
     ExternalPetAssetHashes,
     ExternalPetAssetLimits,
 )
-from sjtuclaw.infrastructure.pet_external_asset_filesystem import (
+from arkclaw.infrastructure.pet_external_asset_filesystem import (
     WindowsExternalPetAssetFilesystem,
 )
 

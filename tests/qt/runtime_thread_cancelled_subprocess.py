@@ -9,13 +9,13 @@ from pathlib import Path
 
 from PySide6.QtCore import QCoreApplication, QEventLoop, QTimer
 
-from sjtuclaw.application.runtime_session_controller import (
+from arkclaw.application.runtime_session_controller import (
     RuntimeCommandResult,
     RuntimeSessionController,
 )
-from sjtuclaw.bootstrap.qt_runtime import FakeQtRuntimeCompositionRoot
-from sjtuclaw.presentation.qt.runtime_bridge import QtRuntimeBridge
-from sjtuclaw.presentation.qt.runtime_thread import (
+from arkclaw.bootstrap.qt_runtime import FakeQtRuntimeCompositionRoot
+from arkclaw.presentation.qt.runtime_bridge import QtRuntimeBridge
+from arkclaw.presentation.qt.runtime_thread import (
     RuntimeThread,
     RuntimeThreadCommand,
 )
@@ -34,7 +34,7 @@ def main() -> int:
     _app = QCoreApplication([])
     RuntimeThread._execute_command = _cancel_command  # type: ignore[assignment]
     with tempfile.TemporaryDirectory(
-        prefix="sjtuclaw-cancel-boundary-"
+        prefix="arkclaw-cancel-boundary-"
     ) as directory:
         bridge = QtRuntimeBridge(
             FakeQtRuntimeCompositionRoot(

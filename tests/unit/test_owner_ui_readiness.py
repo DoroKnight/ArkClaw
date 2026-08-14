@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from sjtuclaw.presentation.qt.owner_ui_readiness import (
+from arkclaw.presentation.qt.owner_ui_readiness import (
     OWNER_UI_DIAGNOSTIC_ARGUMENT,
     OwnerStartupFailure,
     OwnerStartupStage,
@@ -191,9 +191,9 @@ def test_checkpoint_rejects_invalid_or_stale_nonce(
 
 
 def test_default_launch_is_inert() -> None:
-    launch = prepare_owner_ui_diagnostic_launch(["SJTUClaw.exe"])
+    launch = prepare_owner_ui_diagnostic_launch(["ArkClaw.exe"])
 
-    assert launch.arguments == ("SJTUClaw.exe",)
+    assert launch.arguments == ("ArkClaw.exe",)
     assert launch.recorder is None
 
 
@@ -201,17 +201,17 @@ def test_packaged_launch_creates_one_isolated_session(
     tmp_path: Path,
 ) -> None:
     repository = tmp_path / "repository"
-    executable = repository / "dist" / "SJTUClaw.dist" / "SJTUClaw.exe"
+    executable = repository / "dist" / "ArkClaw.dist" / "ArkClaw.exe"
     executable.parent.mkdir(parents=True)
     executable.write_bytes(b"MZ")
     (repository / "build").mkdir()
 
     launch = prepare_owner_ui_diagnostic_launch(
-        ["SJTUClaw.exe", OWNER_UI_DIAGNOSTIC_ARGUMENT, _NONCE],
+        ["ArkClaw.exe", OWNER_UI_DIAGNOSTIC_ARGUMENT, _NONCE],
         executable=executable,
     )
 
-    assert launch.arguments == ("SJTUClaw.exe",)
+    assert launch.arguments == ("ArkClaw.exe",)
     assert launch.recorder is not None
     assert launch.recorder.record(OwnerStartupStage.STARTED)
     evidence_root = (
@@ -225,11 +225,11 @@ def test_packaged_launch_rejects_reuse_and_extra_arguments(
     tmp_path: Path,
 ) -> None:
     repository = tmp_path / "repository"
-    executable = repository / "dist" / "SJTUClaw.dist" / "SJTUClaw.exe"
+    executable = repository / "dist" / "ArkClaw.dist" / "ArkClaw.exe"
     executable.parent.mkdir(parents=True)
     executable.write_bytes(b"MZ")
     (repository / "build").mkdir()
-    arguments = ["SJTUClaw.exe", OWNER_UI_DIAGNOSTIC_ARGUMENT, _NONCE]
+    arguments = ["ArkClaw.exe", OWNER_UI_DIAGNOSTIC_ARGUMENT, _NONCE]
     prepare_owner_ui_diagnostic_launch(arguments, executable=executable)
 
     with pytest.raises(OwnerUiDiagnosticArgumentError):

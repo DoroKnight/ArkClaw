@@ -12,10 +12,10 @@ from tests.fakes.deepseek_sdk import (
     FakeDeepSeekScenario,
 )
 
-from sjtuclaw.config.provider_profiles import deepseek_profile
-from sjtuclaw.config.secrets import InMemorySecretStore, SecretValue
-from sjtuclaw.domain.events import LLMEvent, LLMEventType
-from sjtuclaw.domain.models import (
+from arkclaw.config.provider_profiles import deepseek_profile
+from arkclaw.config.secrets import InMemorySecretStore, SecretValue
+from arkclaw.domain.events import LLMEvent, LLMEventType
+from arkclaw.domain.models import (
     DEEPSEEK_DEFAULT_CREDENTIAL_ID,
     ApiProtocol,
     ChatMessage,
@@ -27,8 +27,8 @@ from sjtuclaw.domain.models import (
     ToolRisk,
     ToolSpec,
 )
-from sjtuclaw.infrastructure.llm.deepseek_provider import DeepSeekProvider
-from sjtuclaw.infrastructure.llm.deepseek_sdk import (
+from arkclaw.infrastructure.llm.deepseek_provider import DeepSeekProvider
+from arkclaw.infrastructure.llm.deepseek_sdk import (
     DeepSeekEvent,
     DeepSeekEventKind,
     DeepSeekFailureCode,

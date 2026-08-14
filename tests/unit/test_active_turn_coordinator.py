@@ -5,14 +5,14 @@ from collections.abc import Iterator
 
 import pytest
 
-from sjtuclaw.application.active_turn_coordinator import (
+from arkclaw.application.active_turn_coordinator import (
     DefaultActiveTurnCoordinator,
 )
-from sjtuclaw.application.agent_loop import CancellationToken
-from sjtuclaw.application.provider_profile_service import (
+from arkclaw.application.agent_loop import CancellationToken
+from arkclaw.application.provider_profile_service import (
     ActiveTurnHandling,
 )
-from sjtuclaw.domain.models import ProfileId
+from arkclaw.domain.models import ProfileId
 
 
 @pytest.fixture(scope="module")

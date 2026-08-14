@@ -18,31 +18,31 @@ from PySide6.QtGui import QAction, QContextMenuEvent
 from PySide6.QtTest import QSignalSpy, QTest
 from PySide6.QtWidgets import QApplication
 
-from sjtuclaw.application.autostart_operation_journal import (
+from arkclaw.application.autostart_operation_journal import (
     AutostartOperationEvent,
     AutostartOperationJournal,
     AutostartOperationOrigin,
 )
-from sjtuclaw.application.autostart_service import (
+from arkclaw.application.autostart_service import (
     REGISTRY_STRING_VALUE_TYPE,
     AutostartService,
     AutostartStatus,
     AutostartStoredValue,
 )
-from sjtuclaw.application.startup_mode import parse_startup_mode
-from sjtuclaw.bootstrap.qt_runtime import ProductionQtRuntimeCompositionRoot
-from sjtuclaw.config.secrets import InMemorySecretStore, SecretValue
-from sjtuclaw.domain.models import CredentialId
-from sjtuclaw.presentation.qt.autostart_controller import (
+from arkclaw.application.startup_mode import parse_startup_mode
+from arkclaw.bootstrap.qt_runtime import ProductionQtRuntimeCompositionRoot
+from arkclaw.config.secrets import InMemorySecretStore, SecretValue
+from arkclaw.domain.models import CredentialId
+from arkclaw.presentation.qt.autostart_controller import (
     AutostartUiController,
 )
-from sjtuclaw.presentation.qt.main_window import MainWindow
-from sjtuclaw.presentation.qt.pet_window import PetWindow
-from sjtuclaw.presentation.qt.provider_settings_dialog import (
+from arkclaw.presentation.qt.main_window import MainWindow
+from arkclaw.presentation.qt.pet_window import PetWindow
+from arkclaw.presentation.qt.provider_settings_dialog import (
     ProviderSettingsDialog,
 )
-from sjtuclaw.presentation.qt.runtime_bridge import QtRuntimeBridge
-from sjtuclaw.presentation.qt.system_tray import (
+from arkclaw.presentation.qt.runtime_bridge import QtRuntimeBridge
+from arkclaw.presentation.qt.system_tray import (
     PetTrayState,
     SystemTrayController,
     TrayCallbacks,
@@ -226,7 +226,7 @@ def _create_bridge(
     packaged_runtime: bool = True,
     operation_journal: AutostartOperationJournal | None = None,
 ) -> tuple[QtRuntimeBridge, AutostartUiController]:
-    executable = tmp_path / "SJTUClaw.exe"
+    executable = tmp_path / "ArkClaw.exe"
     executable.write_bytes(b"offline-placeholder")
     bridge = QtRuntimeBridge(
         ProductionQtRuntimeCompositionRoot(
@@ -378,7 +378,7 @@ def test_dialog_renders_every_autostart_status_with_safe_interaction_state(
     status: AutostartStatus,
 ) -> None:
     backend = _FakeBackend()
-    executable = (tmp_path / "SJTUClaw.exe").resolve()
+    executable = (tmp_path / "ArkClaw.exe").resolve()
     if status is AutostartStatus.ENABLED:
         backend.value = AutostartStoredValue(
             REGISTRY_STRING_VALUE_TYPE,
@@ -649,7 +649,7 @@ def test_three_ui_entries_share_one_runtime_owned_state(
         )
     )
     assert str(tmp_path) not in ui_visible
-    assert '"SJTUClaw.exe" --startup' not in ui_visible
+    assert '"ArkClaw.exe" --startup' not in ui_visible
 
     gui_thread_id = threading.get_ident()
     assert backend.thread_ids
@@ -944,7 +944,7 @@ def test_startup_mode_keeps_agent_hidden_without_provider_or_secret_access(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     del qt_application
-    assert parse_startup_mode(["SJTUClaw.exe", "--startup"]) is True
+    assert parse_startup_mode(["ArkClaw.exe", "--startup"]) is True
     external_network_calls = 0
     original_connect = socket.socket.connect
 
@@ -965,7 +965,7 @@ def test_startup_mode_keeps_agent_hidden_without_provider_or_secret_access(
     monkeypatch.setattr(socket.socket, "connect", guarded_connect)
     backend = _FakeBackend()
     secret_store = _CountingSecretStore()
-    executable = tmp_path / "SJTUClaw.exe"
+    executable = tmp_path / "ArkClaw.exe"
     executable.write_bytes(b"offline-placeholder")
     bridge = QtRuntimeBridge(
         ProductionQtRuntimeCompositionRoot(

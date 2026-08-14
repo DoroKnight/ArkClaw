@@ -6,18 +6,18 @@ from tests.fakes.openai_sdk import (
     FakeOpenAIScenario,
 )
 
-from sjtuclaw.application.context_manager import ContextManager
-from sjtuclaw.config.models import ProviderName, RuntimeConfig
-from sjtuclaw.config.secrets import InMemorySecretStore, SecretValue
-from sjtuclaw.domain.events import LLMEvent, LLMEventType
-from sjtuclaw.domain.models import CredentialId, UserMessageCommand
-from sjtuclaw.infrastructure.llm.openai_provider import OpenAIProvider
-from sjtuclaw.infrastructure.llm.openai_sdk import (
+from arkclaw.application.context_manager import ContextManager
+from arkclaw.config.models import ProviderName, RuntimeConfig
+from arkclaw.config.secrets import InMemorySecretStore, SecretValue
+from arkclaw.domain.events import LLMEvent, LLMEventType
+from arkclaw.domain.models import CredentialId, UserMessageCommand
+from arkclaw.infrastructure.llm.openai_provider import OpenAIProvider
+from arkclaw.infrastructure.llm.openai_sdk import (
     JSONObject,
     OpenAIResponseEvent,
     OpenAIResponseEventKind,
 )
-from sjtuclaw.infrastructure.llm.provider_factory import (
+from arkclaw.infrastructure.llm.provider_factory import (
     ProviderFactory,
     ProviderNotImplementedError,
 )

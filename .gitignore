@@ -11,6 +11,7 @@ htmlcov/
 venv/
 dist/
 build/
+.codex-build/
 packaging/deployment/
 *.egg-info/
 .env

@@ -14,8 +14,8 @@ from openai.types.responses.response_incomplete_event import (
 )
 from openai.types.responses.response_stream_event import ResponseStreamEvent
 
-import sjtuclaw.infrastructure.llm.openai_sdk as openai_sdk
-from sjtuclaw.infrastructure.llm.openai_sdk import (
+import arkclaw.infrastructure.llm.openai_sdk as openai_sdk
+from arkclaw.infrastructure.llm.openai_sdk import (
     OfficialOpenAIClientFactory,
     OfficialOpenAIResponsesClient,
     OfficialOpenAIResponseStream,
@@ -67,10 +67,10 @@ def _assert_invalid_value_is_not_exposed(
 
 def test_recursive_json_alias_is_runtime_safe_and_provider_compatible() -> None:
     imported_sdk = importlib.import_module(
-        "sjtuclaw.infrastructure.llm.openai_sdk"
+        "arkclaw.infrastructure.llm.openai_sdk"
     )
     imported_provider = importlib.import_module(
-        "sjtuclaw.infrastructure.llm.openai_provider"
+        "arkclaw.infrastructure.llm.openai_provider"
     )
 
     for name in ("JSONScalar", "JSONValue", "JSONObject"):
@@ -313,7 +313,7 @@ def test_official_client_close_failure_is_safe_and_retryable(
             await client.close()
         except OpenAISDKError as caught:
             safe_error = caught
-            logging.getLogger("sjtuclaw.test").exception(
+            logging.getLogger("arkclaw.test").exception(
                 "safe close failure"
             )
         else:

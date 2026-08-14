@@ -17,16 +17,16 @@ from tests.fakes.openai_sdk import (
     FakeOpenAIScenario,
 )
 
-from sjtuclaw.config.provider_profiles import (
+from arkclaw.config.provider_profiles import (
     DEEPSEEK_OFFICIAL_ORIGIN,
     OPENAI_OFFICIAL_ORIGIN,
     builtin_credential_bindings,
     deepseek_profile,
     openai_profile,
 )
-from sjtuclaw.config.secrets import InMemorySecretStore, SecretValue
-from sjtuclaw.domain.events import LLMEventType
-from sjtuclaw.domain.models import (
+from arkclaw.config.secrets import InMemorySecretStore, SecretValue
+from arkclaw.domain.events import LLMEventType
+from arkclaw.domain.models import (
     DEEPSEEK_DEFAULT_CREDENTIAL_ID,
     DEEPSEEK_MANUAL_TEST_CREDENTIAL_ID,
     OPENAI_DEFAULT_CREDENTIAL_ID,
@@ -43,25 +43,25 @@ from sjtuclaw.domain.models import (
     ProviderId,
     ProviderProfile,
 )
-from sjtuclaw.infrastructure.llm.deepseek_provider import DeepSeekProvider
-from sjtuclaw.infrastructure.llm.deepseek_sdk import (
+from arkclaw.infrastructure.llm.deepseek_provider import DeepSeekProvider
+from arkclaw.infrastructure.llm.deepseek_sdk import (
     DeepSeekEvent,
     DeepSeekEventKind,
 )
-from sjtuclaw.infrastructure.llm.fake_provider import FakeProvider
-from sjtuclaw.infrastructure.llm.openai_provider import OpenAIProvider
-from sjtuclaw.infrastructure.llm.openai_sdk import (
+from arkclaw.infrastructure.llm.fake_provider import FakeProvider
+from arkclaw.infrastructure.llm.openai_provider import OpenAIProvider
+from arkclaw.infrastructure.llm.openai_sdk import (
     OpenAIResponseEvent,
     OpenAIResponseEventKind,
 )
-from sjtuclaw.infrastructure.llm.provider_factory import ProviderFactory
-from sjtuclaw.infrastructure.llm.provider_registry import (
+from arkclaw.infrastructure.llm.provider_factory import ProviderFactory
+from arkclaw.infrastructure.llm.provider_registry import (
     CredentialBindingRegistry,
     ProviderBuildOptions,
     ProviderRegistry,
     ProviderRegistryError,
 )
-from sjtuclaw.infrastructure.security.windows_credential_store import (
+from arkclaw.infrastructure.security.windows_credential_store import (
     DEEPSEEK_API_KEY_TARGET,
     OPENAI_API_KEY_TARGET,
     CredentialTargetResolver,
@@ -170,7 +170,7 @@ def test_windows_target_resolution_preserves_legacy_and_isolates_uuid_ids() -> N
         == DEEPSEEK_API_KEY_TARGET
     )
     assert CredentialTargetResolver.resolve(first_id) == (
-        f"SJTUClaw/Credentials/{first_id.value}"
+        f"ArkClaw/Credentials/{first_id.value}"
     )
     assert CredentialTargetResolver.resolve(first_id) != (
         CredentialTargetResolver.resolve(second_id)
@@ -266,7 +266,7 @@ def test_profile_display_model_and_url_cannot_change_credential_target() -> None
     assert profile.credential_id is not None
     target = CredentialTargetResolver.resolve(profile.credential_id)
 
-    assert target == f"SJTUClaw/Credentials/{credential_id.value}"
+    assert target == f"ArkClaw/Credentials/{credential_id.value}"
     assert profile.display_name not in target
     assert profile.model not in target
     assert profile.base_url is not None

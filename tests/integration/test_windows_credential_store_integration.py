@@ -6,13 +6,13 @@ import secrets
 import pytest
 from scripts.manual_credential_targets import ManualCredentialTargetResolver
 
-from sjtuclaw.config.secrets import SecretValue
-from sjtuclaw.domain.models import OPENAI_MANUAL_TEST_CREDENTIAL_ID
-from sjtuclaw.infrastructure.security.windows_credential_store import (
+from arkclaw.config.secrets import SecretValue
+from arkclaw.domain.models import OPENAI_MANUAL_TEST_CREDENTIAL_ID
+from arkclaw.infrastructure.security.windows_credential_store import (
     WindowsCredentialSecretStore,
 )
 
-_ENABLED = os.environ.get("SJTUCLAW_RUN_WINDOWS_CREDENTIAL_INTEGRATION") == "1"
+_ENABLED = os.environ.get("ARKCLAW_RUN_WINDOWS_CREDENTIAL_INTEGRATION") == "1"
 
 
 def _secret_digest(value: SecretValue) -> bytes:
@@ -21,7 +21,7 @@ def _secret_digest(value: SecretValue) -> bytes:
 
 @pytest.mark.skipif(
     not _ENABLED,
-    reason="Set SJTUCLAW_RUN_WINDOWS_CREDENTIAL_INTEGRATION=1 to access the test Target.",
+    reason="Set ARKCLAW_RUN_WINDOWS_CREDENTIAL_INTEGRATION=1 to access the test Target.",
 )
 def test_windows_credential_manager_lifecycle() -> None:
     """Exercise only the fixed non-production Target with generated fake values."""

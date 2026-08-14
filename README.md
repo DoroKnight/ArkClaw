@@ -1,183 +1,362 @@
-# SJTUClaw
+# ArkClaw
 
-SJTUClaw 是一个以 Windows 为首要平台的 2D AI 桌宠项目。目前，项目已经完成
-Agent Runtime 的第一个开发里程碑：核心 Agent 循环不依赖 GUI、云端凭据或
-外部服务即可运行。
+ArkClaw 是一个面向 Windows 的本地优先 2D AI 桌宠项目。第一阶段已经完成：当前保留的
+主桌宠是接入 Spine 3.8 Runtime 和 Schwarz 角色素材的生产版本，程序化桌宠作为独立原型和
+生产故障时的安全 fallback（安全降级）保留。
 
-## 本阶段已经实现
+## 当前状态
 
-- 与具体框架无关的领域模型和事件类型。
-- `LLMProvider`、记忆仓库、工具权限和提醒调度等端口接口。
-- 支持流式输出且结果确定的 `FakeProvider`。
-- 规模受限、行为可预测的 `ContextManager`。
-- 支持状态事件、超时、取消、Provider 错误处理的 `AgentLoop`。
-- 可复用且具有显式异步关闭契约的 Provider 生命周期。
-- 相互独立的 Provider 请求超时与 Agent 总回合超时。
-- 不向应用层泄露 SDK 类型的 Provider continuation 状态传递。
-- 对尚未支持的工具调用采用安全失败关闭（fail-closed）策略。
-- 单元测试和用于开发验证的命令行演示程序。
+生产桌宠已经具备：
 
-当前 Runtime 不会执行任何工具。如果 Provider 返回工具调用请求，Agent 会安全地
-拒绝执行。后续只有在接入 `ToolService`、权限策略和用户确认界面后，才会开放经过
-授权的工具调用。
+- Schwarz Spine 3.8 骨骼、atlas 和纹理加载；
+- `Relax`、`Move`、`Sit`、`Sleep`、`Special`、`Interact` 动作；
+- 自主动作调度以及托盘、桌宠右键动作菜单；
+- 左键单击互动、拖动、下落和落地；
+- Special 扩展绘制 surface 和身体区域输入代理；
+- 多显示器工作区、DPR 和窗口位置约束；
+- DLL、manifest、素材或渲染失败时回退到程序化角色；
+- 本地 Agent、Provider 设置、单实例、托盘和安全退出基础设施。
 
-Agent 的 `max_turn_seconds` 在直接构造和配置加载两条路径上都会拒绝布尔值、
-NaN、Infinity、零和负数。
+生产版本不把 Schwarz 素材提交到仓库。素材继续从本机外部目录加载；仓库只保存 Runtime
+桥接、加载代码和本地 manifest 的生成逻辑。
+
+## 目录结构
+
+```text
+ArkClaw/
+├─ src/arkclaw/                  Python 正式源码
+│  ├─ application/                桌宠状态、运动、动作和布局
+│  ├─ bootstrap/                  正式桌宠与 Spine composition root
+│  ├─ infrastructure/             Spine native adapter、Provider、持久化
+│  └─ presentation/qt/            Qt 窗口、renderer、overlay、托盘
+├─ native/spine38_bridge/         C++ Spine 3.8 桥接
+├─ scripts/                       构建、正式启动和诊断脚本
+├─ prototypes/placeholder_pet/    程序化桌宠原型入口与说明
+├─ tests/                         unit、Qt、integration 测试
+├─ docs/                          架构、桌宠、渲染和历史设计文档
+├─ packaging/                     Windows 打包与制品检查
+└─ build/                         本地构建产物和 manifest，不提交 Git
+```
+
+`PlaceholderPetRenderer` 仍位于正式 Python 包中，因为它是 Spine 加载或渲染失败时必需的
+安全 fallback。`prototypes/placeholder_pet/` 单独保存强制启动原型的入口，不复制渲染源码，
+避免维护两套逐渐分叉的实现。
+
+更完整的交接结构见 [STRUCTURE.md](STRUCTURE.md)。
 
 ## 环境要求
 
-- Python 3.12 或 3.13
-- Windows PowerShell
+- Windows 10/11；
+- PowerShell 5.1 或 PowerShell 7；
+- Python 3.12 或 3.13；
+- `uv`；
+- Visual Studio C++ Build Tools 和 CMake，用于构建 Spine 桥接；
+- 已准备的 Schwarz Spine 3.8 素材。
 
-本阶段的 Agent Runtime 不依赖第三方运行时库。Ruff、mypy 和 pytest 仅作为开发
-依赖安装。
+当前已验证的素材目录是：
 
-## 创建开发环境
-
-```powershell
-uv sync --extra dev
+```text
+D:\Spine\test\stage3_idle_rebuild_20260806_145235\runtime_input
 ```
 
-该命令会根据 `pyproject.toml` 和 `uv.lock` 创建 `.venv` 虚拟环境，并安装项目及
-开发工具。
+目录内应包含：
 
-## 运行测试
+```text
+build_char_340_shwaz_striker#1.skel
+build_char_340_shwaz_striker#1.atlas
+build_char_340_shwaz_striker#1.png
+```
+
+## 第一次准备
+
+以下命令假设仓库最终位于 `D:\ArkClaw`。当前改名工作树尚未物理移动时，请继续使用现有
+工作树路径；`start_schwarz_pet.ps1` 会从脚本位置自动定位仓库，不依赖父目录名称。
+
+在新的 PowerShell 中进入接入 Spine 的工作树：
+
+```powershell
+Set-Location 'D:\ArkClaw\.worktrees\arkpets-spine-idle-vertical-slice'
+git status --short
+uv sync --extra dev --extra gui
+```
+
+构建 Release 版 Spine 3.8 桥接并运行原生契约测试：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build_spine38_bridge.ps1 -Configuration Release -RunTests
+```
+
+构建完成后应存在：
+
+```text
+build\spine38\Release\arkclaw_spine38_bridge.dll
+```
+
+只要没有修改 `native/spine38_bridge/`，以后启动时不需要重复构建 DLL。
+
+## 在一个新的 PowerShell 中启动正式桌宠
+
+推荐使用正式启动器。它会完成以下操作：
+
+1. 定位当前工作树源码和虚拟环境；
+2. 检查 DLL 与三个 Schwarz 素材文件；
+3. 重新计算 SHA-256 并生成 `build/schwarz-production.local.json`；
+4. 设置本次 PowerShell 所需的全部环境变量；
+5. 强制从当前工作树 `src` 导入代码，避免共享 `.venv` 加载主仓库旧版本；
+6. 使用 `pythonw.exe` 启动正式桌宠。
+
+每次新开 PowerShell，只需要运行：
+
+```powershell
+Set-Location 'D:\ArkClaw\.worktrees\arkpets-spine-idle-vertical-slice'
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start_schwarz_pet.ps1
+```
+
+如果素材位于其他目录：
+
+```powershell
+Set-Location 'D:\ArkClaw\.worktrees\arkpets-spine-idle-vertical-slice'
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start_schwarz_pet.ps1 -AssetRoot 'D:\你的素材目录'
+```
+
+启动前请先从旧桌宠的托盘菜单选择 `Quit`。应用启用了单实例保护；已有桌宠未退出时，
+第二次启动不会创建另一个窗口。
+
+### 控制台排错启动
+
+需要观察 Python 或 Qt 错误时使用：
+
+```powershell
+Set-Location 'D:\ArkClaw\.worktrees\arkpets-spine-idle-vertical-slice'
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start_schwarz_pet.ps1 -Console
+```
+
+该命令使用 `python.exe`，桌宠退出前 PowerShell 会保持占用，这是正常行为。
+
+### 只验证路径，不打开窗口
+
+```powershell
+Set-Location 'D:\ArkClaw\.worktrees\arkpets-spine-idle-vertical-slice'
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start_schwarz_pet.ps1 -ValidateOnly
+```
+
+第一行必须指向：
+
+```text
+D:\ArkClaw\.worktrees\arkpets-spine-idle-vertical-slice\src\arkclaw\presentation\qt\pet_application.py
+```
+
+同时必须显示：
+
+```text
+Python runtime: D:\ArkClaw\.worktrees\arkpets-spine-idle-vertical-slice\.venv\Scripts\python.exe
+```
+
+如果指向 `D:\ArkClaw\src\...`，说明启动的是主仓库旧代码，而不是当前工作树版本。
+
+## 完整手工启动命令
+
+以下命令与正式启动器等价，适合检查环境变量和启动机制。要求本地 manifest 已由正式启动器
+生成；若尚未生成，请先执行一次 `-ValidateOnly`。
+
+```powershell
+Set-Location 'D:\ArkClaw\.worktrees\arkpets-spine-idle-vertical-slice'
+
+$assetRoot = 'D:\Spine\test\stage3_idle_rebuild_20260806_145235\runtime_input'
+$env:PYTHONPATH = (Resolve-Path 'src').Path
+$env:ARKCLAW_SPINE38_BRIDGE_DLL = (Resolve-Path 'build\spine38\Release\arkclaw_spine38_bridge.dll').Path
+$env:ARKCLAW_PET_ROLE_MANIFEST = (Resolve-Path 'build\schwarz-production.local.json').Path
+$env:ARKCLAW_SPINE38_ASSET_ROOT = (Resolve-Path -LiteralPath $assetRoot).Path
+
+.\.venv\Scripts\pythonw.exe -c "from arkclaw.presentation.qt.pet_application import run; run()"
+```
+
+`PYTHONPATH` 不能省略。当前工作树的 `.venv` 与主仓库共享，editable install 记录的路径可能仍是
+`D:\ArkClaw\src`；显式设置它才能确保载入正确版本。
+
+## 工作树环境检查
+
+当前工作树和 Git 元数据均已迁移到 `D:\ArkClaw`。工作树中的 `.venv`、`.venv-packaging`
+分别连接到主仓库的共享环境。使用以下命令检查环境是否健康：
+
+```powershell
+Set-Location 'D:\ArkClaw\.worktrees\arkpets-spine-idle-vertical-slice'
+git status --short
+.\.venv\Scripts\python.exe -c "import arkclaw; print(arkclaw.__file__)"
+```
+
+如果工作树的共享 `.venv` junction 日后再次失效，正式启动器仍会自动尝试
+`D:\ArkClaw\.venv`，并在两个位置都不可用时列出全部检查过的路径。
+
+### 用户数据和系统集成影响
+
+本次是完整身份切换，不会继续读取旧命名空间：
+
+- 环境变量改为 `ARKCLAW_*`；
+- Windows Credential Manager Target 改为 `ArkClaw/...`；
+- HKCU Run 值名改为 `ArkClaw`；
+- 单实例命名空间改为 `ArkClaw.Pet.SingleInstance.V1`；
+- Provider 元数据目录改为 `%LOCALAPPDATA%\ArkClaw`；
+- Qt 应用名和组织名均改为 `ArkClaw`。
+
+为避免未经确认复制凭据，新版本不会自动迁移旧 Credential Target。需要在 ArkClaw 设置界面重新
+保存 API Key；旧凭据可以在确认新版本工作正常后再手工删除。若旧开机启动项仍存在，也应先在
+旧版本中关闭，或在 Windows 启动应用设置中禁用。
+
+安装入口更新后也可以运行：
+
+```powershell
+.\.venv\Scripts\arkclaw-pet.exe
+```
+
+但在共享虚拟环境的开发工作树中，推荐继续使用 `start_schwarz_pet.ps1`。旧入口
+`arkclaw-pet-placeholder.exe` 只作为兼容别名保留，不再作为 README 的正式启动方式。
+
+## 启动程序化桌宠原型
+
+原型入口会主动清除 Spine 环境变量，保证显示程序化角色：
+
+```powershell
+Set-Location 'D:\ArkClaw\.worktrees\arkpets-spine-idle-vertical-slice'
+powershell -NoProfile -ExecutionPolicy Bypass -File .\prototypes\placeholder_pet\start_placeholder_pet.ps1
+```
+
+控制台模式：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\prototypes\placeholder_pet\start_placeholder_pet.ps1 -Console
+```
+
+原型与正式桌宠共享单实例保护，二者不能同时运行。详细说明见
+[程序化桌宠原型](prototypes/placeholder_pet/README.md)。
+
+## Schwarz 桌宠人工验收
+
+以下是本项目唯一推荐的人工验收入口。开始前先从已有桌宠的托盘菜单选择 `Quit`，避免
+单实例保护拦截新进程。
+
+### 1. 自动预检
+
+先让启动器生成并验证本地配置：
+
+```powershell
+Set-Location 'D:\ArkClaw\.worktrees\arkpets-spine-idle-vertical-slice'
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start_schwarz_pet.ps1 -ValidateOnly
+```
+
+运行真实 Schwarz catalog 和 smoke。`-Smoke` 会在启动器自己的 PowerShell 进程中完成环境配置和测试，
+不依赖子进程退出后保留环境变量：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start_schwarz_pet.ps1 -Smoke
+```
+
+通过标准：
+
+- `-ValidateOnly` 输出当前工作树源码路径；Python 路径优先使用工作树
+  `.venv`，不存在时应明确回退到 `D:\ArkClaw\.venv`；
+- `-Smoke` 最终输出的通过数量以当前收集到的真实 catalog/smoke 用例为准，且不得有失败；
+- 不得出现 `composition_failed`、`ABI_MISMATCH` 或素材 hash 错误。
+
+### 2. 打开用于人工验收的桌宠
+
+```powershell
+Set-Location 'D:\ArkClaw\.worktrees\arkpets-spine-idle-vertical-slice'
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start_schwarz_pet.ps1 -Console
+```
+
+PowerShell 在桌宠退出前保持占用是正常行为。右键桌宠或系统托盘选择动作。
+
+### 3. 固定动作序列
+
+先在托盘或桌宠右键菜单开启 `Always on Top`。依次执行并完整观察：
+
+```text
+Relax → Sit（三个完整循环）→ Relax
+Move Left → Sit（三个完整循环）→ Relax
+Move Right → Sit（三个完整循环）→ Relax
+Sit → Sit → Sit → Relax
+```
+
+通过标准：
+
+- Sit 尾巴末端全程自然完整，没有贴着透明窗口边缘的齐边断口；
+- Sit 脚部真实像素越过任务栏上沿，并显示在任务栏内容之上；
+- Sit 屁股仍保持原任务栏上沿位置，BODY 窗口不向上移动；
+- RIGHT 和 LEFT 两个朝向都满足尾巴完整、脚部覆盖任务栏；
+- Sit 循环和 Relax/Move 切入、切出时没有闪烁、残影、双影或纵向跳动；
+- Move、Relax、Sleep、Special、Interact 的原有表现不变；
+- 拖动、松手、落地后仍能继续执行上述动作序列。
+
+至少保存一段不少于 15 秒、同时包含任务栏、全身、动作切换和两个朝向的视频；另保存
+RIGHT/LEFT 尾巴最外扩帧各一张，以及一张脚部覆盖任务栏的中段截图。自动测试和截图都不能
+单独代替上述动态目视验收。
+
+### 4. 显示器矩阵
+
+至少在 Windows 显示缩放 `100%`、`125%`、`150%`、`200%` 下重复
+`Relax → Sit → Move → Relax`。有多显示器时还要在主屏、副屏、负坐标屏幕以及跨屏后复验。
+
+最终通过条件是：所有 grounded 动作的窗口底边始终贴合当前屏幕可用工作区底边，肉眼看不到
+动作切换引起的纵向位移。自动 Smoke 不能替代这一项视觉确认，建议保存包含任务栏的录屏。
+
+### 5. 开发回归测试
+
+运行桌宠相关回归测试：
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests\unit\test_pet_render_layout.py tests\unit\test_pet_production_motion.py tests\qt\test_pet_effect_overlay.py tests\qt\test_pet_window.py -q
+```
+
+完整质量检查：
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest
+.\.venv\Scripts\python.exe -m ruff check src tests scripts packaging
+.\.venv\Scripts\python.exe -m mypy src tests scripts packaging
+git diff --check
 ```
 
-## 运行 Agent 演示
+## 桌宠操作参考
+
+- 左键单击桌宠：播放 `Interact`；
+- 左键按住并移动：拖动桌宠，松开后进入下落和落地；
+- 右键桌宠或右键系统托盘：选择 `Move`、`Sit`、`Sleep`、`Special`、`Interact`；
+- `Resume Autonomous`：恢复自主行为；
+- `Always on Top`：切换置顶；
+- `Quit`：走安全退出流程。
+
+## Agent 与普通 Qt 窗口
+
+运行离线 Agent 演示：
 
 ```powershell
-.\.venv\Scripts\sjtuclaw-agent-demo.exe
+.\.venv\Scripts\arkclaw-agent-demo.exe
 ```
 
-输入任意消息后，可以观察 Fake Provider 的流式回复。输入 `/quit` 或 `/exit`
-结束程序。
-
-`scripts/` 目录中的脚本只是便捷入口，并不是运行项目的必要条件。如果 Windows
-禁止执行本地 PowerShell 脚本，可以使用以下方式运行：
+运行普通 Provider 设置窗口：
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File <脚本路径>
+.\.venv\Scripts\arkclaw-gui.exe
 ```
 
-也可以直接使用前面给出的虚拟环境命令。
-
-## 配置
-
-Agent 启动参数由不可变的 `RuntimeConfig` 统一管理，覆盖优先级为：
-
-```text
-CLI 参数 > 环境变量 > 应用设置 > 程序默认值
-```
-
-当前可选择 `fake`、`openai`、`deepseek` 和 `ollama`。Fake Provider、
-OpenAI Responses API Provider 与 DeepSeek Chat Completions 纯文本 Provider
-已实现；Ollama 仍会返回明确的“尚未实现”错误，不会静默回退。
-
-`provider_timeout_seconds` 是 OpenAI SDK 的单次 HTTP 请求或流读取超时；
-`max_turn_seconds` 是 Agent 从接收用户消息到结束整个回合的总时间上限。当前
-Fake Provider 不使用请求超时，`AgentLoop` 只使用独立的总回合超时。
-
-配置字段、默认值、环境变量、CLI 参数和 API Key 安全边界详见
-[配置系统文档](docs/configuration.md)。
-
-## API Key 凭据
-
-API Key 不属于 `RuntimeConfig`，也没有 `--api-key` 命令行参数：
-
-- `EnvironmentSecretStore` 仅供显式注入的本地开发场景使用，不会被自动选择。
-- `WindowsCredentialSecretStore` 使用 Windows Credential Manager 的 Generic
-  Credential；内置 OpenAI 与 DeepSeek 分别使用固定且互不别名的 Target。
-- `InMemorySecretStore` 仅用于自动测试或临时进程内状态。
-
-通用 SecretStore 可以保存多个 Provider 的凭据，但 API Key 仍必须由所选服务商
-签发，不能把 DeepSeek Key 当作 OpenAI Key 使用。应用生成的额外 CredentialId
-使用 UUIDv4；显示名、模型名和 URL 不参与 Windows Target 拼接。
-
-默认自动测试注入 Fake Credential Backend，不会读取、修改或删除用户的真实
-Credential Manager 数据。需要检查是否已经保存凭据时，可以只查询布尔状态：
-
-```powershell
-.\.venv\Scripts\python.exe -c "from sjtuclaw.infrastructure.security.windows_credential_store import WindowsCredentialSecretStore; print(WindowsCredentialSecretStore().has_openai_api_key())"
-```
-
-该命令不会打印密钥。不要把明文密钥作为 PowerShell 参数；后续应通过 `getpass`
-或 Qt Provider 设置界面录入。显式运行 `--provider openai` 会读取该固定 Target，并在
-凭据存在时创建真实 OpenAI 请求；自动测试只注入 Fake SDK，绝不执行该路径。
-
-## Qt 桌面壳
-
-安装可选 GUI 依赖后，可启动普通的最小桌面窗口：
-
-```powershell
-uv sync --extra dev --extra gui
-.\.venv\Scripts\sjtuclaw-gui.exe
-```
-
-启动只初始化非敏感 Profile 元数据，不会自动读取凭据、激活云端 Provider 或发送
-网络请求。Provider 设置页只显示“已配置/未配置”，不会回填已保存的 API Key。
-当前窗口不包含透明、置顶、托盘或动画桌宠效果。对象所有权、异步关闭和设置命令
-边界见 [Qt Provider 设置壳文档](docs/qt_provider_settings_shell.md)。
-
-原创程序化占位桌宠可通过下列命令单独启动：
-
-```powershell
-.\.venv\Scripts\sjtuclaw-pet-placeholder.exe
-```
-
-该入口安装为 Windows GUI launcher，不创建额外控制台窗口。控制台版
-`sjtuclaw-agent-demo.exe` 继续保留标准输入输出。
-
-它使用透明无边框窗口、可替换 QPainter Renderer、分层动画/行为状态机与现有
-安全关机流程，并提供程序化图标的最小系统托盘；不包含正式角色素材或 Spine
-Runtime。详见[占位桌宠窗口文档](docs/pet_window_placeholder.md)和
-[系统托盘文档](docs/system_tray.md)。生产桌宠入口还会在 Runtime 和窗口构造
-前执行本地单实例判定，详见[桌宠单实例文档](docs/single_instance.md)。
-
-桌宠的位置与置顶偏好使用独立的非敏感设置文档，不与 Provider Profile 或凭据
-混合。严格 JSON schema、原子写入、损坏保护及双生命周期离线 smoke 见
-[桌宠设置文档](docs/pet_settings.md)。
-
-Windows 开机自启动是默认关闭的用户选项，可从 Agent 设置页、系统托盘或桌宠
-右键菜单显式切换，三个入口共享同一状态。它只管理当前用户 HKCU Run 下固定的
-`SJTUClaw` 值，不使用 `StartupApproved`，也不需要管理员权限。Windows 设置或
-任务管理器仍可在系统层禁用启动项。源码环境与 onefile 模式不能启用；真实 HKCU
-验证、稳定安装路径和卸载清理尚未完成。详见
-[Windows 自启动文档](docs/windows_autostart.md)。
+桌宠启动不会自动激活云端 Provider，也不会自动发送网络请求。
 
 ## 架构约束
 
-`domain` 和 `application` 包不得导入 PySide6、OpenAI、Ollama 或 SQLite。
-这样可以保证核心 Agent 逻辑不依赖具体 GUI、模型服务商或数据库。
+- `domain/` 和 `application/` 不得依赖 PySide6、OpenAI、SQLite 或具体 Spine adapter；
+- Qt 代码位于 `presentation/qt/`；
+- C++ Runtime 通过 `infrastructure/spine38_native.py` 和 native bridge 隔离；
+- 正式角色加载失败必须 fail closed 到程序化 fallback，不能导致 Qt timer 异常退出；
+- Spine 素材、生成的 manifest、DLL 和构建缓存不得提交 Git；
+- 保留既有文件名、类名和公共接口，除非设计审查明确批准迁移。
 
-具体实现应按照以下规则放置：
+相关文档：
 
-- OpenAI、DeepSeek、Ollama、Fake Provider 等适配器放在 `infrastructure/llm/`。
-- SQLite 等持久化实现放在 `infrastructure/persistence/`。
-- 工具和权限实现放在 `infrastructure/tools/`。
-- PySide6 窗口、控件和 Runtime Bridge 放在 `presentation/qt/`。
-
-这一约束使 Agent 核心可以在没有桌面界面的情况下独立测试，也便于后续替换
-Provider、数据库或 GUI 实现。
-
-命令行 Composition Root 创建并最终关闭 Provider。`AgentLoop` 每个回合只关闭
-该回合的异步事件流，因此同一 Provider 可以安全地用于后续回合。Provider
-continuation 只在合法完成事件后提交；切换 Provider 时，名称不匹配的 continuation
-会被拒绝。
-
-OpenAIProvider 始终显式发送 `store=False`。多轮状态采用内存中的本地重放历史，
-不会仅依赖服务端 `previous_response_id`；完整设计见
-[OpenAI Provider 文档](docs/openai_provider.md)。
-
-多 Provider 的类型、Profile、凭据隔离和无回退规则见
-[Provider 架构文档](docs/provider_architecture.md)；DeepSeek 的固定官方 Origin、
-能力限制、流终止语义与资源生命周期见
-[DeepSeek Provider 文档](docs/deepseek_provider.md)。
-
-DeepSeek 的真实兼容性检查不得使用普通 `--provider deepseek` 对话入口替代。
-专用脚本 `scripts/manual_deepseek_verification.py` 默认完全惰性；只有用户单独确认
-费用、测试 Target 和协作式超时风险后，才允许显式启用。当前阶段没有执行真实
-DeepSeek API 验证。
+- [Schwarz 生产动画](docs/rendering/schwarz_production_animation.md)
+- [Spine 3.8 本地垂直切片](docs/rendering/spine38_local_vertical_slice.md)
+- [桌宠设置](docs/pet/pet_settings.md)
+- [系统托盘](docs/pet/system_tray.md)
+- [单实例运行](docs/architecture/single_instance.md)
+- [Provider 架构](docs/architecture/provider_architecture.md)
+- [Windows 打包预检](docs/packaging/windows_packaging_preflight.md)

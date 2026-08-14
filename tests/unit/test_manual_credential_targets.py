@@ -11,14 +11,14 @@ from scripts.manual_credential_targets import (
     ManualCredentialTargetResolver,
 )
 
-from sjtuclaw.domain.models import (
+from arkclaw.domain.models import (
     DEEPSEEK_MANUAL_TEST_CREDENTIAL_ID,
     OPENAI_DEFAULT_CREDENTIAL_ID,
     OPENAI_MANUAL_TEST_CREDENTIAL_ID,
     CredentialId,
 )
-from sjtuclaw.infrastructure.security import windows_credential_store
-from sjtuclaw.infrastructure.security.windows_credential_store import (
+from arkclaw.infrastructure.security import windows_credential_store
+from arkclaw.infrastructure.security.windows_credential_store import (
     CredentialTargetResolutionError,
 )
 
@@ -79,11 +79,11 @@ def test_manual_target_module_import_is_resource_inert(
 
 
 def test_production_source_contains_no_manual_target_prefix() -> None:
-    source_root = Path("src") / "sjtuclaw"
+    source_root = Path("src") / "arkclaw"
     matches = [
         path
         for path in source_root.rglob("*.py")
-        if "SJTUClaw/Test/" in path.read_text(encoding="utf-8")
+        if "ArkClaw/Test/" in path.read_text(encoding="utf-8")
     ]
 
     assert matches == []

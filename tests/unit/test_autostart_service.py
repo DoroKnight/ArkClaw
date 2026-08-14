@@ -10,10 +10,10 @@ from typing import cast
 
 import pytest
 
-from sjtuclaw.application.autostart_eligibility import (
+from arkclaw.application.autostart_eligibility import (
     AutostartEligibilityReason,
 )
-from sjtuclaw.application.autostart_service import (
+from arkclaw.application.autostart_service import (
     AUTOSTART_ARGUMENT,
     AUTOSTART_VALUE_NAME,
     REGISTRY_STRING_VALUE_TYPE,
@@ -22,7 +22,7 @@ from sjtuclaw.application.autostart_service import (
     AutostartStoredValue,
     _path_text_is_safe,
 )
-from sjtuclaw.bootstrap import autostart as autostart_bootstrap
+from arkclaw.bootstrap import autostart as autostart_bootstrap
 
 
 class _FakeBackend:
@@ -65,7 +65,7 @@ class _FakeBackend:
 
 
 def _packaged_executable(tmp_path: Path) -> Path:
-    executable = tmp_path / "SJTUClaw.exe"
+    executable = tmp_path / "ArkClaw.exe"
     executable.write_bytes(b"offline-placeholder")
     return executable
 
@@ -97,7 +97,7 @@ def test_query_is_read_only_and_defaults_to_disabled(
     assert backend.read_count == 1
     assert backend.writes == []
     assert backend.delete_count == 0
-    assert AUTOSTART_VALUE_NAME == "SJTUClaw"
+    assert AUTOSTART_VALUE_NAME == "ArkClaw"
 
 
 def test_unsupported_platform_is_unavailable_without_backend_access(
@@ -368,17 +368,17 @@ def test_unicode_and_space_path_is_quoted_without_extra_arguments(
 
 
 def test_unsafe_command_path_text_is_rejected() -> None:
-    assert not _path_text_is_safe(r"\\server\share\SJTUClaw.exe")
-    assert not _path_text_is_safe('"C:\\Apps\\SJTUClaw.exe"')
-    assert not _path_text_is_safe("C:\\Apps\\SJTUClaw.exe\n--extra")
-    assert _path_text_is_safe("C:\\Apps\\桌宠 SJTUClaw.exe")
+    assert not _path_text_is_safe(r"\\server\share\ArkClaw.exe")
+    assert not _path_text_is_safe('"C:\\Apps\\ArkClaw.exe"')
+    assert not _path_text_is_safe("C:\\Apps\\ArkClaw.exe\n--extra")
+    assert _path_text_is_safe("C:\\Apps\\桌宠 ArkClaw.exe")
 
 
 def test_command_over_fixed_length_limit_is_rejected(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from sjtuclaw.application import autostart_service
+    from arkclaw.application import autostart_service
 
     executable = _packaged_executable(tmp_path)
     backend = _FakeBackend()
@@ -497,7 +497,7 @@ def test_packaged_diagnostic_includes_executable_eligibility(
 def test_source_virtual_environment_is_rejected(
     tmp_path: Path,
 ) -> None:
-    executable = tmp_path / ".venv" / "SJTUClaw.exe"
+    executable = tmp_path / ".venv" / "ArkClaw.exe"
     executable.parent.mkdir()
     executable.write_bytes(b"offline-placeholder")
     backend = _FakeBackend()

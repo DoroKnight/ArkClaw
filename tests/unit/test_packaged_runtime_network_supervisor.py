@@ -130,7 +130,7 @@ def test_supervisor_has_one_fixed_packaged_executable_start_site() -> None:
     source = _script_text()
 
     assert source.count("$process.Start()") == 1
-    assert '$ExecutablePath = Join-Path $DistRoot "SJTUClaw.exe"' in source
+    assert '$ExecutablePath = Join-Path $DistRoot "ArkClaw.exe"' in source
     assert "LaunchIndex" not in source
     assert "secondary" not in source.casefold()
 
@@ -162,7 +162,7 @@ def test_supervisor_redirects_all_controlled_paths_inside_repository() -> None:
         "USERPROFILE",
     ):
         assert f"{name} = Join-Path $VerificationRoot" in source
-    assert '$RepositoryRoot = "D:\\SJTUClaw"' in source
+    assert '$RepositoryRoot = "D:\\ArkClaw"' in source
 
 
 def test_supervisor_filters_sensitive_and_proxy_environment_names() -> None:

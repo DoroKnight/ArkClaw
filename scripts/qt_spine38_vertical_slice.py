@@ -22,24 +22,24 @@ if __package__ in {None, ""}:
         str(Path(__file__).resolve().parents[1] / "src"),
     )
 
-from sjtuclaw.application.pet_external_assets import (
+from arkclaw.application.pet_external_assets import (
     ExternalPetAssetLoader,
     ExternalPetAssetLoadResult,
     ExternalPetAssetSnapshot,
     ExternalPetAssetStatus,
 )
-from sjtuclaw.application.pet_renderer_model import (
+from arkclaw.application.pet_renderer_model import (
     ExternalPetAssetDescriptor,
     ExternalPetAssetHashes,
 )
-from sjtuclaw.application.spine38_runtime import (
+from arkclaw.application.spine38_runtime import (
     Spine38CatalogError,
     Spine38Runtime,
 )
-from sjtuclaw.infrastructure.pet_external_asset_filesystem import (
+from arkclaw.infrastructure.pet_external_asset_filesystem import (
     WindowsExternalPetAssetFilesystem,
 )
-from sjtuclaw.infrastructure.spine38_native import (
+from arkclaw.infrastructure.spine38_native import (
     Spine38NativeError,
     Spine38NativeLibrary,
     Spine38NativePort,
@@ -331,8 +331,8 @@ def _forced_hash_failure_evidence(
     asset_loader: _WrongHashAssetLoader,
     bridge_factory: _BridgeFactory,
 ) -> dict[str, Any]:
-    from sjtuclaw.application.pet_geometry import Size
-    from sjtuclaw.presentation.qt.pet_renderer import (
+    from arkclaw.application.pet_geometry import Size
+    from arkclaw.presentation.qt.pet_renderer import (
         PetRendererSafeCode,
         PlaceholderPetRenderer,
         SafePetRenderer,
@@ -583,13 +583,13 @@ def _run_three_loop_smoke(
             from PySide6.QtCore import Qt, QTimer
             from PySide6.QtWidgets import QApplication
 
-            from sjtuclaw.application.pet_geometry import Size
-            from sjtuclaw.presentation.qt.pet_renderer import (
+            from arkclaw.application.pet_geometry import Size
+            from arkclaw.presentation.qt.pet_renderer import (
                 PetRendererSafeCode,
                 SafePetRenderer,
             )
-            from sjtuclaw.presentation.qt.pet_window import PetWindow
-            from sjtuclaw.presentation.qt.spine38_renderer import (
+            from arkclaw.presentation.qt.pet_window import PetWindow
+            from arkclaw.presentation.qt.spine38_renderer import (
                 Spine38PetRenderer,
             )
 
@@ -619,7 +619,7 @@ def _run_three_loop_smoke(
                 else QApplication([])
             )
             application.setApplicationName(
-                "SJTUClaw Spine 3.8 Vertical Slice"
+                "ArkClaw Spine 3.8 Vertical Slice"
             )
             window = PetWindow(renderer=safe_renderer)
             window.safe_exit_requested.connect(application.quit)
@@ -710,7 +710,7 @@ def _run_three_loop_smoke(
                     "samples": samples,
                     "forced_hash_failure": forced_hash_failure,
                     "agent_modules_imported": (
-                        "sjtuclaw.application.agent_loop" in sys.modules
+                        "arkclaw.application.agent_loop" in sys.modules
                     ),
                     "visual_review_required": True,
                 }
@@ -776,13 +776,13 @@ def _run_visible(
 
             from PySide6.QtWidgets import QApplication
 
-            from sjtuclaw.application.pet_geometry import Size
-            from sjtuclaw.presentation.qt.pet_renderer import (
+            from arkclaw.application.pet_geometry import Size
+            from arkclaw.presentation.qt.pet_renderer import (
                 PetRendererSafeCode,
                 SafePetRenderer,
             )
-            from sjtuclaw.presentation.qt.pet_window import PetWindow
-            from sjtuclaw.presentation.qt.spine38_renderer import (
+            from arkclaw.presentation.qt.pet_window import PetWindow
+            from arkclaw.presentation.qt.spine38_renderer import (
                 Spine38PetRenderer,
             )
 
@@ -810,7 +810,7 @@ def _run_visible(
                 else QApplication([])
             )
             application.setApplicationName(
-                "SJTUClaw Spine 3.8 Vertical Slice"
+                "ArkClaw Spine 3.8 Vertical Slice"
             )
             window = PetWindow(renderer=safe_renderer)
             window.safe_exit_requested.connect(application.quit)

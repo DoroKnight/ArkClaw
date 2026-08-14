@@ -21,26 +21,26 @@ from PySide6.QtWidgets import (
     QPlainTextEdit,
 )
 
-from sjtuclaw.application.provider_profile_service import (
+from arkclaw.application.provider_profile_service import (
     ActiveTurnHandling,
     ProviderActivationOptions,
 )
-from sjtuclaw.application.provider_settings_service import (
+from arkclaw.application.provider_settings_service import (
     CredentialBindingView,
     ProviderCapabilitiesView,
     ProviderProfileView,
     ProviderSettingsSnapshot,
 )
-from sjtuclaw.application.runtime_session_controller import (
+from arkclaw.application.runtime_session_controller import (
     RuntimeEventSink,
     RuntimeSessionController,
 )
-from sjtuclaw.bootstrap.qt_runtime import (
+from arkclaw.bootstrap.qt_runtime import (
     ProductionQtRuntimeCompositionRoot,
 )
-from sjtuclaw.config.secrets import InMemorySecretStore, SecretValue
-from sjtuclaw.domain.events import LLMEvent
-from sjtuclaw.domain.models import (
+from arkclaw.config.secrets import InMemorySecretStore, SecretValue
+from arkclaw.domain.events import LLMEvent
+from arkclaw.domain.models import (
     FAKE_DEFAULT_PROFILE_ID,
     OPENAI_DEFAULT_CREDENTIAL_ID,
     OPENAI_DEFAULT_PROFILE_ID,
@@ -48,14 +48,14 @@ from sjtuclaw.domain.models import (
     CredentialId,
     LLMRequest,
 )
-from sjtuclaw.infrastructure.llm.fake_provider import FakeProvider
-from sjtuclaw.infrastructure.llm.provider_factory import ProviderFactory
-from sjtuclaw.presentation.qt.main_window import MainWindow
-from sjtuclaw.presentation.qt.provider_settings_dialog import (
+from arkclaw.infrastructure.llm.fake_provider import FakeProvider
+from arkclaw.infrastructure.llm.provider_factory import ProviderFactory
+from arkclaw.presentation.qt.main_window import MainWindow
+from arkclaw.presentation.qt.provider_settings_dialog import (
     ProviderSettingsDialog,
 )
-from sjtuclaw.presentation.qt.runtime_bridge import QtRuntimeBridge
-from sjtuclaw.presentation.qt.runtime_thread import (
+from arkclaw.presentation.qt.runtime_bridge import QtRuntimeBridge
+from arkclaw.presentation.qt.runtime_thread import (
     RuntimeThreadCommand,
     RuntimeThreadCommandType,
 )

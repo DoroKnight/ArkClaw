@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:executing-plans` to implement this plan task-by-task. Do not use parallel subagents for Spine Editor operations because every task mutates one ordered GUI project lineage.
 
-**Goal:** Complete and audit 25 named Spine animation assets in isolated copies without modifying original Runtime Data, SJTUClaw code, texture assets, rig topology, or weights.
+**Goal:** Complete and audit 25 named Spine animation assets in isolated copies without modifying original Runtime Data, ArkClaw code, texture assets, rig topology, or weights.
 
 **Architecture:** Use one immutable SHA-256-identified input and a serial chain of timestamped `.spine` checkpoints under `D:\Spine\test`. Each animation is a transaction: inspect source timelines, whitelist properties, edit one target, save to a new path, reopen, verify, hash, and promote only after acceptance. Track 0 contains exclusive body states, Track 1 is the sparse `breathing` overlay, and Track 2 is the sparse `blink` overlay.
 
@@ -18,7 +18,7 @@
 - All new files must be created under `D:\Spine\test\stage4_all_animations_RUN_ID`, replacing `RUN_ID` once with the captured value and using that exact directory for the whole run.
 - Never overwrite a file. Every accepted animation produces a new numbered checkpoint.
 - Do not modify or write into `D:\ark-model\Ark-Models\models\340_shwaz_striker#1`.
-- Do not write character assets, screenshots, exports, or Spine projects into `D:\SJTUClaw`.
+- Do not write character assets, screenshots, exports, or Spine projects into `D:\ArkClaw`.
 - Do not export JSON, SKEL, Atlas, PNG, video, or Runtime packages in this plan.
 - Do not change Setup Pose, Atlas, PNG, Skin definitions, attachments, Draw Order defaults, Mesh topology, weights, IK/Transform/Path constraints, or project FPS.
 - Do not import or copy third-party character art, animation frames, Spine projects, audio, or pet packages.
@@ -198,8 +198,8 @@
 - [ ] Recheck feet, root transforms, silhouette, asymmetric direction behavior, attachments, Slot colors/blend modes, Draw Order, Mesh/Deform, constraints, clipping, and visible intersections.
 - [ ] Save, close, reopen the final file and repeat animation-name and appearance checks.
 - [ ] Compute the final SHA-256 and append the complete checkpoint lineage and all created files to both reports.
-- [ ] Confirm original Runtime Data hashes remain unchanged and confirm no character asset or Spine export was written to `D:\SJTUClaw`.
-- [ ] State explicitly that JSON/SKEL/Atlas/PNG export, real AnimationState Track composition, mix callbacks, events, Skin switching, PMA rendering, and SJTUClaw Runtime playback are not validated by this plan.
+- [ ] Confirm original Runtime Data hashes remain unchanged and confirm no character asset or Spine export was written to `D:\ArkClaw`.
+- [ ] State explicitly that JSON/SKEL/Atlas/PNG export, real AnimationState Track composition, mix callbacks, events, Skin switching, PMA rendering, and ArkClaw Runtime playback are not validated by this plan.
 - [ ] Pause and wait for user confirmation. Do not export or begin program integration.
 
 ## Execution handoff

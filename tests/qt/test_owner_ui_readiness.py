@@ -9,11 +9,11 @@ import pytest
 from PySide6.QtCore import QObject, Signal
 from PySide6.QtWidgets import QApplication, QWidget
 
-from sjtuclaw.presentation.qt.owner_ui_readiness import (
+from arkclaw.presentation.qt.owner_ui_readiness import (
     OwnerStartupStage,
     OwnerUiCheckpointRecorder,
 )
-from sjtuclaw.presentation.qt.pet_application import (
+from arkclaw.presentation.qt.pet_application import (
     _OwnerUiStartupObserver,
 )
 

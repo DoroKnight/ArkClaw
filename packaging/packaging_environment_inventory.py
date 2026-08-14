@@ -17,10 +17,10 @@ REQUIRED_DISTRIBUTIONS = {
     "nuitka": "4.0",
     "openai": "2.48.0",
     "pyside6": "6.11.1",
-    "sjtuclaw": "0.1.0",
+    "arkclaw": "0.1.0",
 }
 REQUIRED_IMPORTS = (
-    "sjtuclaw",
+    "arkclaw",
     "openai",
     "PySide6",
     "nuitka",

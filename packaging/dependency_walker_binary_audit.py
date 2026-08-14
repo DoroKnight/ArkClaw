@@ -851,7 +851,7 @@ def _default_dumpbin_runner(path: Path) -> dict[str, object]:
 def _default_version_reader(path: Path) -> dict[str, str | None]:
     command = (
         "$i=[System.Diagnostics.FileVersionInfo]::GetVersionInfo("
-        "$env:SJTUCLAW_AUDIT_FILE);"
+        "$env:ARKCLAW_AUDIT_FILE);"
         "[pscustomobject]@{"
         "file_description=$i.FileDescription;"
         "product_name=$i.ProductName;"
@@ -863,7 +863,7 @@ def _default_version_reader(path: Path) -> dict[str, str | None]:
         "}|ConvertTo-Json -Compress"
     )
     environment = dict(os.environ)
-    environment["SJTUCLAW_AUDIT_FILE"] = os.fspath(path)
+    environment["ARKCLAW_AUDIT_FILE"] = os.fspath(path)
     completed = subprocess.run(
         [
             "powershell.exe",

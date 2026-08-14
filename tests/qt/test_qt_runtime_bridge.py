@@ -12,28 +12,28 @@ import pytest
 from PySide6.QtCore import QCoreApplication, QEventLoop, QThread, QTimer
 from PySide6.QtTest import QSignalSpy
 
-from sjtuclaw.application.active_turn_coordinator import (
+from arkclaw.application.active_turn_coordinator import (
     DefaultActiveTurnCoordinator,
 )
-from sjtuclaw.application.agent_loop import AgentLoop
-from sjtuclaw.application.context_manager import ContextManager
-from sjtuclaw.application.provider_profile_service import (
+from arkclaw.application.agent_loop import AgentLoop
+from arkclaw.application.context_manager import ContextManager
+from arkclaw.application.provider_profile_service import (
     ActiveTurnHandling,
     ProviderActivationOptions,
     ProviderProfileService,
 )
-from sjtuclaw.application.runtime_session_controller import (
+from arkclaw.application.runtime_session_controller import (
     RuntimeCommandResult,
     RuntimeEventSink,
     RuntimeSessionController,
     RuntimeSnapshot,
 )
-from sjtuclaw.bootstrap.qt_runtime import (
+from arkclaw.bootstrap.qt_runtime import (
     QT_SMOKE_SECONDARY_PROFILE_ID,
     FakeQtRuntimeCompositionRoot,
 )
-from sjtuclaw.domain.events import LLMEvent
-from sjtuclaw.domain.models import (
+from arkclaw.domain.events import LLMEvent
+from arkclaw.domain.models import (
     FAKE_DEFAULT_PROFILE_ID,
     FAKE_PROVIDER_ID,
     CredentialBinding,
@@ -41,13 +41,13 @@ from sjtuclaw.domain.models import (
     ProviderContinuation,
     ProviderProfile,
 )
-from sjtuclaw.domain.ports import LLMProvider
-from sjtuclaw.infrastructure.config.json_provider_profile_repository import (
+from arkclaw.domain.ports import LLMProvider
+from arkclaw.infrastructure.config.json_provider_profile_repository import (
     JsonProviderProfileRepository,
 )
-from sjtuclaw.infrastructure.llm.fake_provider import FakeProvider
-from sjtuclaw.presentation.qt.runtime_bridge import QtRuntimeBridge
-from sjtuclaw.presentation.qt.runtime_thread import (
+from arkclaw.infrastructure.llm.fake_provider import FakeProvider
+from arkclaw.presentation.qt.runtime_bridge import QtRuntimeBridge
+from arkclaw.presentation.qt.runtime_thread import (
     RuntimeControllerFactory,
     RuntimeThread,
     RuntimeThreadCommand,
@@ -1706,7 +1706,7 @@ def test_qt_rejects_commands_before_start_and_never_uses_terminate(
     source = (
         Path(__file__).parents[2]
         / "src"
-        / "sjtuclaw"
+        / "arkclaw"
         / "presentation"
         / "qt"
         / "runtime_thread.py"

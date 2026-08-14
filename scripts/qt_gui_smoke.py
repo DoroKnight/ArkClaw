@@ -12,11 +12,11 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QApplication
 
-from sjtuclaw.bootstrap.qt_runtime import (
+from arkclaw.bootstrap.qt_runtime import (
     FakeQtRuntimeCompositionRoot,
 )
-from sjtuclaw.presentation.qt.main_window import MainWindow
-from sjtuclaw.presentation.qt.runtime_bridge import (
+from arkclaw.presentation.qt.main_window import MainWindow
+from arkclaw.presentation.qt.runtime_bridge import (
     QtRuntimeBridge,
 )
 
@@ -25,7 +25,7 @@ def main() -> int:
     app = QApplication([])
     shutdown_results: list[tuple[bool, str]] = []
     timed_out = False
-    with tempfile.TemporaryDirectory(prefix="sjtuclaw-gui-smoke-") as directory:
+    with tempfile.TemporaryDirectory(prefix="arkclaw-gui-smoke-") as directory:
         bridge = QtRuntimeBridge(
             FakeQtRuntimeCompositionRoot(
                 Path(directory) / "profiles.json"

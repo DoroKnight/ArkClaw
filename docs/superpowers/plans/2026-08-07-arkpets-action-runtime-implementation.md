@@ -25,7 +25,7 @@
 ### Task 1: Immutable Logical Catalog, Sequences, and Registry
 
 **Files:**
-- Create: `src/sjtuclaw/application/pet_action_sequence.py`
+- Create: `src/arkclaw/application/pet_action_sequence.py`
 - Create: `tests/unit/test_pet_action_sequence_catalog.py`
 
 **Interfaces:**
@@ -163,9 +163,9 @@ Run:
 
 ```powershell
 python -m pytest -q tests/unit/test_pet_action_sequence_catalog.py
-python -m ruff check src/sjtuclaw/application/pet_action_sequence.py tests/unit/test_pet_action_sequence_catalog.py
-python -m mypy src/sjtuclaw/application/pet_action_sequence.py tests/unit/test_pet_action_sequence_catalog.py
-git add src/sjtuclaw/application/pet_action_sequence.py tests/unit/test_pet_action_sequence_catalog.py
+python -m ruff check src/arkclaw/application/pet_action_sequence.py tests/unit/test_pet_action_sequence_catalog.py
+python -m mypy src/arkclaw/application/pet_action_sequence.py tests/unit/test_pet_action_sequence_catalog.py
+git add src/arkclaw/application/pet_action_sequence.py tests/unit/test_pet_action_sequence_catalog.py
 git commit -m "feat: add immutable pet action catalog"
 ```
 
@@ -176,7 +176,7 @@ Expected: all Task 1 tests pass and the two new files are the only staged paths.
 ### Task 2: Semantic Activity, Compatibility, and State-Owned Epochs
 
 **Files:**
-- Modify: `src/sjtuclaw/application/pet_state.py`
+- Modify: `src/arkclaw/application/pet_state.py`
 - Modify: `tests/unit/test_pet_motion.py`
 - Create: `tests/unit/test_pet_state_animation_compatibility.py`
 
@@ -246,9 +246,9 @@ Update `start_thinking()`, `finish_thinking()`, `start_reminding()`, and `finish
 
 ```powershell
 python -m pytest -q tests/unit/test_pet_motion.py tests/unit/test_pet_animation.py tests/unit/test_pet_state_animation_compatibility.py
-python -m ruff check src/sjtuclaw/application/pet_state.py tests/unit/test_pet_motion.py tests/unit/test_pet_state_animation_compatibility.py
-python -m mypy src/sjtuclaw/application/pet_state.py tests/unit/test_pet_motion.py tests/unit/test_pet_state_animation_compatibility.py
-git add src/sjtuclaw/application/pet_state.py tests/unit/test_pet_motion.py tests/unit/test_pet_state_animation_compatibility.py
+python -m ruff check src/arkclaw/application/pet_state.py tests/unit/test_pet_motion.py tests/unit/test_pet_state_animation_compatibility.py
+python -m mypy src/arkclaw/application/pet_state.py tests/unit/test_pet_motion.py tests/unit/test_pet_state_animation_compatibility.py
+git add src/arkclaw/application/pet_state.py tests/unit/test_pet_motion.py tests/unit/test_pet_state_animation_compatibility.py
 git commit -m "feat: add semantic animation state authority"
 ```
 
@@ -257,7 +257,7 @@ git commit -m "feat: add semantic animation state authority"
 ### Task 3: Deterministic Action Arbitration
 
 **Files:**
-- Create: `src/sjtuclaw/application/pet_track0.py`
+- Create: `src/arkclaw/application/pet_track0.py`
 - Create: `tests/unit/test_pet_action_arbiter.py`
 
 **Interfaces:**
@@ -314,9 +314,9 @@ Represent each expected cell as a literal `ArbiterCase` fixture containing incom
 
 ```powershell
 python -m pytest -q tests/unit/test_pet_action_arbiter.py
-python -m ruff check src/sjtuclaw/application/pet_track0.py tests/unit/test_pet_action_arbiter.py
-python -m mypy src/sjtuclaw/application/pet_track0.py tests/unit/test_pet_action_arbiter.py
-git add src/sjtuclaw/application/pet_track0.py tests/unit/test_pet_action_arbiter.py
+python -m ruff check src/arkclaw/application/pet_track0.py tests/unit/test_pet_action_arbiter.py
+python -m mypy src/arkclaw/application/pet_track0.py tests/unit/test_pet_action_arbiter.py
+git add src/arkclaw/application/pet_track0.py tests/unit/test_pet_action_arbiter.py
 git commit -m "feat: add deterministic pet action arbiter"
 ```
 
@@ -325,7 +325,7 @@ git commit -m "feat: add deterministic pet action arbiter"
 ### Task 4: Sequence Runner and Stale Callback Rejection
 
 **Files:**
-- Modify: `src/sjtuclaw/application/pet_track0.py`
+- Modify: `src/arkclaw/application/pet_track0.py`
 - Create: `tests/unit/test_pet_sequence_runner.py`
 
 **Interfaces:**
@@ -369,9 +369,9 @@ Add tests proving that the first matching boundary after `request_graceful_exit(
 
 ```powershell
 python -m pytest -q tests/unit/test_pet_sequence_runner.py
-python -m ruff check src/sjtuclaw/application/pet_track0.py tests/unit/test_pet_sequence_runner.py
-python -m mypy src/sjtuclaw/application/pet_track0.py tests/unit/test_pet_sequence_runner.py
-git add src/sjtuclaw/application/pet_track0.py tests/unit/test_pet_sequence_runner.py
+python -m ruff check src/arkclaw/application/pet_track0.py tests/unit/test_pet_sequence_runner.py
+python -m mypy src/arkclaw/application/pet_track0.py tests/unit/test_pet_sequence_runner.py
+git add src/arkclaw/application/pet_track0.py tests/unit/test_pet_sequence_runner.py
 git commit -m "feat: add completion driven sequence runner"
 ```
 
@@ -380,7 +380,7 @@ git commit -m "feat: add completion driven sequence runner"
 ### Task 5: Player Protocol, Track 0 Controller, Generation, and Health
 
 **Files:**
-- Modify: `src/sjtuclaw/application/pet_track0.py`
+- Modify: `src/arkclaw/application/pet_track0.py`
 - Create: `tests/fakes/pet_animation_player.py`
 - Create: `tests/unit/test_pet_track0_controller.py`
 
@@ -447,9 +447,9 @@ Also test failed normal clear, stale callbacks after replacement, and player exc
 
 ```powershell
 python -m pytest -q tests/unit/test_pet_track0_controller.py tests/unit/test_pet_sequence_runner.py
-python -m ruff check src/sjtuclaw/application/pet_track0.py tests/fakes/pet_animation_player.py tests/unit/test_pet_track0_controller.py
-python -m mypy src/sjtuclaw/application/pet_track0.py tests/fakes/pet_animation_player.py tests/unit/test_pet_track0_controller.py
-git add src/sjtuclaw/application/pet_track0.py tests/fakes/pet_animation_player.py tests/unit/test_pet_track0_controller.py
+python -m ruff check src/arkclaw/application/pet_track0.py tests/fakes/pet_animation_player.py tests/unit/test_pet_track0_controller.py
+python -m mypy src/arkclaw/application/pet_track0.py tests/fakes/pet_animation_player.py tests/unit/test_pet_track0_controller.py
+git add src/arkclaw/application/pet_track0.py tests/fakes/pet_animation_player.py tests/unit/test_pet_track0_controller.py
 git commit -m "feat: add track zero playback controller"
 ```
 
@@ -458,7 +458,7 @@ git commit -m "feat: add track zero playback controller"
 ### Task 6: Capability Gate and Exact Watchdog
 
 **Files:**
-- Modify: `src/sjtuclaw/application/pet_track0.py`
+- Modify: `src/arkclaw/application/pet_track0.py`
 - Create: `tests/unit/test_pet_track0_watchdog.py`
 
 **Interfaces:**
@@ -505,9 +505,9 @@ Use `FakeClock` to advance beyond the literal deadline. Assert `CALLBACK_TIMEOUT
 
 ```powershell
 python -m pytest -q tests/unit/test_pet_track0_watchdog.py tests/unit/test_pet_track0_controller.py
-python -m ruff check src/sjtuclaw/application/pet_track0.py tests/unit/test_pet_track0_watchdog.py
-python -m mypy src/sjtuclaw/application/pet_track0.py tests/unit/test_pet_track0_watchdog.py
-git add src/sjtuclaw/application/pet_track0.py tests/unit/test_pet_track0_watchdog.py
+python -m ruff check src/arkclaw/application/pet_track0.py tests/unit/test_pet_track0_watchdog.py
+python -m mypy src/arkclaw/application/pet_track0.py tests/unit/test_pet_track0_watchdog.py
+git add src/arkclaw/application/pet_track0.py tests/unit/test_pet_track0_watchdog.py
 git commit -m "feat: add track zero capability watchdog"
 ```
 
@@ -516,7 +516,7 @@ git commit -m "feat: add track zero capability watchdog"
 ### Task 7: Atomic Animation Engine Transactions and Mandatory Containment
 
 **Files:**
-- Modify: `src/sjtuclaw/application/pet_animation.py`
+- Modify: `src/arkclaw/application/pet_animation.py`
 - Modify: `tests/unit/test_pet_animation.py`
 - Create: `tests/unit/test_pet_animation_transactions.py`
 
@@ -581,9 +581,9 @@ Cover old-completion/new-request orderings, queued completion during drag, dupli
 
 ```powershell
 python -m pytest -q tests/unit/test_pet_animation.py tests/unit/test_pet_animation_transactions.py tests/unit/test_pet_motion.py
-python -m ruff check src/sjtuclaw/application/pet_animation.py tests/unit/test_pet_animation.py tests/unit/test_pet_animation_transactions.py
-python -m mypy src/sjtuclaw/application/pet_animation.py tests/unit/test_pet_animation.py tests/unit/test_pet_animation_transactions.py
-git add src/sjtuclaw/application/pet_animation.py tests/unit/test_pet_animation.py tests/unit/test_pet_animation_transactions.py
+python -m ruff check src/arkclaw/application/pet_animation.py tests/unit/test_pet_animation.py tests/unit/test_pet_animation_transactions.py
+python -m mypy src/arkclaw/application/pet_animation.py tests/unit/test_pet_animation.py tests/unit/test_pet_animation_transactions.py
+git add src/arkclaw/application/pet_animation.py tests/unit/test_pet_animation.py tests/unit/test_pet_animation_transactions.py
 git commit -m "feat: coordinate atomic pet animation transactions"
 ```
 
@@ -592,7 +592,7 @@ git commit -m "feat: coordinate atomic pet animation transactions"
 ### Task 8: Placeholder Adapter, Qt Boundary, and Agent Isolation
 
 **Files:**
-- Modify: `src/sjtuclaw/presentation/qt/pet_window.py`
+- Modify: `src/arkclaw/presentation/qt/pet_window.py`
 - Modify: `tests/qt/test_pet_window.py`
 - Modify: `tests/unit/test_pet_renderer_model.py`
 - Create: `tests/unit/test_pet_action_isolation.py`
@@ -643,7 +643,7 @@ python -m mypy src tests
 - [ ] **Step 5: Commit Task 8**
 
 ```powershell
-git add src/sjtuclaw/presentation/qt/pet_window.py tests/qt/test_pet_window.py tests/unit/test_pet_renderer_model.py tests/unit/test_pet_action_isolation.py
+git add src/arkclaw/presentation/qt/pet_window.py tests/qt/test_pet_window.py tests/unit/test_pet_renderer_model.py tests/unit/test_pet_action_isolation.py
 git commit -m "feat: integrate capability gated pet actions"
 ```
 
@@ -652,9 +652,9 @@ git commit -m "feat: integrate capability gated pet actions"
 ### Task 9: Provenance, Completion Audit, and Handoff
 
 **Files:**
-- Modify: `src/sjtuclaw/application/pet_action_sequence.py`
-- Modify: `src/sjtuclaw/application/pet_track0.py`
-- Create: `docs/arkpets_action_runtime.md`
+- Modify: `src/arkclaw/application/pet_action_sequence.py`
+- Modify: `src/arkclaw/application/pet_track0.py`
+- Create: `docs/architecture/arkpets_action_runtime.md`
 
 **Interfaces:**
 - Produces: SPDX/provenance notices and an operator-facing boundary document.
@@ -683,8 +683,8 @@ Review each frozen invariant and name the test that protects it. Confirm no Agen
 - [ ] **Step 4: Commit documentation**
 
 ```powershell
-git add src/sjtuclaw/application/pet_action_sequence.py src/sjtuclaw/application/pet_track0.py docs/arkpets_action_runtime.md
+git add src/arkclaw/application/pet_action_sequence.py src/arkclaw/application/pet_track0.py docs/architecture/arkpets_action_runtime.md
 git commit -m "docs: record ArkPets action runtime provenance"
 ```
 
-The GPL migration is not performed by this plan. Execute `docs/superpowers/plans/2026-08-07-sjtuclaw-gpl-migration-audit.md` separately; root license and package metadata may change only after that plan records an overall `PASS`.
+The GPL migration is not performed by this plan. Execute `docs/superpowers/plans/2026-08-07-arkclaw-gpl-migration-audit.md` separately; root license and package metadata may change only after that plan records an overall `PASS`.

@@ -115,7 +115,7 @@ class _UrlLibTransport:
     def open(self, url: str) -> ResponseLike:
         request = urllib.request.Request(
             url,
-            headers={"User-Agent": "SJTUClaw-Dependency-Audit/1.0"},
+            headers={"User-Agent": "ArkClaw-Dependency-Audit/1.0"},
             method="GET",
         )
         try:

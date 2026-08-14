@@ -5,9 +5,9 @@ Date: 2026-08-06
 ## Objective
 
 Produce one final desktop-operation prompt that directs Codex to finish the
-SJTUClaw character's Spine animation assets in a serial, auditable workflow.
+ArkClaw character's Spine animation assets in a serial, auditable workflow.
 This scope ends after Spine Editor asset validation. It does not export runtime
-data, modify SJTUClaw code, or integrate a Spine Runtime.
+data, modify ArkClaw code, or integrate a Spine Runtime.
 
 The deliverable contains the 24 originally required animation names plus the
 independent `breathing` overlay, for 25 animation assets total:
@@ -41,7 +41,7 @@ written only under the current timestamped evidence directory.
 
 The original `.skel`, `.atlas`, and `.png` files are read-only evidence. No
 character asset, screenshot, Spine project, export, or generated texture may
-be written to `D:\SJTUClaw`.
+be written to `D:\ArkClaw`.
 
 ## External reference boundary
 
@@ -230,7 +230,7 @@ The prompt must require one final report containing:
 - save/reopen, three-loop, foot, root, Mesh/Deform, clipping, attachment, and
   Draw Order results;
 - confirmed facts, unconfirmed facts, deviations, and stop events;
-- explicit confirmation that original Runtime Data, Atlas/PNG, SJTUClaw, and
+- explicit confirmation that original Runtime Data, Atlas/PNG, ArkClaw, and
   third-party assets were not modified or copied;
 - explicit statement that Runtime export and program playback remain outside
   this scope.

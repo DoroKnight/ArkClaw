@@ -12,21 +12,21 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtCore import QObject, QThread
 from PySide6.QtWidgets import QApplication
 
-from sjtuclaw.application.pet_action_sequence import PlaybackHealth
-from sjtuclaw.application.pet_role_pack import (
+from arkclaw.application.pet_action_sequence import PlaybackHealth
+from arkclaw.application.pet_role_pack import (
     MoveDirectionPolicy,
     RoleAnimationNames,
     RolePackFraming,
     RolePackHashes,
     ValidatedRolePackIdentity,
 )
-from sjtuclaw.application.pet_role_pack_switch import (
+from arkclaw.application.pet_role_pack_switch import (
     ActiveRolePack,
     RolePackCandidate,
     RolePackSwitchCoordinator,
     RolePackSwitchOutcome,
 )
-from sjtuclaw.application.pet_track0 import ActionOutcome
+from arkclaw.application.pet_track0 import ActionOutcome
 
 
 @pytest.fixture(scope="module")
@@ -80,7 +80,7 @@ def _identity(pack_id: str, digest: str) -> ValidatedRolePackIdentity:
         RolePackHashes(*(digest * 64 for _ in range(3))),
         RoleAnimationNames("Relax", "Move", "Sit", "Sleep", "Special", "Interact"),
         MoveDirectionPolicy.MIRROR_MOVE,
-        RolePackFraming(1.0, 0.0, 176.0),
+        RolePackFraming(1.0, 0.0, 180.0),
     )
 
 

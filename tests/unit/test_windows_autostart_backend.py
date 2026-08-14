@@ -8,9 +8,9 @@ from typing import Self
 
 import pytest
 
-from sjtuclaw.application.autostart_service import AUTOSTART_VALUE_NAME
-from sjtuclaw.infrastructure.autostart import windows_run_key
-from sjtuclaw.infrastructure.autostart.windows_run_key import (
+from arkclaw.application.autostart_service import AUTOSTART_VALUE_NAME
+from arkclaw.infrastructure.autostart import windows_run_key
+from arkclaw.infrastructure.autostart.windows_run_key import (
     AutostartBackendError,
     WindowsRunKeyAutostartBackend,
 )
@@ -73,7 +73,7 @@ def test_backend_reads_only_fixed_run_value(
     def query_value(key: object, name: str) -> tuple[str, int]:
         del key
         queried.append(name)
-        return ('"C:\\Fixed\\SJTUClaw.exe" --startup', 1)
+        return ('"C:\\Fixed\\ArkClaw.exe" --startup', 1)
 
     monkeypatch.setattr(windows_run_key.winreg, "OpenKey", open_key)
     monkeypatch.setattr(
@@ -86,7 +86,7 @@ def test_backend_reads_only_fixed_run_value(
 
     assert value is not None
     assert value.value_type == 1
-    assert value.command == '"C:\\Fixed\\SJTUClaw.exe" --startup'
+    assert value.command == '"C:\\Fixed\\ArkClaw.exe" --startup'
     assert queried == [AUTOSTART_VALUE_NAME]
     assert opened == [
         (
@@ -102,7 +102,7 @@ def test_write_and_delete_use_only_fixed_value_name(
 ) -> None:
     writes: list[tuple[str, int, str]] = []
     deletes: list[str] = []
-    command = '"C:\\Fixed\\SJTUClaw.exe" --startup'
+    command = '"C:\\Fixed\\ArkClaw.exe" --startup'
 
     monkeypatch.setattr(
         windows_run_key.winreg,
@@ -215,7 +215,7 @@ def test_backend_mutation_errors_have_no_sensitive_exception_chain(
 
     try:
         if operation == "write":
-            backend.write_value('"C:\\Fixed\\SJTUClaw.exe" --startup')
+            backend.write_value('"C:\\Fixed\\ArkClaw.exe" --startup')
         else:
             backend.delete_value()
     except AutostartBackendError as error:

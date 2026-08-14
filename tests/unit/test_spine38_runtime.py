@@ -11,19 +11,22 @@ from typing import Any, cast
 
 import pytest
 
-from sjtuclaw.application.pet_geometry import Size
-from sjtuclaw.application.pet_mesh_model import (
+from arkclaw.application.pet_geometry import Size
+from arkclaw.application.pet_mesh_model import (
     PetMeshBlendMode,
     PetMeshTextureData,
 )
-from sjtuclaw.infrastructure.spine38_native import (
+from arkclaw.infrastructure.spine38_native import (
     Spine38AnimationInfo,
     Spine38BlendMode,
     Spine38DrawCommand,
     Spine38Vertex,
 )
-from sjtuclaw.infrastructure.spine38_native import (
+from arkclaw.infrastructure.spine38_native import (
     Spine38Bounds as NativeSpine38Bounds,
+)
+from arkclaw.infrastructure.spine38_native import (
+    Spine38RootTransform as NativeSpine38RootTransform,
 )
 
 
@@ -43,6 +46,9 @@ class _FakeSpine38Port:
 
     def set_animation(self, track: int, name: str, loop: bool) -> None:
         del track, name, loop
+
+    def root_transform(self) -> NativeSpine38RootTransform:
+        return NativeSpine38RootTransform(3.0, -4.0)
 
     def update(self, delta_seconds: float) -> None:
         del delta_seconds
@@ -89,7 +95,7 @@ def _write_valid_build_manifest(directory: Path) -> None:
 
 
 def test_exact_relax_candidate_is_required() -> None:
-    runtime = importlib.import_module("sjtuclaw.application.spine38_runtime")
+    runtime = importlib.import_module("arkclaw.application.spine38_runtime")
     catalog = runtime.Spine38Catalog(
         (runtime.Spine38AnimationInfo("Relax", 3.2),)
     )
@@ -99,8 +105,17 @@ def test_exact_relax_candidate_is_required() -> None:
         catalog.require_animation("relax")
 
 
+def test_runtime_exposes_root_transform_without_visible_bounds_inference() -> None:
+    runtime = importlib.import_module("arkclaw.application.spine38_runtime")
+    port = _FakeSpine38Port(draw_commands=())
+
+    transform = runtime.Spine38Runtime(port).root_transform()
+
+    assert transform == runtime.Spine38RootTransform(3.0, -4.0)
+
+
 def test_catalog_never_selects_by_similarity() -> None:
-    runtime = importlib.import_module("sjtuclaw.application.spine38_runtime")
+    runtime = importlib.import_module("arkclaw.application.spine38_runtime")
     catalog = runtime.Spine38Catalog(
         (runtime.Spine38AnimationInfo("Relax_A", 3.2),)
     )
@@ -110,7 +125,7 @@ def test_catalog_never_selects_by_similarity() -> None:
 
 
 def test_catalog_rejects_duplicate_exact_names_instead_of_guessing() -> None:
-    runtime = importlib.import_module("sjtuclaw.application.spine38_runtime")
+    runtime = importlib.import_module("arkclaw.application.spine38_runtime")
     catalog = runtime.Spine38Catalog(
         (
             runtime.Spine38AnimationInfo("Relax", 3.2),
@@ -123,7 +138,7 @@ def test_catalog_rejects_duplicate_exact_names_instead_of_guessing() -> None:
 
 
 def test_transform_is_fixed_from_setup_bounds() -> None:
-    runtime = importlib.import_module("sjtuclaw.application.spine38_runtime")
+    runtime = importlib.import_module("arkclaw.application.spine38_runtime")
 
     transform = runtime.Spine38ViewportTransform.fit(
         runtime.Spine38Bounds(-20.0, 0.0, 40.0, 100.0),
@@ -139,7 +154,7 @@ def test_transform_is_fixed_from_setup_bounds() -> None:
 
 
 def test_visible_bounds_excludes_fully_transparent_commands() -> None:
-    runtime = importlib.import_module("sjtuclaw.application.spine38_runtime")
+    runtime = importlib.import_module("arkclaw.application.spine38_runtime")
     port = _FakeSpine38Port(
         draw_commands=(
             _command(
@@ -165,7 +180,7 @@ def test_visible_bounds_excludes_fully_transparent_commands() -> None:
 
 
 def test_visible_bounds_keeps_entire_partially_visible_command() -> None:
-    runtime = importlib.import_module("sjtuclaw.application.spine38_runtime")
+    runtime = importlib.import_module("arkclaw.application.spine38_runtime")
     port = _FakeSpine38Port(
         draw_commands=(
             _command(
@@ -244,7 +259,7 @@ def test_visible_bounds_keeps_entire_partially_visible_command() -> None:
 def test_visible_bounds_rejects_invalid_geometry(
     draw_commands: tuple[Spine38DrawCommand, ...],
 ) -> None:
-    runtime = importlib.import_module("sjtuclaw.application.spine38_runtime")
+    runtime = importlib.import_module("arkclaw.application.spine38_runtime")
 
     with pytest.raises(
         runtime.Spine38FrameError,
@@ -256,8 +271,8 @@ def test_visible_bounds_rejects_invalid_geometry(
 
 
 def test_runtime_converts_native_draw_commands_without_reordering() -> None:
-    runtime = importlib.import_module("sjtuclaw.application.spine38_runtime")
-    native = importlib.import_module("sjtuclaw.infrastructure.spine38_native")
+    runtime = importlib.import_module("arkclaw.application.spine38_runtime")
+    native = importlib.import_module("arkclaw.infrastructure.spine38_native")
 
     class FakePort:
         def catalog(self) -> tuple[Any, ...]:
@@ -331,8 +346,8 @@ def test_runtime_converts_native_draw_commands_without_reordering() -> None:
 
 
 def test_runtime_snapshots_catalog_and_closes_owned_port_once() -> None:
-    runtime = importlib.import_module("sjtuclaw.application.spine38_runtime")
-    native = importlib.import_module("sjtuclaw.infrastructure.spine38_native")
+    runtime = importlib.import_module("arkclaw.application.spine38_runtime")
+    native = importlib.import_module("arkclaw.infrastructure.spine38_native")
 
     class FakePort:
         def __init__(self) -> None:
@@ -366,7 +381,7 @@ def test_runtime_snapshots_catalog_and_closes_owned_port_once() -> None:
 
 
 def test_runtime_closes_owned_port_when_catalog_snapshot_fails() -> None:
-    runtime = importlib.import_module("sjtuclaw.application.spine38_runtime")
+    runtime = importlib.import_module("arkclaw.application.spine38_runtime")
 
     class FailingPort:
         def __init__(self) -> None:
@@ -398,7 +413,7 @@ def test_list_only_loads_assets_before_dll_and_closes_in_reverse_order(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     script = importlib.import_module("scripts.qt_spine38_vertical_slice")
-    runtime = importlib.import_module("sjtuclaw.application.spine38_runtime")
+    runtime = importlib.import_module("arkclaw.application.spine38_runtime")
     bridge_dll = tmp_path / "bridge.dll"
     bridge_dll.write_bytes(b"fixture")
     _write_valid_build_manifest(tmp_path)
@@ -801,10 +816,10 @@ def test_visible_mode_reports_safe_delegate_close_failure_after_success(
     script = importlib.import_module("scripts.qt_spine38_vertical_slice")
     qt_widgets = importlib.import_module("PySide6.QtWidgets")
     pet_window = importlib.import_module(
-        "sjtuclaw.presentation.qt.pet_window"
+        "arkclaw.presentation.qt.pet_window"
     )
     spine_renderer = importlib.import_module(
-        "sjtuclaw.presentation.qt.spine38_renderer"
+        "arkclaw.presentation.qt.spine38_renderer"
     )
     bridge_dll = tmp_path / "private-bridge.dll"
     bridge_dll.write_bytes(b"fixture")

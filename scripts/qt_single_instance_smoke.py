@@ -17,25 +17,25 @@ from PySide6.QtCore import QObject, QProcess, QTimer, qInstallMessageHandler
 from PySide6.QtNetwork import QLocalSocket
 from PySide6.QtWidgets import QApplication
 
-from scripts.qt_pet_smoke import (
-    _EXPECTED_QT_PLATFORM_WARNING_COUNTS,
-    _QtMessageAudit,
-)
-from sjtuclaw.bootstrap.qt_runtime import FakeQtRuntimeCompositionRoot
-from sjtuclaw.presentation.qt.main_window import MainWindow
-from sjtuclaw.presentation.qt.pet_application import (
+from arkclaw.bootstrap.qt_runtime import FakeQtRuntimeCompositionRoot
+from arkclaw.presentation.qt.main_window import MainWindow
+from arkclaw.presentation.qt.pet_application import (
     PetApplicationCoordinator,
 )
-from sjtuclaw.presentation.qt.pet_window import PetWindow
-from sjtuclaw.presentation.qt.runtime_bridge import QtRuntimeBridge
-from sjtuclaw.presentation.qt.single_instance import (
+from arkclaw.presentation.qt.pet_window import PetWindow
+from arkclaw.presentation.qt.runtime_bridge import QtRuntimeBridge
+from arkclaw.presentation.qt.single_instance import (
     SingleInstanceManager,
     SingleInstanceRole,
 )
-from sjtuclaw.presentation.qt.system_tray import (
+from arkclaw.presentation.qt.system_tray import (
     PetTrayState,
     SystemTrayController,
     TrayCallbacks,
+)
+from scripts.qt_pet_smoke import (
+    _EXPECTED_QT_PLATFORM_WARNING_COUNTS,
+    _QtMessageAudit,
 )
 
 _EXPECTED_SINGLE_INSTANCE_WARNING_COUNTS = (
@@ -87,7 +87,7 @@ class _FakeTrayFactory:
 
 def _run_secondary_probe(lock_path: Path, server_name: str) -> int:
     app = QApplication([])
-    app.setApplicationName("SJTUClawSingleInstanceSmokeSecondary")
+    app.setApplicationName("ArkClawSingleInstanceSmokeSecondary")
     manager = SingleInstanceManager(lock_path, server_name)
     result = manager.start()
     print(
@@ -109,7 +109,7 @@ def _run_raw_probe(server_name: str, case_name: str) -> int:
     if payload is None:
         return 2
     app = QApplication([])
-    app.setApplicationName("SJTUClawSingleInstanceRawProbe")
+    app.setApplicationName("ArkClawSingleInstanceRawProbe")
     socket = QLocalSocket()
     socket.connectToServer(server_name)
     if not socket.waitForConnected(1_500):
@@ -193,7 +193,7 @@ def _run_contender(
 
 def _run_owner_smoke(message_audit: _QtMessageAudit) -> int:
     app = QApplication([])
-    app.setApplicationName("SJTUClawSingleInstanceSmokeOwner")
+    app.setApplicationName("ArkClawSingleInstanceSmokeOwner")
     app.setQuitOnLastWindowClosed(False)
     timed_out = False
     activation_count = 0
@@ -203,12 +203,12 @@ def _run_owner_smoke(message_audit: _QtMessageAudit) -> int:
     failed_checks: list[str] = []
 
     with tempfile.TemporaryDirectory(
-        prefix="sjtuclaw-single-instance-smoke-"
+        prefix="arkclaw-single-instance-smoke-"
     ) as directory:
         root = Path(directory)
         lock_path = root / "pet.lock"
         server_name = (
-            "SJTUClaw.Test.SingleInstance."
+            "ArkClaw.Test.SingleInstance."
             f"{uuid.uuid4().hex}"
         )
         owner = SingleInstanceManager(lock_path, server_name)

@@ -1,23 +1,29 @@
 from __future__ import annotations
 
-from sjtuclaw.application.pet_action_sequence import PetActionName
-from sjtuclaw.application.pet_track0 import PlaybackRequest
-from sjtuclaw.application.spine38_runtime import (
+from arkclaw.application.pet_action_sequence import PetActionName
+from arkclaw.application.pet_track0 import PlaybackRequest
+from arkclaw.application.spine38_runtime import (
     Spine38PlaybackEvent,
     Spine38PlaybackEventType,
 )
-from sjtuclaw.presentation.qt.spine38_player import Spine38AnimationPlayer
+from arkclaw.presentation.qt.spine38_player import Spine38AnimationPlayer
 
 
 class _Runtime:
     def __init__(self) -> None:
-        self.set_calls: list[tuple[int, str, bool]] = []
+        self.set_calls: list[tuple[int, str, bool, float]] = []
         self.clear_calls: list[int] = []
         self.update_calls: list[float] = []
         self.events: tuple[Spine38PlaybackEvent, ...] = ()
 
-    def set_animation(self, track: int, name: str, loop: bool) -> None:
-        self.set_calls.append((track, name, loop))
+    def mix_animation(
+        self,
+        track: int,
+        name: str,
+        loop: bool,
+        mix_seconds: float,
+    ) -> None:
+        self.set_calls.append((track, name, loop, mix_seconds))
 
     def clear_track(self, track: int) -> None:
         self.clear_calls.append(track)
@@ -27,7 +33,12 @@ class _Runtime:
         return self.events
 
 
-def _request(generation: int, *, loop: bool = True) -> PlaybackRequest:
+def _request(
+    generation: int,
+    *,
+    loop: bool = True,
+    mix_seconds: float = 0.12,
+) -> PlaybackRequest:
     return PlaybackRequest(
         generation=generation,
         track=0,
@@ -35,7 +46,7 @@ def _request(generation: int, *, loop: bool = True) -> PlaybackRequest:
         physical_name="Relax",
         loop=loop,
         speed=1.0,
-        mix_seconds=0.0,
+        mix_seconds=mix_seconds,
     )
 
 
@@ -53,7 +64,7 @@ def test_player_maps_one_request_and_stamps_loop_identity() -> None:
 
     events = player.update(0.25)
 
-    assert runtime.set_calls == [(0, "Relax", True)]
+    assert runtime.set_calls == [(0, "Relax", True, 0.12)]
     assert runtime.update_calls == [0.25]
     assert len(events) == 1
     assert events[0].generation == 7
@@ -93,3 +104,54 @@ def test_new_playback_and_clear_invalidate_old_event_identity() -> None:
     assert not completion[0].loop_boundary
     assert player.update(0.1) == ()
     assert runtime.clear_calls == [0]
+
+
+def test_layout_exclusive_actions_use_zero_mix_by_semantic_policy() -> None:
+    runtime = _Runtime()
+    player = Spine38AnimationPlayer(runtime)
+    special = PlaybackRequest(
+        generation=1,
+        track=0,
+        logical_action=PetActionName.WAVE,
+        physical_name="Special",
+        loop=False,
+        speed=1.0,
+        mix_seconds=0.12,
+    )
+    sit = PlaybackRequest(
+        generation=2,
+        track=0,
+        logical_action=PetActionName.SIT_IDLE,
+        physical_name="Sit",
+        loop=True,
+        speed=1.0,
+        mix_seconds=0.12,
+    )
+
+    player.play(special)
+    player.play(sit)
+
+    assert runtime.set_calls == [
+        (0, "Special", False, 0.0),
+        (0, "Sit", True, 0.0),
+    ]
+
+
+def test_bounds_change_alone_never_forces_mix_duration_to_zero() -> None:
+    runtime = _Runtime()
+    player = Spine38AnimationPlayer(runtime)
+
+    player.play(_request(1))
+    player.play(
+        PlaybackRequest(
+            generation=2,
+            track=0,
+            logical_action=PetActionName.SIT_IDLE,
+            physical_name="Sit",
+            loop=True,
+            speed=1.0,
+            mix_seconds=0.12,
+        )
+    )
+
+    assert runtime.set_calls[-1] == (0, "Sit", True, 0.12)

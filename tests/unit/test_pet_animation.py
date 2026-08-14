@@ -4,13 +4,13 @@ import random
 
 import pytest
 
-from sjtuclaw.application.pet_animation import (
+from arkclaw.application.pet_animation import (
     PetAnimationConfig,
     PetAnimationEngine,
 )
-from sjtuclaw.application.pet_geometry import Point, Rect, Size
-from sjtuclaw.application.pet_motion import PetMotionModel
-from sjtuclaw.application.pet_state import (
+from arkclaw.application.pet_geometry import Point, Rect, Size
+from arkclaw.application.pet_motion import PetMotionModel
+from arkclaw.application.pet_state import (
     PetBehaviorState,
     PetFacing,
     PetLayeredState,

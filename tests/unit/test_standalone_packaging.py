@@ -146,7 +146,7 @@ def _prepare_dry_run_root(root: Path) -> None:
     (root / "packaging/pysidedeploy.spec").write_text(
         (
             "[app]\n"
-            "title=SJTUClaw\n"
+            "title=ArkClaw\n"
             "project_dir=..\n"
             "input_file=packaging/pet_entry.py\n"
             "exec_directory=dist\n"
@@ -164,8 +164,8 @@ def _prepare_dry_run_root(root: Path) -> None:
         ),
         encoding="utf-8",
     )
-    (root / "dist/SJTUClaw.dist").mkdir(parents=True)
-    (root / "dist/SJTUClaw.dist/sentinel.bin").write_bytes(b"final")
+    (root / "dist/ArkClaw.dist").mkdir(parents=True)
+    (root / "dist/ArkClaw.dist/sentinel.bin").write_bytes(b"final")
     (root / "build/windows-standalone").mkdir(parents=True)
     (
         root / "build/windows-standalone/build_report.json"
@@ -287,7 +287,7 @@ def test_unpruned_archive_moves_and_revalidates_all_fixed_sources(
     ):
         (build / name).write_text(name, encoding="utf-8")
     for directory in (raw, final):
-        (directory / "SJTUClaw.exe").write_bytes(b"same-artifact")
+        (directory / "ArkClaw.exe").write_bytes(b"same-artifact")
 
     outcome = _ARCHIVE.archive_unpruned_standalone(tmp_path)
 
@@ -326,8 +326,8 @@ def test_unpruned_archive_rejects_raw_final_mismatch(
         "compilation-report.xml",
     ):
         (build / name).write_text(name, encoding="utf-8")
-    (raw / "SJTUClaw.exe").write_bytes(b"raw")
-    (final / "SJTUClaw.exe").write_bytes(b"final")
+    (raw / "ArkClaw.exe").write_bytes(b"raw")
+    (final / "ArkClaw.exe").write_bytes(b"final")
 
     outcome = _ARCHIVE.archive_unpruned_standalone(tmp_path)
 
@@ -345,12 +345,12 @@ def _prepare_degraded_archive_root(
     root: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    final = root / "dist/SJTUClaw.dist"
+    final = root / "dist/ArkClaw.dist"
     build = root / _ARCHIVE.SOURCE_BUILD_RELATIVE_PATH
     final.mkdir(parents=True)
     build.mkdir(parents=True)
     executable = b"fixed-final-executable"
-    (final / "SJTUClaw.exe").write_bytes(executable)
+    (final / "ArkClaw.exe").write_bytes(executable)
     final_manifest = _ARCHIVE._directory_manifest(final)
     (build / "artifact_audit.json").write_text(
         json.dumps(
@@ -445,7 +445,7 @@ def test_degraded_archive_rolls_back_second_move_failure(
 
     assert not outcome.completed
     assert outcome.safe_code == "standalone_degraded_archive_failed"
-    assert (tmp_path / "dist/SJTUClaw.dist").is_dir()
+    assert (tmp_path / "dist/ArkClaw.dist").is_dir()
     assert (
         tmp_path / _ARCHIVE.SOURCE_BUILD_RELATIVE_PATH
     ).is_dir()
@@ -600,7 +600,7 @@ def _write_build_artifacts(root: Path) -> None:
     raw.mkdir(parents=True)
     final.mkdir(parents=True)
     for directory in (raw, final):
-        (directory / "SJTUClaw.exe").write_bytes(_minimal_pe())
+        (directory / "ArkClaw.exe").write_bytes(_minimal_pe())
 
 
 def _successful_execution() -> Any:
@@ -704,7 +704,7 @@ def test_dry_run_workspace_isolates_entry_report_and_output(
         encoding="utf-8"
     )
     assert "packaging/deployment" not in rendered
-    assert "dist/SJTUClaw.dist" not in rendered
+    assert "dist/ArkClaw.dist" not in rendered
     assert "build/windows-standalone" not in rendered
 
 
@@ -747,7 +747,7 @@ def test_dry_run_protected_mutation_is_detected_before_cleanup(
 ) -> None:
     _prepare_dry_run_root(tmp_path)
     assert _BUILD.prepare_dry_run_workspace(tmp_path).completed
-    protected = tmp_path / "dist/SJTUClaw.dist/sentinel.bin"
+    protected = tmp_path / "dist/ArkClaw.dist/sentinel.bin"
     protected.write_bytes(b"changed")
 
     outcome = _BUILD.finalize_dry_run_workspace(tmp_path)
@@ -988,7 +988,7 @@ def test_each_strong_postcondition_is_fail_closed(
                 (
                     root
                     / _BUILD.FINAL_DIST_RELATIVE_PATH
-                    / "SJTUClaw.exe"
+                    / "ArkClaw.exe"
                 ).unlink()
             else:
                 (
@@ -1092,7 +1092,7 @@ def _prepare_audit_root(root: Path, *, report_extra: str = "") -> None:
     build.mkdir(parents=True)
     _write_compilation_report(root, extra=report_extra)
     files = (
-        "SJTUClaw.exe",
+        "ArkClaw.exe",
         "Qt6Core.dll",
         "Qt6Gui.dll",
         "Qt6Widgets.dll",
@@ -1123,7 +1123,7 @@ def _fake_pe(path: Path) -> Any:
 
 
 def _fake_dumpbin(path: Path) -> dict[str, object]:
-    assert path.name == "SJTUClaw.exe"
+    assert path.name == "ArkClaw.exe"
     return {
         "tool_directory_valid": True,
         "/HEADERS": {"exit_code": 0, "sha256": "0" * 64, "bytes": 1},
@@ -1595,14 +1595,14 @@ def test_static_audit_rejects_forbidden_artifact_content(
     if kind == "manual_target":
         for directory in (raw, final):
             (directory / "payload.bin").write_bytes(
-                b"SJTUClaw/Test/OpenAI/APIKey"
+                b"ArkClaw/Test/OpenAI/APIKey"
             )
     elif kind == "depends":
         for directory in (raw, final):
             (directory / "depends.exe").write_bytes(_minimal_pe())
     elif kind == "local_path":
         for directory in (raw, final):
-            (directory / "payload.bin").write_bytes(b"D:\\SJTUClaw\\.venv")
+            (directory / "payload.bin").write_bytes(b"D:\\ArkClaw\\.venv")
     elif kind == "missing_qwindows":
         for directory in (raw, final):
             (
@@ -1655,7 +1655,7 @@ def test_compilation_report_requires_all_autostart_modules(
 ) -> None:
     _prepare_audit_root(tmp_path)
     report = tmp_path / _AUDIT.REPORT_RELATIVE_PATH
-    missing = "sjtuclaw.infrastructure.autostart.windows_run_key"
+    missing = "arkclaw.infrastructure.autostart.windows_run_key"
     text = report.read_text(encoding="utf-8")
     text = text.replace(
         f'<module name="{missing}" source_path="repository"/>',

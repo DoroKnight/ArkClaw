@@ -35,15 +35,15 @@ else:
         DEEPSEEK_MANUAL_TEST_TARGET,
         ManualCredentialTargetResolver,
     )
-from sjtuclaw.config.errors import SecretStoreError
-from sjtuclaw.config.provider_profiles import (
+from arkclaw.config.errors import SecretStoreError
+from arkclaw.config.provider_profiles import (
     DEEPSEEK_OFFICIAL_BASE_URL,
     DEEPSEEK_OFFICIAL_ORIGIN,
     deepseek_profile,
 )
-from sjtuclaw.config.secrets import SecretStore, SecretValue
-from sjtuclaw.domain.events import LLMEvent, LLMEventType
-from sjtuclaw.domain.models import (
+from arkclaw.config.secrets import SecretStore, SecretValue
+from arkclaw.domain.events import LLMEvent, LLMEventType
+from arkclaw.domain.models import (
     DEEPSEEK_MANUAL_TEST_CREDENTIAL_ID,
     ApiProtocol,
     ChatMessage,
@@ -53,8 +53,8 @@ from sjtuclaw.domain.models import (
     MessageRole,
     ProviderContinuation,
 )
-from sjtuclaw.infrastructure.llm.deepseek_provider import DeepSeekProvider
-from sjtuclaw.infrastructure.llm.deepseek_sdk import (
+from arkclaw.infrastructure.llm.deepseek_provider import DeepSeekProvider
+from arkclaw.infrastructure.llm.deepseek_sdk import (
     DeepSeekClient,
     DeepSeekClientFactory,
     DeepSeekEvent,
@@ -64,11 +64,11 @@ from sjtuclaw.infrastructure.llm.deepseek_sdk import (
     OfficialDeepSeekClientFactory,
     ThinkingMode,
 )
-from sjtuclaw.infrastructure.llm.provider_factory import ProviderFactory
-from sjtuclaw.infrastructure.llm.provider_registry import (
+from arkclaw.infrastructure.llm.provider_factory import ProviderFactory
+from arkclaw.infrastructure.llm.provider_registry import (
     CredentialBindingRegistry,
 )
-from sjtuclaw.infrastructure.security.windows_credential_store import (
+from arkclaw.infrastructure.security.windows_credential_store import (
     WindowsCredentialSecretStore,
 )
 

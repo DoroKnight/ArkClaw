@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from sjtuclaw.application.pet_production_actions import (
+from arkclaw.application.pet_production_actions import (
     ActionIntent,
     ActionOrigin,
     ActionSource,
@@ -11,7 +11,7 @@ from sjtuclaw.application.pet_production_actions import (
     ProductionAction,
     semantic_target,
 )
-from sjtuclaw.application.pet_state import (
+from arkclaw.application.pet_state import (
     PetActivityState,
     PetFacing,
     PetMotionState,

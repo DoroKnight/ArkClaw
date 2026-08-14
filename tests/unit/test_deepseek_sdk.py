@@ -9,9 +9,9 @@ import pytest
 from openai import AsyncOpenAI
 from openai.types.chat import ChatCompletionChunk
 
-import sjtuclaw.infrastructure.llm.deepseek_sdk as deepseek_sdk
-from sjtuclaw.config.provider_profiles import DEEPSEEK_OFFICIAL_BASE_URL
-from sjtuclaw.infrastructure.llm.deepseek_sdk import (
+import arkclaw.infrastructure.llm.deepseek_sdk as deepseek_sdk
+from arkclaw.config.provider_profiles import DEEPSEEK_OFFICIAL_BASE_URL
+from arkclaw.infrastructure.llm.deepseek_sdk import (
     DeepSeekEventKind,
     DeepSeekRequest,
     OfficialDeepSeekClient,

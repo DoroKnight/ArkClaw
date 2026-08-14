@@ -5,15 +5,15 @@ from typing import ClassVar
 
 import pytest
 
-import sjtuclaw.__main__ as cli
-from sjtuclaw.config.models import RuntimeConfig
-from sjtuclaw.domain.events import AgentEvent
-from sjtuclaw.domain.models import (
+import arkclaw.__main__ as cli
+from arkclaw.config.models import RuntimeConfig
+from arkclaw.domain.events import AgentEvent
+from arkclaw.domain.models import (
     ChatMessage,
     ProviderContinuation,
     UserMessageCommand,
 )
-from sjtuclaw.infrastructure.llm.provider_factory import ProviderFactory
+from arkclaw.infrastructure.llm.provider_factory import ProviderFactory
 
 
 class _StubProvider:
@@ -186,7 +186,7 @@ def test_cli_handles_provider_close_failure_safely(
     provider = _FailingCloseProvider()
     _RecordingAgent.scripts = []
     _RecordingAgent.max_turn_seconds_values = []
-    caplog.set_level(logging.ERROR, logger="sjtuclaw.__main__")
+    caplog.set_level(logging.ERROR, logger="arkclaw.__main__")
 
     monkeypatch.setattr(ProviderFactory, "create", lambda _self, _config: provider)
     monkeypatch.setattr(cli, "AgentLoop", _RecordingAgent)
@@ -269,7 +269,7 @@ def test_cli_bounds_provider_close_time(
     provider = _SlowCloseProvider()
     _RecordingAgent.scripts = []
     _RecordingAgent.max_turn_seconds_values = []
-    caplog.set_level(logging.ERROR, logger="sjtuclaw.__main__")
+    caplog.set_level(logging.ERROR, logger="arkclaw.__main__")
 
     monkeypatch.setattr(ProviderFactory, "create", lambda _self, _config: provider)
     monkeypatch.setattr(cli, "AgentLoop", _RecordingAgent)

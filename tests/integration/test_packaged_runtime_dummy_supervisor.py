@@ -11,7 +11,7 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 _SUPERVISOR = (
     _PROJECT_ROOT / "packaging/packaged_runtime_network_supervisor.ps1"
 )
-_ATTEMPT_NAME = os.environ.get("SJTUCLAW_DUMMY_ATTEMPT", "attempt-01")
+_ATTEMPT_NAME = os.environ.get("ARKCLAW_DUMMY_ATTEMPT", "attempt-01")
 _ATTEMPT_ROOT = (
     _PROJECT_ROOT
     / "build/packaged-runtime-supervisor-recovery"
@@ -24,8 +24,8 @@ _POWERSHELL = (
 
 
 @pytest.mark.skipif(
-    os.environ.get("SJTUCLAW_RUN_DUMMY_SUPERVISOR") != "1",
-    reason="Set SJTUCLAW_RUN_DUMMY_SUPERVISOR=1 for the one-shot Dummy lifecycle gate.",
+    os.environ.get("ARKCLAW_RUN_DUMMY_SUPERVISOR") != "1",
+    reason="Set ARKCLAW_RUN_DUMMY_SUPERVISOR=1 for the one-shot Dummy lifecycle gate.",
 )
 def test_dummy_supervisor_lifecycle() -> None:
     assert _ATTEMPT_NAME in {f"attempt-{index:02d}" for index in range(1, 7)}

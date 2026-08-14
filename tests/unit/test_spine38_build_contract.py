@@ -143,7 +143,7 @@ if tool == "cmake":
         )
         output = build_root / configuration
         output.mkdir(parents=True, exist_ok=True)
-        (output / "sjtuclaw_spine38_bridge.dll").write_bytes(b"fake dll")
+        (output / "arkclaw_spine38_bridge.dll").write_bytes(b"fake dll")
         shutil.copy2(
             Path(cmake_state["source"]) / "LICENSE",
             output / "LICENSE",
@@ -289,9 +289,9 @@ def create_one_commit_git_repository(parent: Path) -> Path:
             "-C",
             str(checkout),
             "-c",
-            "user.name=SJTUClaw Test",
+            "user.name=ArkClaw Test",
             "-c",
-            "user.email=sjtuclaw-test@example.invalid",
+            "user.email=arkclaw-test@example.invalid",
             "commit",
             "--quiet",
             "-m",
@@ -385,7 +385,7 @@ def test_managed_acquisition_fetches_only_the_exact_commit(
     assert not list(source.parent.glob("source.acquire.*"))
 
     output = source.parent / "Release"
-    assert (output / "sjtuclaw_spine38_bridge.dll").is_file()
+    assert (output / "arkclaw_spine38_bridge.dll").is_file()
     assert (output / "LICENSE").read_text(encoding="utf-8") == (
         "Spine Runtimes License Agreement\n"
     )

@@ -289,11 +289,11 @@ Invoke-NativeStage -FailureCode "spine38_configure_failed" -Command {
 Write-Output "spine38_build"
 Invoke-NativeStage -FailureCode "spine38_build_failed" -Command {
     & cmake --build $BuildRoot --config $Configuration `
-        --target sjtuclaw_spine38_bridge
+        --target arkclaw_spine38_bridge
 }
 
 $OutputDirectory = Join-Path $BuildRoot $Configuration
-$BridgeDll = Join-Path $OutputDirectory "sjtuclaw_spine38_bridge.dll"
+$BridgeDll = Join-Path $OutputDirectory "arkclaw_spine38_bridge.dll"
 $CopiedLicense = Join-Path $OutputDirectory $PinnedManifest.license_filename
 if (-not (Test-Path -LiteralPath $BridgeDll -PathType Leaf)) {
     Exit-WithCode -Code "spine38_bridge_dll_missing" -ExitCode 1

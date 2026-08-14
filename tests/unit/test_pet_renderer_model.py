@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from sjtuclaw.application.pet_animation import (
+from arkclaw.application.pet_animation import (
     PetAnimationConfig,
     PetAnimationEngine,
 )
-from sjtuclaw.application.pet_geometry import Point, Rect, Size
-from sjtuclaw.application.pet_motion import PetMotionModel
-from sjtuclaw.application.pet_renderer_model import (
+from arkclaw.application.pet_geometry import Point, Rect, Size
+from arkclaw.application.pet_motion import PetMotionModel
+from arkclaw.application.pet_renderer_model import (
     ExternalAssetConfigStatus,
     ExternalPetAssetDescriptor,
     PetRendererAction,
@@ -19,7 +19,7 @@ from sjtuclaw.application.pet_renderer_model import (
     validate_external_asset_descriptor,
     validate_pet_renderer_config,
 )
-from sjtuclaw.application.pet_state import PetFacing
+from arkclaw.application.pet_state import PetFacing
 
 
 def _engine() -> PetAnimationEngine:
@@ -183,6 +183,8 @@ def test_renderer_action_vocabulary_is_stable_and_complete() -> None:
         "run_right",
         "sitting",
         "sleep",
+        "special",
+        "interact",
         "wave",
         "happy_jump",
         "thinking",

@@ -20,25 +20,41 @@ from PySide6.QtCore import (
 from PySide6.QtTest import QSignalSpy
 from PySide6.QtWidgets import QApplication
 
-from sjtuclaw.bootstrap.qt_runtime import FakeQtRuntimeCompositionRoot
-from sjtuclaw.infrastructure.config.json_pet_settings_repository import (
+from arkclaw.bootstrap.qt_runtime import FakeQtRuntimeCompositionRoot
+from arkclaw.infrastructure.config.json_pet_settings_repository import (
     JsonPetSettingsRepository,
 )
-from sjtuclaw.presentation.qt.main_window import MainWindow
-from sjtuclaw.presentation.qt.pet_application import (
+from arkclaw.presentation.qt.main_window import MainWindow
+from arkclaw.presentation.qt.pet_application import (
     PetApplicationCoordinator,
 )
-from sjtuclaw.presentation.qt.pet_settings_controller import (
+from arkclaw.presentation.qt.pet_settings_controller import (
     PetSettingsController,
 )
-from sjtuclaw.presentation.qt.pet_window import PetWindow
-from sjtuclaw.presentation.qt.runtime_bridge import QtRuntimeBridge
+from arkclaw.presentation.qt.pet_window import PetWindow
+from arkclaw.presentation.qt.runtime_bridge import QtRuntimeBridge
 
 _KNOWN_PLATFORM_WARNING_PARTS = (
     "QFontDatabase: Cannot find font directory",
     "This plugin does not support raise()",
     "This plugin does not support propagateSizeHints()",
 )
+
+_PET_WINDOW_HEIGHT = 180
+
+
+def _grounded_restored_position() -> tuple[int, int]:
+    """Return the position the smoke saves and expects back.
+
+    ``restore_position`` grounds the pet on the active workspace bottom, so a
+    persisted (64, 72) settles to (64, workspace.bottom - window height) before
+    it is saved. The round-trip assertion must expect that grounded position.
+    """
+
+    geometry = QApplication.screens()[0].availableGeometry()
+    # ``Rect.bottom`` is exclusive (y + height), whereas ``QRect.bottom()`` is
+    # inclusive (y + height - 1); the motion layer grounds against the former.
+    return (64, geometry.y() + geometry.height() - _PET_WINDOW_HEIGHT)
 
 
 class _QtWarningAudit:
@@ -153,12 +169,12 @@ def main(message_audit: _QtWarningAudit) -> int:
     app = QApplication.instance()
     if not isinstance(app, QApplication):
         app = QApplication([])
-    app.setApplicationName("SJTUClawPetSettingsSmoke")
-    app.setOrganizationName("SJTU")
+    app.setApplicationName("ArkClawPetSettingsSmoke")
+    app.setOrganizationName("ArkClaw")
     app.setQuitOnLastWindowClosed(False)
 
     with tempfile.TemporaryDirectory(
-        prefix="sjtuclaw-pet-settings-"
+        prefix="arkclaw-pet-settings-"
     ) as temporary_directory:
         root = Path(temporary_directory)
         settings_path = root / "pet_settings.json"
@@ -202,13 +218,14 @@ def main(message_audit: _QtWarningAudit) -> int:
             if first_pending is None or second_pending is None
             else first_pending + second_pending
         )
+        expected_restored = _grounded_restored_position()
         success = (
             first_ok
             and second_ok
             and first.save_count == 1
             and second.safe_code == "none"
             and second.load_count == 1
-            and restored[:2] == (64, 72)
+            and restored[:2] == expected_restored
             and restored[2] is False
             and position_in_workspace
             and not threads_running
@@ -224,7 +241,7 @@ def main(message_audit: _QtWarningAudit) -> int:
             "settings_schema_version=1 "
             f"first_save_count={first.save_count} "
             f"second_load_count={second.load_count} "
-            f"position_restored={restored[:2] == (64, 72)} "
+            f"position_restored={restored[:2] == expected_restored} "
             f"position_in_workspace={position_in_workspace} "
             f"always_on_top_restored={restored[2] is False} "
             "secondary_settings_access_count=0 "

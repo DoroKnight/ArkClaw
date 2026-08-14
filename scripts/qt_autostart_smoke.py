@@ -24,26 +24,26 @@ from PySide6.QtGui import QAction, QContextMenuEvent
 from PySide6.QtTest import QSignalSpy
 from PySide6.QtWidgets import QApplication
 
-from sjtuclaw.application.autostart_service import (
+from arkclaw.application.autostart_service import (
     REGISTRY_STRING_VALUE_TYPE,
     AutostartService,
     AutostartStatus,
     AutostartStoredValue,
 )
-from sjtuclaw.bootstrap.qt_runtime import FakeQtRuntimeCompositionRoot
-from sjtuclaw.presentation.qt.autostart_controller import (
+from arkclaw.bootstrap.qt_runtime import FakeQtRuntimeCompositionRoot
+from arkclaw.presentation.qt.autostart_controller import (
     AutostartUiController,
 )
-from sjtuclaw.presentation.qt.main_window import MainWindow
-from sjtuclaw.presentation.qt.pet_application import (
+from arkclaw.presentation.qt.main_window import MainWindow
+from arkclaw.presentation.qt.pet_application import (
     PetApplicationCoordinator,
 )
-from sjtuclaw.presentation.qt.pet_window import PetWindow
-from sjtuclaw.presentation.qt.provider_settings_dialog import (
+from arkclaw.presentation.qt.pet_window import PetWindow
+from arkclaw.presentation.qt.provider_settings_dialog import (
     ProviderSettingsDialog,
 )
-from sjtuclaw.presentation.qt.runtime_bridge import QtRuntimeBridge
-from sjtuclaw.presentation.qt.system_tray import (
+from arkclaw.presentation.qt.runtime_bridge import QtRuntimeBridge
+from arkclaw.presentation.qt.system_tray import (
     PetTrayState,
     SystemTrayController,
     TrayCallbacks,
@@ -172,7 +172,7 @@ def _run_smoke(root: Path) -> int:
         app = QApplication([])
     app.setQuitOnLastWindowClosed(False)
     backend = _FakeAutostartBackend()
-    executable = root / "SJTUClaw.exe"
+    executable = root / "ArkClaw.exe"
     executable.write_bytes(b"offline-placeholder")
     bridge = QtRuntimeBridge(
         FakeQtRuntimeCompositionRoot(root / "profiles.json"),

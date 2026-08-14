@@ -1,4 +1,4 @@
-#include "sjtuclaw_spine38_bridge.h"
+#include "arkclaw_spine38_bridge.h"
 
 #include <cmath>
 #include <cstdint>
@@ -8,15 +8,15 @@
 #include <string>
 #include <vector>
 
-#ifndef SJTUCLAW_SPINE38_PLAYBACK_ABI
-typedef enum SjtuclawSpine38BlendMode {
-    SJTUCLAW_SPINE38_BLEND_NORMAL = 0,
-    SJTUCLAW_SPINE38_BLEND_ADDITIVE = 1,
-    SJTUCLAW_SPINE38_BLEND_MULTIPLY = 2,
-    SJTUCLAW_SPINE38_BLEND_SCREEN = 3
-} SjtuclawSpine38BlendMode;
+#ifndef ARKCLAW_SPINE38_PLAYBACK_ABI
+typedef enum ArkClawSpine38BlendMode {
+    ARKCLAW_SPINE38_BLEND_NORMAL = 0,
+    ARKCLAW_SPINE38_BLEND_ADDITIVE = 1,
+    ARKCLAW_SPINE38_BLEND_MULTIPLY = 2,
+    ARKCLAW_SPINE38_BLEND_SCREEN = 3
+} ArkClawSpine38BlendMode;
 
-typedef struct SjtuclawSpine38Vertex {
+typedef struct ArkClawSpine38Vertex {
     float x;
     float y;
     float u;
@@ -25,67 +25,67 @@ typedef struct SjtuclawSpine38Vertex {
     uint8_t g;
     uint8_t b;
     uint8_t a;
-} SjtuclawSpine38Vertex;
+} ArkClawSpine38Vertex;
 
-typedef struct SjtuclawSpine38DrawView {
-    const SjtuclawSpine38Vertex* vertices;
+typedef struct ArkClawSpine38DrawView {
+    const ArkClawSpine38Vertex* vertices;
     size_t vertex_count;
     const uint32_t* indices;
     size_t index_count;
     uint32_t texture_page;
     uint32_t blend_mode;
     int32_t draw_order;
-} SjtuclawSpine38DrawView;
+} ArkClawSpine38DrawView;
 
 extern "C" {
-SJTUCLAW_SPINE38_API SjtuclawSpine38Code sjtuclaw_spine38_set_animation(
-    SjtuclawSpine38Handle* handle,
+ARKCLAW_SPINE38_API ArkClawSpine38Code arkclaw_spine38_set_animation(
+    ArkClawSpine38Handle* handle,
     uint32_t track,
     const char* name_utf8,
     size_t name_size,
     uint8_t loop);
 
-SJTUCLAW_SPINE38_API SjtuclawSpine38Code sjtuclaw_spine38_update(
-    SjtuclawSpine38Handle* handle,
+ARKCLAW_SPINE38_API ArkClawSpine38Code arkclaw_spine38_update(
+    ArkClawSpine38Handle* handle,
     float delta_seconds);
 
-SJTUCLAW_SPINE38_API size_t sjtuclaw_spine38_draw_count(
-    const SjtuclawSpine38Handle* handle);
+ARKCLAW_SPINE38_API size_t arkclaw_spine38_draw_count(
+    const ArkClawSpine38Handle* handle);
 
-SJTUCLAW_SPINE38_API SjtuclawSpine38Code sjtuclaw_spine38_draw_view(
-    const SjtuclawSpine38Handle* handle,
+ARKCLAW_SPINE38_API ArkClawSpine38Code arkclaw_spine38_draw_view(
+    const ArkClawSpine38Handle* handle,
     size_t index,
-    SjtuclawSpine38DrawView* out_view,
+    ArkClawSpine38DrawView* out_view,
     size_t view_capacity);
 }
 #endif
 
-#ifndef SJTUCLAW_SPINE38_EVENT_ABI
-typedef enum SjtuclawSpine38EventType {
-    SJTUCLAW_SPINE38_EVENT_COMPLETE = 1,
-    SJTUCLAW_SPINE38_EVENT_LOOP_BOUNDARY = 2
-} SjtuclawSpine38EventType;
+#ifndef ARKCLAW_SPINE38_EVENT_ABI
+typedef enum ArkClawSpine38EventType {
+    ARKCLAW_SPINE38_EVENT_COMPLETE = 1,
+    ARKCLAW_SPINE38_EVENT_LOOP_BOUNDARY = 2
+} ArkClawSpine38EventType;
 
-typedef struct SjtuclawSpine38EventView {
+typedef struct ArkClawSpine38EventView {
     uint32_t event_type;
     uint32_t track;
     uint64_t loop_ordinal;
     const char* animation_name_utf8;
     size_t animation_name_size;
-} SjtuclawSpine38EventView;
+} ArkClawSpine38EventView;
 
 extern "C" {
-SJTUCLAW_SPINE38_API SjtuclawSpine38Code sjtuclaw_spine38_clear_track(
-    SjtuclawSpine38Handle* handle,
+ARKCLAW_SPINE38_API ArkClawSpine38Code arkclaw_spine38_clear_track(
+    ArkClawSpine38Handle* handle,
     uint32_t track);
 
-SJTUCLAW_SPINE38_API size_t sjtuclaw_spine38_event_count(
-    const SjtuclawSpine38Handle* handle);
+ARKCLAW_SPINE38_API size_t arkclaw_spine38_event_count(
+    const ArkClawSpine38Handle* handle);
 
-SJTUCLAW_SPINE38_API SjtuclawSpine38Code sjtuclaw_spine38_event_view(
-    const SjtuclawSpine38Handle* handle,
+ARKCLAW_SPINE38_API ArkClawSpine38Code arkclaw_spine38_event_view(
+    const ArkClawSpine38Handle* handle,
     size_t index,
-    SjtuclawSpine38EventView* out_view,
+    ArkClawSpine38EventView* out_view,
     size_t view_capacity);
 }
 #endif
@@ -727,14 +727,14 @@ void check_atlas_leading_whitespace_contract() {
     };
 
     for (const std::string& atlas : valid_atlases) {
-        SjtuclawSpine38Handle* handle = nullptr;
-        CHECK(sjtuclaw_spine38_create(
+        ArkClawSpine38Handle* handle = nullptr;
+        CHECK(arkclaw_spine38_create(
                   skeleton.data(), skeleton.size(), atlas.data(), atlas.size(),
-                  &handle) == SJTUCLAW_SPINE38_OK);
+                  &handle) == ARKCLAW_SPINE38_OK);
         CHECK(handle != nullptr);
         if (handle != nullptr) {
-            CHECK(sjtuclaw_spine38_animation_count(handle) == 1u);
-            sjtuclaw_spine38_destroy(handle);
+            CHECK(arkclaw_spine38_animation_count(handle) == 1u);
+            arkclaw_spine38_destroy(handle);
         }
     }
 
@@ -743,26 +743,26 @@ void check_atlas_leading_whitespace_contract() {
         "\nfixture-page.png\nsize: 1,1\nformat: RGBA8888\n",
     };
     for (const std::string& atlas : invalid_atlases) {
-        SjtuclawSpine38Handle* handle = reinterpret_cast<
-            SjtuclawSpine38Handle*>(static_cast<uintptr_t>(1));
-        CHECK(sjtuclaw_spine38_create(
+        ArkClawSpine38Handle* handle = reinterpret_cast<
+            ArkClawSpine38Handle*>(static_cast<uintptr_t>(1));
+        CHECK(arkclaw_spine38_create(
                   skeleton.data(), skeleton.size(), atlas.data(), atlas.size(),
-                  &handle) == SJTUCLAW_SPINE38_ATLAS_LOAD_FAILED);
+                  &handle) == ARKCLAW_SPINE38_ATLAS_LOAD_FAILED);
         CHECK(handle == nullptr);
     }
 }
 
 void check_fixed_contract_values() {
-    CHECK(sjtuclaw_spine38_abi_version() == 1u);
-    CHECK(SJTUCLAW_SPINE38_OK == 0);
-    CHECK(SJTUCLAW_SPINE38_INVALID_ARGUMENT == 1);
-    CHECK(SJTUCLAW_SPINE38_ATLAS_LOAD_FAILED == 2);
-    CHECK(SJTUCLAW_SPINE38_SKELETON_LOAD_FAILED == 3);
-    CHECK(SJTUCLAW_SPINE38_ANIMATION_NOT_FOUND == 4);
-    CHECK(SJTUCLAW_SPINE38_RUNTIME_FAILURE == 5);
-    CHECK(SJTUCLAW_SPINE38_FILTER_UNKNOWN == 0);
-    CHECK(SJTUCLAW_SPINE38_FILTER_NEAREST == 1);
-    CHECK(SJTUCLAW_SPINE38_FILTER_LINEAR == 2);
+    CHECK(arkclaw_spine38_abi_version() == 1u);
+    CHECK(ARKCLAW_SPINE38_OK == 0);
+    CHECK(ARKCLAW_SPINE38_INVALID_ARGUMENT == 1);
+    CHECK(ARKCLAW_SPINE38_ATLAS_LOAD_FAILED == 2);
+    CHECK(ARKCLAW_SPINE38_SKELETON_LOAD_FAILED == 3);
+    CHECK(ARKCLAW_SPINE38_ANIMATION_NOT_FOUND == 4);
+    CHECK(ARKCLAW_SPINE38_RUNTIME_FAILURE == 5);
+    CHECK(ARKCLAW_SPINE38_FILTER_UNKNOWN == 0);
+    CHECK(ARKCLAW_SPINE38_FILTER_NEAREST == 1);
+    CHECK(ARKCLAW_SPINE38_FILTER_LINEAR == 2);
 }
 
 void check_texture_filter_metadata() {
@@ -781,58 +781,58 @@ void check_texture_filter_metadata() {
         const std::string atlas =
             std::string("fixture-page.png\nsize: 1,1\nformat: RGBA8888\nfilter: ") +
             item.declaration + "\nrepeat: none\n";
-        SjtuclawSpine38Handle* handle = nullptr;
-        CHECK(sjtuclaw_spine38_create(
+        ArkClawSpine38Handle* handle = nullptr;
+        CHECK(arkclaw_spine38_create(
                   skeleton.data(), skeleton.size(), atlas.data(), atlas.size(),
-                  &handle) == SJTUCLAW_SPINE38_OK);
-        SjtuclawSpine38TexturePageView view{99u, 98u};
-        CHECK(sjtuclaw_spine38_texture_page_view(
-                  handle, &view, sizeof(view)) == SJTUCLAW_SPINE38_OK);
+                  &handle) == ARKCLAW_SPINE38_OK);
+        ArkClawSpine38TexturePageView view{99u, 98u};
+        CHECK(arkclaw_spine38_texture_page_view(
+                  handle, &view, sizeof(view)) == ARKCLAW_SPINE38_OK);
         CHECK(view.min_filter == item.expected_min);
         CHECK(view.mag_filter == item.expected_mag);
-        SjtuclawSpine38TexturePageView sentinel{91u, 92u};
-        CHECK(sjtuclaw_spine38_texture_page_view(
+        ArkClawSpine38TexturePageView sentinel{91u, 92u};
+        CHECK(arkclaw_spine38_texture_page_view(
                   handle, &sentinel, sizeof(sentinel) - 1u) ==
-              SJTUCLAW_SPINE38_INVALID_ARGUMENT);
+              ARKCLAW_SPINE38_INVALID_ARGUMENT);
         CHECK(sentinel.min_filter == 91u);
         CHECK(sentinel.mag_filter == 92u);
-        sjtuclaw_spine38_destroy(handle);
+        arkclaw_spine38_destroy(handle);
     }
 }
 
 void check_zero_duration_animation_is_not_exposed() {
     const auto skeleton = make_synthetic_skeleton(true);
-    SjtuclawSpine38Handle* handle = nullptr;
-    CHECK(sjtuclaw_spine38_create(
+    ArkClawSpine38Handle* handle = nullptr;
+    CHECK(arkclaw_spine38_create(
               skeleton.data(), skeleton.size(), atlas_fixture,
-              sizeof(atlas_fixture) - 1u, &handle) == SJTUCLAW_SPINE38_OK);
+              sizeof(atlas_fixture) - 1u, &handle) == ARKCLAW_SPINE38_OK);
     CHECK(handle != nullptr);
     if (handle == nullptr) {
         return;
     }
 
-    CHECK(sjtuclaw_spine38_animation_count(handle) == 1u);
-    const size_t capacity = sjtuclaw_spine38_animation_name_size(handle, 0);
+    CHECK(arkclaw_spine38_animation_count(handle) == 1u);
+    const size_t capacity = arkclaw_spine38_animation_name_size(handle, 0);
     CHECK(capacity == sizeof(animation_name_fixture));
     std::vector<char> name(capacity, '#');
     float duration = -1.0f;
-    CHECK(sjtuclaw_spine38_animation_info(
+    CHECK(arkclaw_spine38_animation_info(
               handle, 0, name.data(), name.size(), &duration) ==
-          SJTUCLAW_SPINE38_OK);
+          ARKCLAW_SPINE38_OK);
     CHECK(std::memcmp(
               name.data(), animation_name_fixture,
               sizeof(animation_name_fixture)) == 0);
     CHECK(duration == 1.25f);
-    CHECK(sjtuclaw_spine38_animation_name_size(handle, 1) == 0u);
-    sjtuclaw_spine38_destroy(handle);
+    CHECK(arkclaw_spine38_animation_name_size(handle, 1) == 0u);
+    arkclaw_spine38_destroy(handle);
 }
 
 void check_playback_contract_without_drawables() {
     const auto skeleton = make_synthetic_skeleton();
-    SjtuclawSpine38Handle* handle = nullptr;
-    CHECK(sjtuclaw_spine38_create(
+    ArkClawSpine38Handle* handle = nullptr;
+    CHECK(arkclaw_spine38_create(
               skeleton.data(), skeleton.size(), atlas_fixture,
-              sizeof(atlas_fixture) - 1u, &handle) == SJTUCLAW_SPINE38_OK);
+              sizeof(atlas_fixture) - 1u, &handle) == ARKCLAW_SPINE38_OK);
     CHECK(handle != nullptr);
     if (handle == nullptr) {
         return;
@@ -840,8 +840,8 @@ void check_playback_contract_without_drawables() {
 
     const char animation_name[] = "idle-\xE7\x8C\xAB";
     const char embedded_nul[] = {'i', 'd', '\0', 'l', 'e'};
-    SjtuclawSpine38DrawView sentinel{
-        reinterpret_cast<const SjtuclawSpine38Vertex*>(
+    ArkClawSpine38DrawView sentinel{
+        reinterpret_cast<const ArkClawSpine38Vertex*>(
             static_cast<uintptr_t>(1)),
         11u,
         reinterpret_cast<const uint32_t*>(static_cast<uintptr_t>(2)),
@@ -850,87 +850,87 @@ void check_playback_contract_without_drawables() {
         14u,
         15};
 
-    CHECK(sjtuclaw_spine38_draw_count(nullptr) == 0u);
-    CHECK(sjtuclaw_spine38_set_animation(
+    CHECK(arkclaw_spine38_draw_count(nullptr) == 0u);
+    CHECK(arkclaw_spine38_set_animation(
               nullptr, 0u, animation_name, sizeof(animation_name) - 1u, 1u) ==
-          SJTUCLAW_SPINE38_INVALID_ARGUMENT);
-    CHECK(sjtuclaw_spine38_set_animation(
+          ARKCLAW_SPINE38_INVALID_ARGUMENT);
+    CHECK(arkclaw_spine38_set_animation(
               handle, 0u, nullptr, sizeof(animation_name) - 1u, 1u) ==
-          SJTUCLAW_SPINE38_INVALID_ARGUMENT);
-    CHECK(sjtuclaw_spine38_set_animation(
+          ARKCLAW_SPINE38_INVALID_ARGUMENT);
+    CHECK(arkclaw_spine38_set_animation(
               handle, 0u, animation_name, 0u, 1u) ==
-          SJTUCLAW_SPINE38_INVALID_ARGUMENT);
-    CHECK(sjtuclaw_spine38_set_animation(
+          ARKCLAW_SPINE38_INVALID_ARGUMENT);
+    CHECK(arkclaw_spine38_set_animation(
               handle, 0u, embedded_nul, sizeof(embedded_nul), 1u) ==
-          SJTUCLAW_SPINE38_INVALID_ARGUMENT);
-    CHECK(sjtuclaw_spine38_set_animation(
+          ARKCLAW_SPINE38_INVALID_ARGUMENT);
+    CHECK(arkclaw_spine38_set_animation(
               handle, 0u, "missing", sizeof("missing") - 1u, 1u) ==
-          SJTUCLAW_SPINE38_ANIMATION_NOT_FOUND);
-    CHECK(sjtuclaw_spine38_set_animation(
+          ARKCLAW_SPINE38_ANIMATION_NOT_FOUND);
+    CHECK(arkclaw_spine38_set_animation(
               handle, 0u, animation_name, sizeof(animation_name) - 1u, 2u) ==
-          SJTUCLAW_SPINE38_INVALID_ARGUMENT);
-    CHECK(sjtuclaw_spine38_set_animation(
+          ARKCLAW_SPINE38_INVALID_ARGUMENT);
+    CHECK(arkclaw_spine38_set_animation(
               handle, 0u, animation_name, sizeof(animation_name) - 1u, 1u) ==
-          SJTUCLAW_SPINE38_OK);
+          ARKCLAW_SPINE38_OK);
 
-    CHECK(sjtuclaw_spine38_update(nullptr, 0.0f) ==
-          SJTUCLAW_SPINE38_INVALID_ARGUMENT);
-    CHECK(sjtuclaw_spine38_update(handle, -0.01f) ==
-          SJTUCLAW_SPINE38_INVALID_ARGUMENT);
-    CHECK(sjtuclaw_spine38_update(
+    CHECK(arkclaw_spine38_update(nullptr, 0.0f) ==
+          ARKCLAW_SPINE38_INVALID_ARGUMENT);
+    CHECK(arkclaw_spine38_update(handle, -0.01f) ==
+          ARKCLAW_SPINE38_INVALID_ARGUMENT);
+    CHECK(arkclaw_spine38_update(
               handle, std::numeric_limits<float>::infinity()) ==
-          SJTUCLAW_SPINE38_INVALID_ARGUMENT);
-    CHECK(sjtuclaw_spine38_update(
+          ARKCLAW_SPINE38_INVALID_ARGUMENT);
+    CHECK(arkclaw_spine38_update(
               handle, std::numeric_limits<float>::quiet_NaN()) ==
-          SJTUCLAW_SPINE38_INVALID_ARGUMENT);
-    CHECK(sjtuclaw_spine38_update(handle, 0.0f) == SJTUCLAW_SPINE38_OK);
-    CHECK(sjtuclaw_spine38_draw_count(handle) == 0u);
+          ARKCLAW_SPINE38_INVALID_ARGUMENT);
+    CHECK(arkclaw_spine38_update(handle, 0.0f) == ARKCLAW_SPINE38_OK);
+    CHECK(arkclaw_spine38_draw_count(handle) == 0u);
 
-    CHECK(sjtuclaw_spine38_draw_view(
+    CHECK(arkclaw_spine38_draw_view(
               nullptr, 0u, &sentinel, sizeof(sentinel)) ==
-          SJTUCLAW_SPINE38_INVALID_ARGUMENT);
+          ARKCLAW_SPINE38_INVALID_ARGUMENT);
     CHECK(sentinel.vertex_count == 11u);
-    CHECK(sjtuclaw_spine38_draw_view(
+    CHECK(arkclaw_spine38_draw_view(
               handle, 0u, nullptr, sizeof(sentinel)) ==
-          SJTUCLAW_SPINE38_INVALID_ARGUMENT);
-    CHECK(sjtuclaw_spine38_draw_view(
+          ARKCLAW_SPINE38_INVALID_ARGUMENT);
+    CHECK(arkclaw_spine38_draw_view(
               handle, 0u, &sentinel, sizeof(sentinel) - 1u) ==
-          SJTUCLAW_SPINE38_INVALID_ARGUMENT);
+          ARKCLAW_SPINE38_INVALID_ARGUMENT);
     CHECK(sentinel.vertex_count == 11u);
-    CHECK(sjtuclaw_spine38_draw_view(
+    CHECK(arkclaw_spine38_draw_view(
               handle, 0u, &sentinel, sizeof(sentinel)) ==
-          SJTUCLAW_SPINE38_INVALID_ARGUMENT);
+          ARKCLAW_SPINE38_INVALID_ARGUMENT);
     CHECK(sentinel.vertex_count == 11u);
 
-    sjtuclaw_spine38_destroy(handle);
+    arkclaw_spine38_destroy(handle);
 }
 
 void check_track_zero_event_contract() {
     const auto skeleton = make_synthetic_skeleton();
-    SjtuclawSpine38Handle* handle = nullptr;
-    CHECK(sjtuclaw_spine38_create(
+    ArkClawSpine38Handle* handle = nullptr;
+    CHECK(arkclaw_spine38_create(
               skeleton.data(), skeleton.size(), atlas_fixture,
-              sizeof(atlas_fixture) - 1u, &handle) == SJTUCLAW_SPINE38_OK);
+              sizeof(atlas_fixture) - 1u, &handle) == ARKCLAW_SPINE38_OK);
     CHECK(handle != nullptr);
     if (handle == nullptr) {
         return;
     }
 
-    CHECK(sjtuclaw_spine38_event_count(nullptr) == 0u);
-    CHECK(sjtuclaw_spine38_set_animation(
+    CHECK(arkclaw_spine38_event_count(nullptr) == 0u);
+    CHECK(arkclaw_spine38_set_animation(
               handle, 0u, animation_name_fixture,
               sizeof(animation_name_fixture) - 1u, 1u) ==
-          SJTUCLAW_SPINE38_OK);
+          ARKCLAW_SPINE38_OK);
 
     for (uint64_t ordinal = 1u; ordinal <= 3u; ++ordinal) {
-        CHECK(sjtuclaw_spine38_update(handle, 1.0f) == SJTUCLAW_SPINE38_OK);
-        CHECK(sjtuclaw_spine38_event_count(handle) == 0u);
-        CHECK(sjtuclaw_spine38_update(handle, 0.3f) == SJTUCLAW_SPINE38_OK);
-        CHECK(sjtuclaw_spine38_event_count(handle) == 1u);
-        SjtuclawSpine38EventView view{};
-        CHECK(sjtuclaw_spine38_event_view(
-                  handle, 0u, &view, sizeof(view)) == SJTUCLAW_SPINE38_OK);
-        CHECK(view.event_type == SJTUCLAW_SPINE38_EVENT_LOOP_BOUNDARY);
+        CHECK(arkclaw_spine38_update(handle, 1.0f) == ARKCLAW_SPINE38_OK);
+        CHECK(arkclaw_spine38_event_count(handle) == 0u);
+        CHECK(arkclaw_spine38_update(handle, 0.3f) == ARKCLAW_SPINE38_OK);
+        CHECK(arkclaw_spine38_event_count(handle) == 1u);
+        ArkClawSpine38EventView view{};
+        CHECK(arkclaw_spine38_event_view(
+                  handle, 0u, &view, sizeof(view)) == ARKCLAW_SPINE38_OK);
+        CHECK(view.event_type == ARKCLAW_SPINE38_EVENT_LOOP_BOUNDARY);
         CHECK(view.track == 0u);
         CHECK(view.loop_ordinal == ordinal);
         CHECK(view.animation_name_size == sizeof(animation_name_fixture) - 1u);
@@ -942,70 +942,83 @@ void check_track_zero_event_contract() {
         }
     }
 
-    SjtuclawSpine38EventView sentinel{
+    ArkClawSpine38EventView sentinel{
         7u,
         8u,
         9u,
         reinterpret_cast<const char*>(static_cast<uintptr_t>(1)),
         10u};
-    CHECK(sjtuclaw_spine38_event_view(
+    CHECK(arkclaw_spine38_event_view(
               handle, 0u, &sentinel, sizeof(sentinel) - 1u) ==
-          SJTUCLAW_SPINE38_INVALID_ARGUMENT);
+          ARKCLAW_SPINE38_INVALID_ARGUMENT);
     CHECK(sentinel.event_type == 7u);
     CHECK(sentinel.loop_ordinal == 9u);
 
-    CHECK(sjtuclaw_spine38_set_animation(
+    CHECK(arkclaw_spine38_set_animation(
               handle, 0u, animation_name_fixture,
               sizeof(animation_name_fixture) - 1u, 0u) ==
-          SJTUCLAW_SPINE38_OK);
-    CHECK(sjtuclaw_spine38_event_count(handle) == 0u);
-    CHECK(sjtuclaw_spine38_update(handle, 1.25f) == SJTUCLAW_SPINE38_OK);
-    CHECK(sjtuclaw_spine38_event_count(handle) == 1u);
-    SjtuclawSpine38EventView completion{};
-    CHECK(sjtuclaw_spine38_event_view(
+          ARKCLAW_SPINE38_OK);
+    CHECK(arkclaw_spine38_mix_animation(
+              handle, 0u, animation_name_fixture,
+              sizeof(animation_name_fixture) - 1u, 0u, 0.12f) ==
+          ARKCLAW_SPINE38_OK);
+    CHECK(arkclaw_spine38_mix_animation(
+              handle, 0u, animation_name_fixture,
+              sizeof(animation_name_fixture) - 1u, 0u, -0.01f) ==
+          ARKCLAW_SPINE38_INVALID_ARGUMENT);
+    CHECK(arkclaw_spine38_event_count(handle) == 0u);
+    CHECK(arkclaw_spine38_update(handle, 1.25f) == ARKCLAW_SPINE38_OK);
+    CHECK(arkclaw_spine38_event_count(handle) == 1u);
+    ArkClawSpine38EventView completion{};
+    CHECK(arkclaw_spine38_event_view(
               handle, 0u, &completion, sizeof(completion)) ==
-          SJTUCLAW_SPINE38_OK);
-    CHECK(completion.event_type == SJTUCLAW_SPINE38_EVENT_COMPLETE);
+          ARKCLAW_SPINE38_OK);
+    CHECK(completion.event_type == ARKCLAW_SPINE38_EVENT_COMPLETE);
     CHECK(completion.loop_ordinal == 0u);
 
-    CHECK(sjtuclaw_spine38_clear_track(handle, 0u) == SJTUCLAW_SPINE38_OK);
-    CHECK(sjtuclaw_spine38_event_count(handle) == 0u);
-    CHECK(sjtuclaw_spine38_update(handle, 1.25f) == SJTUCLAW_SPINE38_OK);
-    CHECK(sjtuclaw_spine38_event_count(handle) == 0u);
-    CHECK(sjtuclaw_spine38_clear_track(nullptr, 0u) ==
-          SJTUCLAW_SPINE38_INVALID_ARGUMENT);
+    CHECK(arkclaw_spine38_clear_track(handle, 0u) == ARKCLAW_SPINE38_OK);
+    CHECK(arkclaw_spine38_event_count(handle) == 0u);
+    CHECK(arkclaw_spine38_update(handle, 1.25f) == ARKCLAW_SPINE38_OK);
+    CHECK(arkclaw_spine38_event_count(handle) == 0u);
+    CHECK(arkclaw_spine38_clear_track(nullptr, 0u) ==
+          ARKCLAW_SPINE38_INVALID_ARGUMENT);
 
-    sjtuclaw_spine38_destroy(handle);
+    arkclaw_spine38_destroy(handle);
 }
 
 void check_region_draw_view_is_materialized() {
     const auto skeleton = make_region_skeleton();
-    SjtuclawSpine38Handle* handle = nullptr;
-    CHECK(sjtuclaw_spine38_create(
+    ArkClawSpine38Handle* handle = nullptr;
+    CHECK(arkclaw_spine38_create(
               skeleton.data(), skeleton.size(), region_atlas_fixture,
               sizeof(region_atlas_fixture) - 1u, &handle) ==
-          SJTUCLAW_SPINE38_OK);
+          ARKCLAW_SPINE38_OK);
     CHECK(handle != nullptr);
     if (handle == nullptr) {
         return;
     }
 
-    CHECK(sjtuclaw_spine38_set_animation(
+    CHECK(arkclaw_spine38_set_animation(
               handle, 0u, animation_name_fixture,
               sizeof(animation_name_fixture) - 1u, 1u) ==
-          SJTUCLAW_SPINE38_OK);
-    CHECK(sjtuclaw_spine38_update(handle, 0.0f) == SJTUCLAW_SPINE38_OK);
-    CHECK(sjtuclaw_spine38_draw_count(handle) == 1u);
+          ARKCLAW_SPINE38_OK);
+    CHECK(arkclaw_spine38_update(handle, 0.0f) == ARKCLAW_SPINE38_OK);
+    CHECK(arkclaw_spine38_draw_count(handle) == 1u);
+    CHECK(arkclaw_spine38_mix_animation(
+              handle, 0u, animation_name_fixture,
+              sizeof(animation_name_fixture) - 1u, 1u, 0.12f) ==
+          ARKCLAW_SPINE38_OK);
+    CHECK(arkclaw_spine38_draw_count(handle) == 1u);
 
-    SjtuclawSpine38DrawView view{};
-    CHECK(sjtuclaw_spine38_draw_view(
-              handle, 0u, &view, sizeof(view)) == SJTUCLAW_SPINE38_OK);
+    ArkClawSpine38DrawView view{};
+    CHECK(arkclaw_spine38_draw_view(
+              handle, 0u, &view, sizeof(view)) == ARKCLAW_SPINE38_OK);
     CHECK(view.vertices != nullptr);
     CHECK(view.vertex_count == 4u);
     CHECK(view.indices != nullptr);
     CHECK(view.index_count == 6u);
     CHECK(view.texture_page == 0u);
-    CHECK(view.blend_mode == SJTUCLAW_SPINE38_BLEND_NORMAL);
+    CHECK(view.blend_mode == ARKCLAW_SPINE38_BLEND_NORMAL);
     CHECK(view.draw_order == 0);
     if (view.vertices != nullptr && view.vertex_count == 4u) {
         float min_x = view.vertices[0].x;
@@ -1013,7 +1026,7 @@ void check_region_draw_view_is_materialized() {
         float min_y = view.vertices[0].y;
         float max_y = view.vertices[0].y;
         for (size_t index = 0u; index < view.vertex_count; ++index) {
-            const SjtuclawSpine38Vertex& vertex = view.vertices[index];
+            const ArkClawSpine38Vertex& vertex = view.vertices[index];
             CHECK(std::isfinite(vertex.x));
             CHECK(std::isfinite(vertex.y));
             CHECK(std::isfinite(vertex.u));
@@ -1037,19 +1050,19 @@ void check_region_draw_view_is_materialized() {
         CHECK(std::memcmp(view.indices, expected, sizeof(expected)) == 0);
     }
 
-    SjtuclawSpine38DrawView repeated{};
-    CHECK(sjtuclaw_spine38_draw_view(
+    ArkClawSpine38DrawView repeated{};
+    CHECK(arkclaw_spine38_draw_view(
               handle, 0u, &repeated, sizeof(repeated)) ==
-          SJTUCLAW_SPINE38_OK);
+          ARKCLAW_SPINE38_OK);
     CHECK(repeated.vertices == view.vertices);
     CHECK(repeated.indices == view.indices);
-    CHECK(sjtuclaw_spine38_set_animation(
+    CHECK(arkclaw_spine38_set_animation(
               handle, 0u, "missing", sizeof("missing") - 1u, 1u) ==
-          SJTUCLAW_SPINE38_ANIMATION_NOT_FOUND);
-    SjtuclawSpine38DrawView after_failed_set{};
-    CHECK(sjtuclaw_spine38_draw_view(
+          ARKCLAW_SPINE38_ANIMATION_NOT_FOUND);
+    ArkClawSpine38DrawView after_failed_set{};
+    CHECK(arkclaw_spine38_draw_view(
               handle, 0u, &after_failed_set, sizeof(after_failed_set)) ==
-          SJTUCLAW_SPINE38_OK);
+          ARKCLAW_SPINE38_OK);
     CHECK(after_failed_set.vertices == view.vertices);
     CHECK(after_failed_set.indices == view.indices);
 
@@ -1060,11 +1073,11 @@ void check_region_draw_view_is_materialized() {
             setup_positions[index * 2u + 1u] = view.vertices[index].y;
         }
     }
-    CHECK(sjtuclaw_spine38_update(handle, 0.625f) == SJTUCLAW_SPINE38_OK);
-    SjtuclawSpine38DrawView animated{};
-    CHECK(sjtuclaw_spine38_draw_view(
+    CHECK(arkclaw_spine38_update(handle, 0.625f) == ARKCLAW_SPINE38_OK);
+    ArkClawSpine38DrawView animated{};
+    CHECK(arkclaw_spine38_draw_view(
               handle, 0u, &animated, sizeof(animated)) ==
-          SJTUCLAW_SPINE38_OK);
+          ARKCLAW_SPINE38_OK);
     bool geometry_changed = false;
     if (animated.vertices != nullptr && animated.vertex_count == 4u) {
         for (size_t index = 0u; index < animated.vertex_count; ++index) {
@@ -1078,45 +1091,45 @@ void check_region_draw_view_is_materialized() {
         }
     }
     CHECK(geometry_changed);
-    CHECK(sjtuclaw_spine38_set_animation(
+    CHECK(arkclaw_spine38_set_animation(
               handle, 0u, animation_name_fixture,
               sizeof(animation_name_fixture) - 1u, 1u) ==
-          SJTUCLAW_SPINE38_OK);
-    CHECK(sjtuclaw_spine38_draw_count(handle) == 0u);
+          ARKCLAW_SPINE38_OK);
+    CHECK(arkclaw_spine38_draw_count(handle) == 0u);
 
-    sjtuclaw_spine38_destroy(handle);
+    arkclaw_spine38_destroy(handle);
 }
 
 void check_mesh_blend_modes_and_draw_order_are_materialized() {
     const auto skeleton = make_mesh_blend_skeleton();
-    SjtuclawSpine38Handle* handle = nullptr;
-    CHECK(sjtuclaw_spine38_create(
+    ArkClawSpine38Handle* handle = nullptr;
+    CHECK(arkclaw_spine38_create(
               skeleton.data(), skeleton.size(), region_atlas_fixture,
               sizeof(region_atlas_fixture) - 1u, &handle) ==
-          SJTUCLAW_SPINE38_OK);
+          ARKCLAW_SPINE38_OK);
     CHECK(handle != nullptr);
     if (handle == nullptr) {
         return;
     }
 
-    CHECK(sjtuclaw_spine38_set_animation(
+    CHECK(arkclaw_spine38_set_animation(
               handle, 0u, animation_name_fixture,
               sizeof(animation_name_fixture) - 1u, 1u) ==
-          SJTUCLAW_SPINE38_OK);
-    CHECK(sjtuclaw_spine38_update(handle, 0.5f) == SJTUCLAW_SPINE38_OK);
-    CHECK(sjtuclaw_spine38_draw_count(handle) == 5u);
+          ARKCLAW_SPINE38_OK);
+    CHECK(arkclaw_spine38_update(handle, 0.5f) == ARKCLAW_SPINE38_OK);
+    CHECK(arkclaw_spine38_draw_count(handle) == 5u);
 
     const uint32_t expected_blends[] = {
-        SJTUCLAW_SPINE38_BLEND_NORMAL,
-        SJTUCLAW_SPINE38_BLEND_ADDITIVE,
-        SJTUCLAW_SPINE38_BLEND_MULTIPLY,
-        SJTUCLAW_SPINE38_BLEND_SCREEN,
-        SJTUCLAW_SPINE38_BLEND_NORMAL};
+        ARKCLAW_SPINE38_BLEND_NORMAL,
+        ARKCLAW_SPINE38_BLEND_ADDITIVE,
+        ARKCLAW_SPINE38_BLEND_MULTIPLY,
+        ARKCLAW_SPINE38_BLEND_SCREEN,
+        ARKCLAW_SPINE38_BLEND_NORMAL};
     for (size_t index = 0u; index < 5u; ++index) {
-        SjtuclawSpine38DrawView view{};
-        CHECK(sjtuclaw_spine38_draw_view(
+        ArkClawSpine38DrawView view{};
+        CHECK(arkclaw_spine38_draw_view(
                   handle, index, &view, sizeof(view)) ==
-              SJTUCLAW_SPINE38_OK);
+              ARKCLAW_SPINE38_OK);
         CHECK(view.texture_page == 0u);
         CHECK(view.blend_mode == expected_blends[index]);
         CHECK(view.draw_order == static_cast<int32_t>(index));
@@ -1146,30 +1159,30 @@ void check_mesh_blend_modes_and_draw_order_are_materialized() {
         }
     }
 
-    sjtuclaw_spine38_destroy(handle);
+    arkclaw_spine38_destroy(handle);
 }
 
 void check_clipping_is_applied_inside_the_abi() {
     const auto skeleton = make_clipping_skeleton(false);
-    SjtuclawSpine38Handle* handle = nullptr;
-    CHECK(sjtuclaw_spine38_create(
+    ArkClawSpine38Handle* handle = nullptr;
+    CHECK(arkclaw_spine38_create(
               skeleton.data(), skeleton.size(), region_atlas_fixture,
               sizeof(region_atlas_fixture) - 1u, &handle) ==
-          SJTUCLAW_SPINE38_OK);
+          ARKCLAW_SPINE38_OK);
     CHECK(handle != nullptr);
     if (handle == nullptr) {
         return;
     }
 
-    CHECK(sjtuclaw_spine38_set_animation(
+    CHECK(arkclaw_spine38_set_animation(
               handle, 0u, animation_name_fixture,
               sizeof(animation_name_fixture) - 1u, 1u) ==
-          SJTUCLAW_SPINE38_OK);
-    CHECK(sjtuclaw_spine38_update(handle, 0.0f) == SJTUCLAW_SPINE38_OK);
-    CHECK(sjtuclaw_spine38_draw_count(handle) == 1u);
-    SjtuclawSpine38DrawView view{};
-    CHECK(sjtuclaw_spine38_draw_view(
-              handle, 0u, &view, sizeof(view)) == SJTUCLAW_SPINE38_OK);
+          ARKCLAW_SPINE38_OK);
+    CHECK(arkclaw_spine38_update(handle, 0.0f) == ARKCLAW_SPINE38_OK);
+    CHECK(arkclaw_spine38_draw_count(handle) == 1u);
+    ArkClawSpine38DrawView view{};
+    CHECK(arkclaw_spine38_draw_view(
+              handle, 0u, &view, sizeof(view)) == ARKCLAW_SPINE38_OK);
     CHECK(view.draw_order == 1);
     CHECK(view.vertices != nullptr);
     CHECK(view.vertex_count > 0u);
@@ -1189,86 +1202,86 @@ void check_clipping_is_applied_inside_the_abi() {
             CHECK(view.indices[index] < view.vertex_count);
         }
     }
-    sjtuclaw_spine38_destroy(handle);
+    arkclaw_spine38_destroy(handle);
 }
 
 void check_malformed_clipped_mesh_index_fails_closed() {
     const auto skeleton = make_clipping_skeleton(
         false, 0.0f, true, 32768u, 1u, 1.0e15f, 32768u);
-    SjtuclawSpine38Handle* handle = nullptr;
-    CHECK(sjtuclaw_spine38_create(
+    ArkClawSpine38Handle* handle = nullptr;
+    CHECK(arkclaw_spine38_create(
               skeleton.data(), skeleton.size(), region_atlas_fixture,
               sizeof(region_atlas_fixture) - 1u, &handle) ==
-          SJTUCLAW_SPINE38_OK);
+          ARKCLAW_SPINE38_OK);
     CHECK(handle != nullptr);
     if (handle == nullptr) {
         return;
     }
 
-    CHECK(sjtuclaw_spine38_update(handle, 0.0f) ==
-          SJTUCLAW_SPINE38_RUNTIME_FAILURE);
-    CHECK(sjtuclaw_spine38_draw_count(handle) == 0u);
-    sjtuclaw_spine38_destroy(handle);
+    CHECK(arkclaw_spine38_update(handle, 0.0f) ==
+          ARKCLAW_SPINE38_RUNTIME_FAILURE);
+    CHECK(arkclaw_spine38_draw_count(handle) == 0u);
+    arkclaw_spine38_destroy(handle);
 }
 
 void check_unrepresentable_clipped_mesh_fails_closed() {
     constexpr size_t triangle_repetitions = 21846u;
     const auto skeleton = make_clipping_skeleton(
         false, 0.0f, true, 2u, triangle_repetitions, 1.0e15f);
-    SjtuclawSpine38Handle* handle = nullptr;
-    CHECK(sjtuclaw_spine38_create(
+    ArkClawSpine38Handle* handle = nullptr;
+    CHECK(arkclaw_spine38_create(
               skeleton.data(), skeleton.size(), region_atlas_fixture,
               sizeof(region_atlas_fixture) - 1u, &handle) ==
-          SJTUCLAW_SPINE38_OK);
+          ARKCLAW_SPINE38_OK);
     CHECK(handle != nullptr);
     if (handle == nullptr) {
         return;
     }
 
-    CHECK(sjtuclaw_spine38_update(handle, 0.0f) ==
-          SJTUCLAW_SPINE38_RUNTIME_FAILURE);
-    CHECK(sjtuclaw_spine38_draw_count(handle) == 0u);
-    sjtuclaw_spine38_destroy(handle);
+    CHECK(arkclaw_spine38_update(handle, 0.0f) ==
+          ARKCLAW_SPINE38_RUNTIME_FAILURE);
+    CHECK(arkclaw_spine38_draw_count(handle) == 0u);
+    arkclaw_spine38_destroy(handle);
 }
 
 void check_malformed_clipping_polygon_fails_closed() {
     for (uint32_t clip_vertex_count : {0u, 1u, 2u}) {
         const auto skeleton =
             make_malformed_clipping_skeleton(clip_vertex_count);
-        SjtuclawSpine38Handle* handle = nullptr;
-        CHECK(sjtuclaw_spine38_create(
+        ArkClawSpine38Handle* handle = nullptr;
+        CHECK(arkclaw_spine38_create(
                   skeleton.data(), skeleton.size(), region_atlas_fixture,
                   sizeof(region_atlas_fixture) - 1u, &handle) ==
-              SJTUCLAW_SPINE38_OK);
+              ARKCLAW_SPINE38_OK);
         CHECK(handle != nullptr);
         if (handle == nullptr) {
             continue;
         }
 
-        CHECK(sjtuclaw_spine38_update(handle, 0.0f) ==
-              SJTUCLAW_SPINE38_RUNTIME_FAILURE);
-        CHECK(sjtuclaw_spine38_draw_count(handle) == 0u);
-        sjtuclaw_spine38_destroy(handle);
+        CHECK(arkclaw_spine38_update(handle, 0.0f) ==
+              ARKCLAW_SPINE38_RUNTIME_FAILURE);
+        CHECK(arkclaw_spine38_draw_count(handle) == 0u);
+        arkclaw_spine38_destroy(handle);
     }
 }
 
 void check_inactive_bone_slots_are_skipped_and_end_clipping() {
     const auto skeleton = make_inactive_bone_skeleton();
-    SjtuclawSpine38Handle* handle = nullptr;
-    CHECK(sjtuclaw_spine38_create(
+    ArkClawSpine38Handle* handle = nullptr;
+    CHECK(arkclaw_spine38_create(
               skeleton.data(), skeleton.size(), region_atlas_fixture,
               sizeof(region_atlas_fixture) - 1u, &handle) ==
-          SJTUCLAW_SPINE38_OK);
+          ARKCLAW_SPINE38_OK);
     CHECK(handle != nullptr);
     if (handle == nullptr) {
         return;
     }
 
-    CHECK(sjtuclaw_spine38_update(handle, 0.0f) == SJTUCLAW_SPINE38_OK);
-    CHECK(sjtuclaw_spine38_draw_count(handle) == 1u);
-    SjtuclawSpine38DrawView view{};
-    CHECK(sjtuclaw_spine38_draw_view(
-              handle, 0u, &view, sizeof(view)) == SJTUCLAW_SPINE38_OK);
+    CHECK(arkclaw_spine38_update(handle, 0.0f) == ARKCLAW_SPINE38_OK);
+    CHECK(arkclaw_spine38_draw_count(handle) == 1u);
+    ArkClawSpine38DrawView view{};
+    CHECK(arkclaw_spine38_draw_view(
+              handle, 0u, &view, sizeof(view)) == ARKCLAW_SPINE38_OK);
     CHECK(view.draw_order == 3);
     CHECK(view.vertex_count == 4u);
     CHECK(view.index_count == 6u);
@@ -1278,124 +1291,129 @@ void check_inactive_bone_slots_are_skipped_and_end_clipping() {
             CHECK(view.vertices[vertex].x <= 5.00001f);
         }
     }
-    sjtuclaw_spine38_destroy(handle);
+    arkclaw_spine38_destroy(handle);
 }
 
 void check_unsupported_active_attachment_fails_closed() {
     const auto skeleton = make_clipping_skeleton(true);
-    SjtuclawSpine38Handle* handle = nullptr;
-    CHECK(sjtuclaw_spine38_create(
+    ArkClawSpine38Handle* handle = nullptr;
+    CHECK(arkclaw_spine38_create(
               skeleton.data(), skeleton.size(), region_atlas_fixture,
               sizeof(region_atlas_fixture) - 1u, &handle) ==
-          SJTUCLAW_SPINE38_OK);
+          ARKCLAW_SPINE38_OK);
     CHECK(handle != nullptr);
     if (handle == nullptr) {
         return;
     }
-    CHECK(sjtuclaw_spine38_update(handle, 0.0f) ==
-          SJTUCLAW_SPINE38_RUNTIME_FAILURE);
-    CHECK(sjtuclaw_spine38_draw_count(handle) == 0u);
-    sjtuclaw_spine38_destroy(handle);
+    CHECK(arkclaw_spine38_update(handle, 0.0f) ==
+          ARKCLAW_SPINE38_RUNTIME_FAILURE);
+    CHECK(arkclaw_spine38_draw_count(handle) == 0u);
+    arkclaw_spine38_destroy(handle);
 }
 
 void check_fully_clipped_attachment_is_a_valid_empty_draw() {
     const auto skeleton = make_clipping_skeleton(false, 3.0f);
-    SjtuclawSpine38Handle* handle = nullptr;
-    CHECK(sjtuclaw_spine38_create(
+    ArkClawSpine38Handle* handle = nullptr;
+    CHECK(arkclaw_spine38_create(
               skeleton.data(), skeleton.size(), region_atlas_fixture,
               sizeof(region_atlas_fixture) - 1u, &handle) ==
-          SJTUCLAW_SPINE38_OK);
+          ARKCLAW_SPINE38_OK);
     CHECK(handle != nullptr);
     if (handle == nullptr) {
         return;
     }
-    CHECK(sjtuclaw_spine38_update(handle, 0.0f) == SJTUCLAW_SPINE38_OK);
-    CHECK(sjtuclaw_spine38_draw_count(handle) == 0u);
-    sjtuclaw_spine38_destroy(handle);
+    CHECK(arkclaw_spine38_update(handle, 0.0f) == ARKCLAW_SPINE38_OK);
+    CHECK(arkclaw_spine38_draw_count(handle) == 0u);
+    arkclaw_spine38_destroy(handle);
 }
 
 void check_invalid_inputs_do_not_escape_exceptions() {
-    SjtuclawSpine38Handle* handle = reinterpret_cast<SjtuclawSpine38Handle*>(
+    ArkClawSpine38Handle* handle = reinterpret_cast<ArkClawSpine38Handle*>(
         static_cast<uintptr_t>(1));
     const auto skeleton = make_synthetic_skeleton();
     const uint8_t nonnull_byte = 0;
 
     try {
-        CHECK(sjtuclaw_spine38_create(
+        CHECK(arkclaw_spine38_create(
                   nullptr, 0, nullptr, 0, &handle) ==
-              SJTUCLAW_SPINE38_INVALID_ARGUMENT);
+              ARKCLAW_SPINE38_INVALID_ARGUMENT);
         CHECK(handle == nullptr);
 
         const size_t oversized_span =
             static_cast<size_t>(std::numeric_limits<int>::max()) + 1u;
-        handle = reinterpret_cast<SjtuclawSpine38Handle*>(
+        handle = reinterpret_cast<ArkClawSpine38Handle*>(
             static_cast<uintptr_t>(1));
-        CHECK(sjtuclaw_spine38_create(
+        CHECK(arkclaw_spine38_create(
                   &nonnull_byte, oversized_span, atlas_fixture,
                   sizeof(atlas_fixture) - 1u, &handle) ==
-              SJTUCLAW_SPINE38_INVALID_ARGUMENT);
+              ARKCLAW_SPINE38_INVALID_ARGUMENT);
         CHECK(handle == nullptr);
-        handle = reinterpret_cast<SjtuclawSpine38Handle*>(
+        handle = reinterpret_cast<ArkClawSpine38Handle*>(
             static_cast<uintptr_t>(1));
-        CHECK(sjtuclaw_spine38_create(
+        CHECK(arkclaw_spine38_create(
                   skeleton.data(), skeleton.size(), atlas_fixture,
                   oversized_span, &handle) ==
-              SJTUCLAW_SPINE38_INVALID_ARGUMENT);
+              ARKCLAW_SPINE38_INVALID_ARGUMENT);
         CHECK(handle == nullptr);
 
-        CHECK(sjtuclaw_spine38_create(
+        CHECK(arkclaw_spine38_create(
                   &nonnull_byte, 0, atlas_fixture,
                   sizeof(atlas_fixture) - 1u, &handle) ==
-              SJTUCLAW_SPINE38_INVALID_ARGUMENT);
+              ARKCLAW_SPINE38_INVALID_ARGUMENT);
         CHECK(handle == nullptr);
-        CHECK(sjtuclaw_spine38_create(
+        CHECK(arkclaw_spine38_create(
                   skeleton.data(), skeleton.size(), atlas_fixture, 0,
-                  &handle) == SJTUCLAW_SPINE38_INVALID_ARGUMENT);
+                  &handle) == ARKCLAW_SPINE38_INVALID_ARGUMENT);
         CHECK(handle == nullptr);
 
-        CHECK(sjtuclaw_spine38_create(
+        CHECK(arkclaw_spine38_create(
                   skeleton.data(), skeleton.size(), atlas_fixture,
                   sizeof(atlas_fixture) - 1u, nullptr) ==
-              SJTUCLAW_SPINE38_INVALID_ARGUMENT);
+              ARKCLAW_SPINE38_INVALID_ARGUMENT);
 
-        CHECK(sjtuclaw_spine38_create(
+        CHECK(arkclaw_spine38_create(
                   skeleton.data(), skeleton.size(), "not-an-atlas", 12,
-                  &handle) == SJTUCLAW_SPINE38_ATLAS_LOAD_FAILED);
+                  &handle) == ARKCLAW_SPINE38_ATLAS_LOAD_FAILED);
         CHECK(handle == nullptr);
 
         const uint8_t invalid_skeleton[] = {0};
-        CHECK(sjtuclaw_spine38_create(
+        CHECK(arkclaw_spine38_create(
                   invalid_skeleton, sizeof(invalid_skeleton), atlas_fixture,
                   sizeof(atlas_fixture) - 1u, &handle) ==
-              SJTUCLAW_SPINE38_SKELETON_LOAD_FAILED);
+              ARKCLAW_SPINE38_SKELETON_LOAD_FAILED);
         CHECK(handle == nullptr);
 
-        CHECK(sjtuclaw_spine38_animation_count(nullptr) == 0u);
-        CHECK(sjtuclaw_spine38_animation_name_size(nullptr, 0) == 0u);
-        CHECK(sjtuclaw_spine38_skin_count(nullptr) == 0u);
-        CHECK(sjtuclaw_spine38_skin_name_size(nullptr, 0) == 0u);
+        CHECK(arkclaw_spine38_animation_count(nullptr) == 0u);
+        CHECK(arkclaw_spine38_animation_name_size(nullptr, 0) == 0u);
+        CHECK(arkclaw_spine38_skin_count(nullptr) == 0u);
+        CHECK(arkclaw_spine38_skin_name_size(nullptr, 0) == 0u);
 
         char name[8] = {'#', '#', '#', '#', '#', '#', '#', '#'};
         float duration = -1.0f;
-        CHECK(sjtuclaw_spine38_animation_info(
+        CHECK(arkclaw_spine38_animation_info(
                   nullptr, 0, name, sizeof(name), &duration) ==
-              SJTUCLAW_SPINE38_INVALID_ARGUMENT);
+              ARKCLAW_SPINE38_INVALID_ARGUMENT);
         CHECK(name[0] == '#');
         CHECK(duration == -1.0f);
-        CHECK(sjtuclaw_spine38_skin_info(
+        CHECK(arkclaw_spine38_skin_info(
                   nullptr, 0, name, sizeof(name)) ==
-              SJTUCLAW_SPINE38_INVALID_ARGUMENT);
+              ARKCLAW_SPINE38_INVALID_ARGUMENT);
         CHECK(name[0] == '#');
-        SjtuclawSpine38Bounds bounds{-1.0f, -2.0f, -3.0f, -4.0f};
-        CHECK(sjtuclaw_spine38_setup_bounds(nullptr, &bounds) ==
-              SJTUCLAW_SPINE38_INVALID_ARGUMENT);
+        ArkClawSpine38Bounds bounds{-1.0f, -2.0f, -3.0f, -4.0f};
+        CHECK(arkclaw_spine38_setup_bounds(nullptr, &bounds) ==
+              ARKCLAW_SPINE38_INVALID_ARGUMENT);
         CHECK(bounds.x == -1.0f);
         CHECK(bounds.y == -2.0f);
         CHECK(bounds.width == -3.0f);
         CHECK(bounds.height == -4.0f);
+        ArkClawSpine38RootTransform root{-5.0f, -6.0f};
+        CHECK(arkclaw_spine38_root_transform(nullptr, &root) ==
+              ARKCLAW_SPINE38_INVALID_ARGUMENT);
+        CHECK(root.x == -5.0f);
+        CHECK(root.y == -6.0f);
 
-        sjtuclaw_spine38_destroy(nullptr);
-        sjtuclaw_spine38_destroy(nullptr);
+        arkclaw_spine38_destroy(nullptr);
+        arkclaw_spine38_destroy(nullptr);
     } catch (...) {
         CHECK(false);
     }
@@ -1403,50 +1421,50 @@ void check_invalid_inputs_do_not_escape_exceptions() {
 
 void check_synthetic_catalog_and_buffers() {
     const auto skeleton = make_synthetic_skeleton();
-    SjtuclawSpine38Handle* handle = nullptr;
-    CHECK(sjtuclaw_spine38_create(
+    ArkClawSpine38Handle* handle = nullptr;
+    CHECK(arkclaw_spine38_create(
               skeleton.data(), skeleton.size(), atlas_fixture,
-              sizeof(atlas_fixture) - 1u, &handle) == SJTUCLAW_SPINE38_OK);
+              sizeof(atlas_fixture) - 1u, &handle) == ARKCLAW_SPINE38_OK);
     CHECK(handle != nullptr);
     if (handle == nullptr) {
         return;
     }
 
-    CHECK(sjtuclaw_spine38_animation_count(handle) == 1u);
+    CHECK(arkclaw_spine38_animation_count(handle) == 1u);
     const size_t animation_capacity =
-        sjtuclaw_spine38_animation_name_size(handle, 0);
+        arkclaw_spine38_animation_name_size(handle, 0);
     CHECK(animation_capacity == sizeof(animation_name_fixture));
 
     float duration = -7.0f;
-    CHECK(sjtuclaw_spine38_animation_info(
+    CHECK(arkclaw_spine38_animation_info(
               handle, 0, nullptr, animation_capacity, &duration) ==
-          SJTUCLAW_SPINE38_INVALID_ARGUMENT);
+          ARKCLAW_SPINE38_INVALID_ARGUMENT);
     CHECK(duration == -7.0f);
 
     std::vector<char> zero_capacity(animation_capacity, '#');
-    CHECK(sjtuclaw_spine38_animation_info(
+    CHECK(arkclaw_spine38_animation_info(
               handle, 0, zero_capacity.data(), 0, &duration) ==
-          SJTUCLAW_SPINE38_INVALID_ARGUMENT);
+          ARKCLAW_SPINE38_INVALID_ARGUMENT);
     CHECK(zero_capacity.front() == '#');
     CHECK(duration == -7.0f);
 
     std::vector<char> null_duration(animation_capacity, '#');
-    CHECK(sjtuclaw_spine38_animation_info(
+    CHECK(arkclaw_spine38_animation_info(
               handle, 0, null_duration.data(), null_duration.size(),
-              nullptr) == SJTUCLAW_SPINE38_INVALID_ARGUMENT);
+              nullptr) == ARKCLAW_SPINE38_INVALID_ARGUMENT);
     CHECK(null_duration.front() == '#');
 
     std::vector<char> too_small(animation_capacity - 1u, '#');
-    CHECK(sjtuclaw_spine38_animation_info(
+    CHECK(arkclaw_spine38_animation_info(
               handle, 0, too_small.data(), too_small.size(), &duration) ==
-          SJTUCLAW_SPINE38_INVALID_ARGUMENT);
+          ARKCLAW_SPINE38_INVALID_ARGUMENT);
     CHECK(duration == -7.0f);
     CHECK(too_small.front() == '#');
 
     std::vector<char> animation_name(animation_capacity, '#');
-    CHECK(sjtuclaw_spine38_animation_info(
+    CHECK(arkclaw_spine38_animation_info(
               handle, 0, animation_name.data(), animation_name.size(),
-              &duration) == SJTUCLAW_SPINE38_OK);
+              &duration) == ARKCLAW_SPINE38_OK);
     CHECK(std::memcmp(
               animation_name.data(), animation_name_fixture,
               sizeof(animation_name_fixture)) == 0);
@@ -1457,50 +1475,57 @@ void check_synthetic_catalog_and_buffers() {
 
     std::vector<char> missing_animation(animation_capacity, '#');
     duration = -9.0f;
-    CHECK(sjtuclaw_spine38_animation_info(
+    CHECK(arkclaw_spine38_animation_info(
               handle, 1, missing_animation.data(), missing_animation.size(),
-              &duration) == SJTUCLAW_SPINE38_ANIMATION_NOT_FOUND);
+              &duration) == ARKCLAW_SPINE38_ANIMATION_NOT_FOUND);
     CHECK(missing_animation.front() == '#');
     CHECK(duration == -9.0f);
-    CHECK(sjtuclaw_spine38_animation_name_size(handle, 1) == 0u);
+    CHECK(arkclaw_spine38_animation_name_size(handle, 1) == 0u);
 
-    CHECK(sjtuclaw_spine38_skin_count(handle) == 1u);
-    const size_t skin_capacity = sjtuclaw_spine38_skin_name_size(handle, 0);
+    CHECK(arkclaw_spine38_skin_count(handle) == 1u);
+    const size_t skin_capacity = arkclaw_spine38_skin_name_size(handle, 0);
     CHECK(skin_capacity == sizeof("fixture-skin"));
-    CHECK(sjtuclaw_spine38_skin_info(
+    CHECK(arkclaw_spine38_skin_info(
               handle, 0, nullptr, skin_capacity) ==
-          SJTUCLAW_SPINE38_INVALID_ARGUMENT);
+          ARKCLAW_SPINE38_INVALID_ARGUMENT);
     std::vector<char> zero_skin_capacity(skin_capacity, '#');
-    CHECK(sjtuclaw_spine38_skin_info(
+    CHECK(arkclaw_spine38_skin_info(
               handle, 0, zero_skin_capacity.data(), 0) ==
-          SJTUCLAW_SPINE38_INVALID_ARGUMENT);
+          ARKCLAW_SPINE38_INVALID_ARGUMENT);
     CHECK(zero_skin_capacity.front() == '#');
     std::vector<char> skin_name(skin_capacity, '#');
-    CHECK(sjtuclaw_spine38_skin_info(
+    CHECK(arkclaw_spine38_skin_info(
               handle, 0, skin_name.data(), skin_name.size() - 1u) ==
-          SJTUCLAW_SPINE38_INVALID_ARGUMENT);
+          ARKCLAW_SPINE38_INVALID_ARGUMENT);
     CHECK(skin_name.front() == '#');
-    CHECK(sjtuclaw_spine38_skin_info(
+    CHECK(arkclaw_spine38_skin_info(
               handle, 0, skin_name.data(), skin_name.size()) ==
-          SJTUCLAW_SPINE38_OK);
+          ARKCLAW_SPINE38_OK);
     CHECK(std::strcmp(skin_name.data(), "fixture-skin") == 0);
     std::vector<char> missing_skin(skin_capacity, '#');
-    CHECK(sjtuclaw_spine38_skin_info(
+    CHECK(arkclaw_spine38_skin_info(
               handle, 1, missing_skin.data(), missing_skin.size()) ==
-          SJTUCLAW_SPINE38_INVALID_ARGUMENT);
+          ARKCLAW_SPINE38_INVALID_ARGUMENT);
     CHECK(missing_skin.front() == '#');
 
-    SjtuclawSpine38Bounds bounds{-10.0f, -10.0f, -10.0f, -10.0f};
-    CHECK(sjtuclaw_spine38_setup_bounds(handle, &bounds) ==
-          SJTUCLAW_SPINE38_OK);
+    ArkClawSpine38Bounds bounds{-10.0f, -10.0f, -10.0f, -10.0f};
+    CHECK(arkclaw_spine38_setup_bounds(handle, &bounds) ==
+          ARKCLAW_SPINE38_OK);
     CHECK(bounds.x == -2.0f);
     CHECK(bounds.y == 3.0f);
     CHECK(bounds.width == 4.0f);
     CHECK(bounds.height == 5.0f);
-    CHECK(sjtuclaw_spine38_setup_bounds(handle, nullptr) ==
-          SJTUCLAW_SPINE38_INVALID_ARGUMENT);
+    CHECK(arkclaw_spine38_setup_bounds(handle, nullptr) ==
+          ARKCLAW_SPINE38_INVALID_ARGUMENT);
+    ArkClawSpine38RootTransform root{-10.0f, -10.0f};
+    CHECK(arkclaw_spine38_root_transform(handle, &root) ==
+          ARKCLAW_SPINE38_OK);
+    CHECK(root.x == 0.0f);
+    CHECK(root.y == 0.0f);
+    CHECK(arkclaw_spine38_root_transform(handle, nullptr) ==
+          ARKCLAW_SPINE38_INVALID_ARGUMENT);
 
-    sjtuclaw_spine38_destroy(handle);
+    arkclaw_spine38_destroy(handle);
 }
 
 }  // namespace

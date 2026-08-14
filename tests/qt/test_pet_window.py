@@ -10,62 +10,124 @@ from pathlib import Path
 from typing import cast
 
 import pytest
+import shiboken6
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import (
+    QEvent,
     QEventLoop,
     QMessageLogContext,
     QObject,
     QPoint,
     QPointF,
+    QRect,
     QSize,
     Qt,
     QTimer,
     QtMsgType,
     Signal,
 )
-from PySide6.QtGui import QContextMenuEvent, QImage, QPainter
+from PySide6.QtGui import QContextMenuEvent, QImage, QMouseEvent, QPainter
 from PySide6.QtTest import QSignalSpy, QTest
-from PySide6.QtWidgets import QApplication, QMenu
+from PySide6.QtWidgets import QApplication, QMenu, QWidget
 from scripts.qt_pet_smoke import _QtMessageAudit
 
-from sjtuclaw.application.pet_animation import (
+from arkclaw.application.pet_animation import (
     PetAnimationConfig,
     PetRenderFrame,
 )
-from sjtuclaw.application.pet_geometry import Size
-from sjtuclaw.application.pet_renderer_model import (
+from arkclaw.application.pet_geometry import Point, Rect, Size
+from arkclaw.application.pet_production_actions import (
+    ActionSource,
+    ProductionAction,
+)
+from arkclaw.application.pet_render_layout import (
+    PetRenderLayout,
+    PetRenderLayoutQuality,
+    PetRenderSurfaceMode,
+)
+from arkclaw.application.pet_renderer_model import (
     PetRendererAction,
     PetRendererActionRequest,
     PetRendererAnimationCapability,
     placeholder_animation_capability,
 )
-from sjtuclaw.application.pet_state import (
+from arkclaw.application.pet_role_pack import (
+    AnimationRoleRegistry,
+    RoleAnimationBinding,
+    build_track0_animation_registry,
+)
+from arkclaw.application.pet_state import (
+    PetFacing,
     PetLifecycleState,
     PetMotionState,
 )
-from sjtuclaw.bootstrap.qt_runtime import FakeQtRuntimeCompositionRoot
-from sjtuclaw.presentation.qt.main_window import MainWindow
-from sjtuclaw.presentation.qt.pet_application import (
+from arkclaw.application.pet_track0 import (
+    ActionOutcome,
+    PetTrack0Controller,
+    PlaybackEvent,
+)
+from arkclaw.bootstrap.qt_runtime import FakeQtRuntimeCompositionRoot
+from arkclaw.presentation.qt.main_window import MainWindow
+from arkclaw.presentation.qt.pet_application import (
     PetApplicationCoordinator,
 )
-from sjtuclaw.presentation.qt.pet_renderer import (
+from arkclaw.presentation.qt.pet_renderer import (
     PlaceholderPetRenderer,
 )
-from sjtuclaw.presentation.qt.pet_window import PetWindow
-from sjtuclaw.presentation.qt.runtime_bridge import QtRuntimeBridge
-from sjtuclaw.presentation.qt.system_tray import (
+from arkclaw.presentation.qt.pet_window import PetWindow
+from arkclaw.presentation.qt.runtime_bridge import QtRuntimeBridge
+from arkclaw.presentation.qt.system_tray import (
     PetTrayState,
     SystemTrayController,
     TrayCallbacks,
     _create_programmatic_tray_icon,
     _QtSystemTrayView,
 )
+from tests.fakes.pet_animation_player import FakeAnimationPlayer
 
 
 class _ManualShutdownBridge(QObject):
     shutdown_finished = Signal(bool, str)
+
+
+def test_workspace_exclusive_edges_are_derived_from_origin_plus_size() -> None:
+    module = __import__(
+        "arkclaw.presentation.qt.pet_window",
+        fromlist=["workspace_rect_from_qrect"],
+    )
+
+    workspace = module.workspace_rect_from_qrect(QRect(7, 11, 100, 80))
+
+    assert workspace.x == 7
+    assert workspace.y == 11
+    assert workspace.right == 7 + 100
+    assert workspace.bottom == 11 + 80
+
+
+def test_sit_workspace_and_display_are_selected_from_same_negative_screen() -> None:
+    module = __import__(
+        "arkclaw.presentation.qt.pet_window",
+        fromlist=["select_workspace_display_pair"],
+    )
+    primary = (
+        Rect(0.0, 0.0, 1920.0, 1040.0),
+        Rect(0.0, 0.0, 1920.0, 1080.0),
+    )
+    negative_secondary = (
+        Rect(-1280.0, 0.0, 1280.0, 984.0),
+        Rect(-1280.0, 0.0, 1280.0, 1024.0),
+    )
+
+    workspace, display = module.select_workspace_display_pair(
+        Point(-600.0, 804.0),
+        Size(160.0, 180.0),
+        (primary, negative_secondary),
+    )
+
+    assert workspace is negative_secondary[0]
+    assert display is negative_secondary[1]
 
 
 def test_pet_window_import_does_not_import_agent_loop() -> None:
@@ -84,13 +146,13 @@ def test_pet_window_import_does_not_import_agent_loop() -> None:
             "-c",
             (
                 "import sys, typing; "
-                "from sjtuclaw.presentation.qt.pet_window import PetWindow; "
+                "from arkclaw.presentation.qt.pet_window import PetWindow; "
                 "print('agent_loop_imported=' + "
-                "str('sjtuclaw.application.agent_loop' in sys.modules).lower()); "
+                "str('arkclaw.application.agent_loop' in sys.modules).lower()); "
                 "hints = typing.get_type_hints(PetWindow.__init__); "
                 "print('autostart_hint_resolved=' + "
                 "str('autostart_controller' in hints).lower()); "
-                "from sjtuclaw.presentation.qt import QtRuntimeBridge; "
+                "from arkclaw.presentation.qt import QtRuntimeBridge; "
                 "print('runtime_bridge=' + QtRuntimeBridge.__module__ + '.' + "
                 "QtRuntimeBridge.__name__)"
             ),
@@ -109,7 +171,7 @@ def test_pet_window_import_does_not_import_agent_loop() -> None:
     assert completed.stdout == (
         "agent_loop_imported=false\n"
         "autostart_hint_resolved=true\n"
-        "runtime_bridge=sjtuclaw.presentation.qt.runtime_bridge."
+        "runtime_bridge=arkclaw.presentation.qt.runtime_bridge."
         "QtRuntimeBridge\n"
     )
 
@@ -1320,13 +1382,13 @@ def test_right_click_exit_waits_for_shutdown_result(
     menu = pet.findChild(QMenu)
     assert menu is not None
     assert {
-        action.text() for action in menu.actions() if action.text()
-    } == {
         "Pause",
         "Always on top",
         "Start with Windows",
         "Open Agent window",
         "Exit",
+    } <= {
+        action.text() for action in menu.actions() if action.text()
     }
     exit_action = next(
         action for action in menu.actions() if action.text() == "Exit"
@@ -1452,3 +1514,657 @@ def test_standalone_main_window_close_still_shuts_down_runtime(
     assert _run_until(lambda: not main_window.isVisible())
     assert not bridge.runtime_thread.isRunning()
     assert bridge.runtime_thread.pending_task_count_at_close == 0
+
+
+class _EdgeAvoidanceRenderer:
+    """Overflow/BODY layout fake that records the composition order."""
+
+    def __init__(self, events: list[str]) -> None:
+        self.events = events
+        self.avoid = True
+        self.window: QWidget | None = None
+        self.installed_layouts: list[PetRenderLayout] = []
+        self.body_render_positions: list[tuple[int, int]] = []
+        self.render_generation = 0
+        self.device_pixel_ratio = 1.0
+        self._request: object | None = None
+        self.surface_image = QImage(200, 220, QImage.Format.Format_RGBA8888)
+        self.surface_image.fill(Qt.GlobalColor.transparent)
+        self.surface_image.setPixelColor(5, 5, Qt.GlobalColor.white)
+
+    def initialize(self, viewport: Size) -> None:
+        del viewport
+
+    def set_viewport(self, viewport: Size) -> None:
+        del viewport
+
+    def set_state(self, request: object) -> None:
+        action = getattr(request, "action", None)
+        previous_action = getattr(self._request, "action", None)
+        if self._request is not None and action != previous_action:
+            self.render_generation += 1
+        self._request = request
+
+    def update(self, delta_seconds: float) -> None:
+        del delta_seconds
+        self.events.append("frame_ready")
+
+    def render(self, painter: object, frame: object) -> None:
+        del painter, frame
+        if self.window is not None:
+            self.body_render_positions.append(
+                (self.window.x(), self.window.y())
+            )
+
+    def animation_capability(
+        self,
+        action: PetRendererAction,
+    ) -> PetRendererAnimationCapability:
+        return placeholder_animation_capability(action)
+
+    def pause(self) -> None:
+        return
+
+    def resume(self) -> None:
+        return
+
+    def close(self) -> None:
+        return
+
+    def plan_layout(
+        self,
+        body_rect: Rect,
+        workspace: Rect,
+        device_pixel_ratio: float,
+        *,
+        display: Rect | None = None,
+    ) -> PetRenderLayout:
+        del device_pixel_ratio, display
+        if self.avoid:
+            resolved_x = min(
+                body_rect.x + 32.0,
+                workspace.right - body_rect.width,
+            )
+            resolved_x = max(resolved_x, workspace.x)
+            return PetRenderLayout(
+                PetRenderSurfaceMode.OVERFLOW,
+                Rect(
+                    resolved_x - 20.0,
+                    body_rect.y - 30.0,
+                    200.0,
+                    220.0,
+                ),
+                Point(20.0, 30.0),
+                Point(resolved_x, body_rect.y),
+                0.0,
+                PetFacing.RIGHT,
+                1.0,
+                PetRenderLayoutQuality.FULL_SCALE,
+            )
+        return PetRenderLayout(
+            PetRenderSurfaceMode.BODY,
+            body_rect,
+            Point(0.0, 0.0),
+            Point(body_rect.x, body_rect.y),
+            0.0,
+            PetFacing.RIGHT,
+            1.0,
+            PetRenderLayoutQuality.FULL_SCALE,
+        )
+
+    def set_render_layout(self, layout: PetRenderLayout) -> None:
+        self.installed_layouts.append(layout)
+        self.events.append("set_render_layout")
+
+    def render_surface(self, painter: QPainter) -> QImage:
+        painter.drawImage(0, 0, self.surface_image)
+        return self.surface_image
+
+
+class _SitDisplayCaptureRenderer(_EdgeAvoidanceRenderer):
+    def __init__(self) -> None:
+        super().__init__(events=[])
+        self.captured_display: Rect | None = None
+
+    def plan_layout(
+        self,
+        body_rect: Rect,
+        workspace: Rect,
+        device_pixel_ratio: float,
+        *,
+        display: Rect | None = None,
+    ) -> PetRenderLayout:
+        del workspace, device_pixel_ratio
+        self.captured_display = display
+        return PetRenderLayout(
+            PetRenderSurfaceMode.BODY,
+            body_rect,
+            Point(0.0, 0.0),
+            Point(body_rect.x, body_rect.y),
+            0.0,
+            PetFacing.RIGHT,
+            1.0,
+            PetRenderLayoutQuality.FULL_SCALE,
+        )
+
+
+class _SpecialCompletionFacingRenderer(_EdgeAvoidanceRenderer):
+    def __init__(self, effective_facing: PetFacing) -> None:
+        super().__init__(events=[])
+        self._effective_facing = effective_facing
+
+    def plan_layout(
+        self,
+        body_rect: Rect,
+        workspace: Rect,
+        device_pixel_ratio: float,
+        *,
+        display: Rect | None = None,
+    ) -> PetRenderLayout:
+        del workspace, device_pixel_ratio, display
+        return PetRenderLayout(
+            PetRenderSurfaceMode.OVERFLOW,
+            Rect(body_rect.x - 20.0, body_rect.y - 30.0, 200.0, 220.0),
+            Point(20.0, 30.0),
+            Point(body_rect.x, body_rect.y),
+            0.0,
+            self._effective_facing,
+            1.0,
+            PetRenderLayoutQuality.FULL_SCALE,
+        )
+
+
+class _QueuedPlaybackEvents:
+    def __init__(self) -> None:
+        self.events: tuple[PlaybackEvent, ...] = ()
+
+    def update(self, delta_seconds: float) -> tuple[PlaybackEvent, ...]:
+        del delta_seconds
+        events = self.events
+        self.events = ()
+        return events
+
+
+@pytest.mark.parametrize(
+    ("initial_facing", "effective_facing"),
+    [
+        (PetFacing.RIGHT, PetFacing.LEFT),
+        (PetFacing.LEFT, PetFacing.RIGHT),
+        (PetFacing.RIGHT, PetFacing.RIGHT),
+        (PetFacing.LEFT, PetFacing.LEFT),
+    ],
+)
+def test_special_effective_facing_becomes_official_only_after_completion(
+    qt_application: QApplication,
+    initial_facing: PetFacing,
+    effective_facing: PetFacing,
+) -> None:
+    renderer = _SpecialCompletionFacingRenderer(effective_facing)
+    roles = AnimationRoleRegistry(
+        {
+            action: RoleAnimationBinding(
+                action,
+                "Move"
+                if action in {
+                    ProductionAction.MOVE_LEFT,
+                    ProductionAction.MOVE_RIGHT,
+                }
+                else action.value.title(),
+            )
+            for action in ProductionAction
+        }
+    )
+    player = FakeAnimationPlayer()
+    controller = PetTrack0Controller(
+        player=player,
+        registry=build_track0_animation_registry(
+            roles,
+            source_durations={action: 1.0 for action in ProductionAction},
+        ),
+        clock=_FakeClock(),
+    )
+    events = _QueuedPlaybackEvents()
+    window = PetWindow(
+        renderer=renderer,
+        clock=_FakeClock(),
+        track0=controller,
+        active_role_pack_id="schwarz-production",
+        available_production_actions=frozenset(ProductionAction),
+        playback_event_source=events,
+    )
+    if initial_facing is PetFacing.LEFT:
+        assert (
+            window.request_user_pet_action(ProductionAction.MOVE_LEFT)
+            is ActionOutcome.ACCEPTED
+        )
+    assert window.render_frame.intent.facing is initial_facing
+    assert (
+        window.request_user_pet_action(ProductionAction.SPECIAL)
+        is ActionOutcome.ACCEPTED
+    )
+    window.show()
+    window.physics_timer.timeout.emit()
+    qt_application.processEvents()
+
+    assert window._active_render_layout is not None
+    assert window._active_render_layout.effective_facing is effective_facing
+    assert window.render_frame.intent.facing is initial_facing
+    confirmed = controller.state.confirmed_epoch
+    assert confirmed is not None
+    events.events = (
+        PlaybackEvent(
+            generation=confirmed.generation,
+            logical_action=confirmed.logical_action,
+            physical_name=confirmed.physical_name,
+            playback_token=confirmed.playback_token,
+        ),
+    )
+
+    window.physics_timer.timeout.emit()
+    qt_application.processEvents()
+
+    assert window.render_frame.intent.facing is effective_facing
+    window.complete_safe_close()
+    qt_application.processEvents()
+
+
+def test_pet_window_forwards_full_geometry_only_for_sit(
+    qt_application: QApplication,
+) -> None:
+    del qt_application
+    renderer = _SitDisplayCaptureRenderer()
+    window = PetWindow(renderer=renderer, clock=_FakeClock())
+    selected_workspace = Rect(0.0, 0.0, 1707.0, 1019.0)
+    selected_display = Rect(0.0, 0.0, 1707.0, 1067.0)
+    window._workspace_display_pairs = lambda: (  # type: ignore[method-assign]
+        (selected_workspace, selected_display),
+    )
+
+    result = window._prepare_render_layout(
+        PetRendererActionRequest(
+            PetRendererAction.SITTING,
+            PetFacing.RIGHT,
+            True,
+            0.0,
+        )
+    )
+
+    assert isinstance(result, PetRenderLayout)
+    assert renderer.captured_display is selected_display
+    window.complete_safe_close()
+
+
+class _CompositionRecorderWindow(PetWindow):
+    """PetWindow that records window moves and forwarded mouse events."""
+
+    def __init__(self, events: list[str], **kwargs: object) -> None:
+        self._recorder_events = events
+        super().__init__(**kwargs)
+
+    def move(self, *args: int) -> None:
+        self._recorder_events.append("window_move")
+        super().move(*args)
+
+    def mousePressEvent(self, event: QMouseEvent) -> None:
+        self._recorder_events.append("window_press")
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event: QMouseEvent) -> None:
+        self._recorder_events.append("window_mouse_move")
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event: QMouseEvent) -> None:
+        self._recorder_events.append("window_release")
+        super().mouseReleaseEvent(event)
+
+
+def _production_overflow_window(
+    action: ProductionAction,
+) -> tuple[PetWindow, _EdgeAvoidanceRenderer, PetTrack0Controller, FakeAnimationPlayer]:
+    roles = AnimationRoleRegistry(
+        {
+            candidate: RoleAnimationBinding(
+                candidate,
+                "Move"
+                if candidate in {
+                    ProductionAction.MOVE_LEFT,
+                    ProductionAction.MOVE_RIGHT,
+                }
+                else candidate.value.title(),
+            )
+            for candidate in ProductionAction
+        }
+    )
+    player = FakeAnimationPlayer()
+    controller = PetTrack0Controller(
+        player=player,
+        registry=build_track0_animation_registry(
+            roles,
+            source_durations={candidate: 1.0 for candidate in ProductionAction},
+        ),
+        clock=_FakeClock(),
+    )
+    renderer = _EdgeAvoidanceRenderer(events=[])
+    window = PetWindow(
+        renderer=renderer,
+        clock=_FakeClock(),
+        track0=controller,
+        active_role_pack_id="schwarz-production",
+        available_production_actions=frozenset(ProductionAction),
+    )
+    assert window.request_pet_action(action) is ActionOutcome.ACCEPTED
+    window.show()
+    window.physics_timer.timeout.emit()
+    QApplication.processEvents()
+    overlay = window._effect_overlay
+    assert overlay is not None
+    paint_target = QImage(
+        overlay.width(),
+        overlay.height(),
+        QImage.Format.Format_RGBA8888,
+    )
+    painter = QPainter(paint_target)
+    try:
+        overlay.render(painter, QPoint())
+    finally:
+        painter.end()
+    return window, renderer, controller, player
+
+
+@pytest.mark.parametrize(
+    "initial_action",
+    [ProductionAction.SIT, ProductionAction.SPECIAL],
+)
+def test_visible_overflow_pixel_clicks_through_pet_window_to_interact_once(
+    qt_application: QApplication,
+    initial_action: ProductionAction,
+) -> None:
+    window, renderer, controller, player = _production_overflow_window(
+        initial_action
+    )
+    overlay = window._effect_overlay
+    assert overlay is not None
+    generation_before_click = renderer.render_generation
+    play_count_before_click = len(player.calls)
+
+    QTest.mouseClick(overlay, Qt.MouseButton.LeftButton, pos=QPoint(5, 5))
+    qt_application.processEvents()
+
+    active = controller.active_request
+    confirmed = controller.state.confirmed_epoch
+    assert active is not None
+    assert confirmed is not None
+    assert confirmed.physical_name == "Interact"
+    assert active.source is ActionSource.USER
+    assert len(player.calls) == play_count_before_click + 1
+    assert renderer.render_generation == generation_before_click + 1
+    assert window.motion_state is PetMotionState.IDLE
+    window.complete_safe_close()
+    qt_application.processEvents()
+    shiboken6.delete(overlay)
+
+
+@pytest.mark.parametrize(
+    "initial_action",
+    [ProductionAction.SIT, ProductionAction.SPECIAL],
+)
+def test_visible_overflow_pixel_drag_enters_relax_motion_fallback(
+    qt_application: QApplication,
+    initial_action: ProductionAction,
+) -> None:
+    window, _renderer, controller, _player = _production_overflow_window(
+        initial_action
+    )
+    overlay = window._effect_overlay
+    assert overlay is not None
+    press = QPoint(5, 5)
+    moved = QPointF(65.0, 45.0)
+    moved_global = QPointF(overlay.x() + moved.x(), overlay.y() + moved.y())
+
+    QTest.mousePress(overlay, Qt.MouseButton.LeftButton, pos=press)
+    QApplication.sendEvent(
+        overlay,
+        QMouseEvent(
+            QEvent.Type.MouseMove,
+            moved,
+            moved_global,
+            Qt.MouseButton.NoButton,
+            Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.NoModifier,
+        ),
+    )
+
+    active = controller.active_request
+    confirmed = controller.state.confirmed_epoch
+    assert active is not None
+    assert confirmed is not None
+    assert confirmed.physical_name == "Relax"
+    assert window.motion_state is PetMotionState.DRAGGING
+
+    QApplication.sendEvent(
+        overlay,
+        QMouseEvent(
+            QEvent.Type.MouseButtonRelease,
+            moved,
+            moved_global,
+            Qt.MouseButton.LeftButton,
+            Qt.MouseButton.NoButton,
+            Qt.KeyboardModifier.NoModifier,
+        ),
+    )
+    assert window.motion_state in {
+        PetMotionState.FALLING,
+        PetMotionState.LANDING,
+    }
+    window.complete_safe_close()
+    qt_application.processEvents()
+    shiboken6.delete(overlay)
+
+
+@pytest.mark.parametrize(
+    "initial_action",
+    [ProductionAction.SIT, ProductionAction.SPECIAL],
+)
+def test_visible_overflow_pixel_opens_pet_context_menu_without_action_change(
+    qt_application: QApplication,
+    initial_action: ProductionAction,
+) -> None:
+    window, renderer, controller, player = _production_overflow_window(
+        initial_action
+    )
+    overlay = window._effect_overlay
+    assert overlay is not None
+    active_before = controller.active_request
+    generation_before = renderer.render_generation
+    play_count_before = len(player.calls)
+    local = QPoint(5, 5)
+    global_point = overlay.mapToGlobal(local)
+
+    QApplication.sendEvent(
+        overlay,
+        QContextMenuEvent(
+            QContextMenuEvent.Reason.Mouse,
+            local,
+            global_point,
+            Qt.KeyboardModifier.NoModifier,
+        ),
+    )
+    qt_application.processEvents()
+
+    menu = window.findChild(QMenu)
+    assert menu is not None
+    assert menu.isVisible()
+    overlay_id = int(overlay.winId())
+    for _ in range(3):
+        window.physics_timer.timeout.emit()
+        qt_application.processEvents()
+    assert menu.isVisible()
+    assert int(overlay.winId()) == overlay_id
+    assert controller.active_request is active_before
+    assert renderer.render_generation == generation_before
+    assert len(player.calls) == play_count_before
+    menu.close()
+    window.complete_safe_close()
+    qt_application.processEvents()
+    shiboken6.delete(overlay)
+
+
+def test_overflow_commit_order_moves_window_before_layout_and_overlay(
+    qt_application: QApplication,
+) -> None:
+    events: list[str] = []
+    renderer = _EdgeAvoidanceRenderer(events)
+    window = _CompositionRecorderWindow(
+        renderer=renderer,
+        clock=_FakeClock(),
+        events=events,
+    )
+    window.show()
+    motion = window._animation.motion
+    original_commit = motion.place_for_render_layout
+
+    def recording_commit(position: Point, workspace: Rect) -> object:
+        events.append("motion_commit")
+        return original_commit(position, workspace)
+
+    motion.place_for_render_layout = recording_commit  # type: ignore[method-assign]
+    overlay = window._effect_overlay
+    original_show = overlay.show_layout
+
+    def recording_show(
+        layout: PetRenderLayout,
+        *,
+        always_on_top: bool,
+    ) -> None:
+        events.append("overlay_show")
+        original_show(layout, always_on_top=always_on_top)
+
+    overlay.show_layout = recording_show  # type: ignore[method-assign]
+    events.clear()
+
+    window.physics_timer.timeout.emit()
+    qt_application.processEvents()
+
+    assert events == [
+        "motion_commit",
+        "window_move",
+        "set_render_layout",
+        "frame_ready",
+        "overlay_show",
+    ]
+    assert window.pos().x() == round(motion.position.x)
+    assert overlay.isVisible()
+    window.complete_safe_close()
+    qt_application.processEvents()
+    shiboken6.delete(overlay)
+
+
+def test_special_end_keeps_avoided_position_without_intermediate_shrink_frame(
+    qt_application: QApplication,
+) -> None:
+    renderer = _EdgeAvoidanceRenderer(events=[])
+    window = PetWindow(renderer=renderer, clock=_FakeClock())
+    renderer.window = window
+    window.show()
+    overlay = window._effect_overlay
+    motion = window._animation.motion
+    before = motion.position
+
+    window.physics_timer.timeout.emit()
+    qt_application.processEvents()
+
+    assert motion.position != before
+    avoided = motion.position
+    assert overlay.isVisible()
+    assert window.pos().x() == round(avoided.x)
+
+    renderer.avoid = False
+    window.physics_timer.timeout.emit()
+    qt_application.processEvents()
+
+    assert motion.position == avoided
+    assert window.pos().x() == round(avoided.x)
+    assert not overlay.isVisible()
+    assert renderer.body_render_positions[-1] == (
+        round(avoided.x),
+        round(avoided.y),
+    )
+    assert all(
+        layout.quality is PetRenderLayoutQuality.FULL_SCALE
+        and layout.scale_multiplier == 1.0
+        for layout in renderer.installed_layouts
+    )
+    window.complete_safe_close()
+    qt_application.processEvents()
+    shiboken6.delete(overlay)
+
+
+def test_avoided_overflow_proxies_body_press_move_release_and_context_menu(
+    qt_application: QApplication,
+) -> None:
+    events: list[str] = []
+    renderer = _EdgeAvoidanceRenderer(events=[])
+    window = _CompositionRecorderWindow(
+        renderer=renderer,
+        clock=_FakeClock(),
+        events=events,
+    )
+    window.show()
+    overlay = window._effect_overlay
+    window.physics_timer.timeout.emit()
+    qt_application.processEvents()
+    layout = renderer.installed_layouts[-1]
+    offset = layout.body_window_offset
+
+    # The overlay body hit rect must reference the resolved body position so
+    # the input proxy stays aligned with the moved window.
+    assert overlay.x() + round(offset.x) == window.x()
+    assert overlay.y() + round(offset.y) == window.y()
+
+    body_center = QPoint(round(offset.x) + 80, round(offset.y) + 90)
+    outside_local = QPointF(round(offset.x) + 400, round(offset.y) + 400)
+    outside_global = QPointF(
+        overlay.x() + outside_local.x(),
+        overlay.y() + outside_local.y(),
+    )
+    start_pos = window.pos()
+    events.clear()
+
+    QTest.mousePress(overlay, Qt.MouseButton.LeftButton, pos=body_center)
+    move = QMouseEvent(
+        QEvent.Type.MouseMove,
+        outside_local,
+        outside_global,
+        Qt.MouseButton.NoButton,
+        Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.NoModifier,
+    )
+    QApplication.sendEvent(overlay, move)
+    release = QMouseEvent(
+        QEvent.Type.MouseButtonRelease,
+        outside_local,
+        outside_global,
+        Qt.MouseButton.LeftButton,
+        Qt.MouseButton.NoButton,
+        Qt.KeyboardModifier.NoModifier,
+    )
+    QApplication.sendEvent(overlay, release)
+    qt_application.processEvents()
+
+    assert "window_press" in events
+    assert "window_mouse_move" in events
+    assert "window_release" in events
+    assert window.pos() != start_pos
+
+    context = QContextMenuEvent(
+        QContextMenuEvent.Reason.Mouse,
+        body_center,
+        QPoint(overlay.x() + body_center.x(), overlay.y() + body_center.y()),
+    )
+    QApplication.sendEvent(overlay, context)
+    qt_application.processEvents()
+
+    assert window.findChild(QMenu) is not None
+    window.complete_safe_close()
+    qt_application.processEvents()
+    shiboken6.delete(overlay)

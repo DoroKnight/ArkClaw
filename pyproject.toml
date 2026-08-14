@@ -3,14 +3,14 @@ requires = ["setuptools>=75"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "sjtuclaw"
+name = "arkclaw"
 version = "0.1.0"
 description = "A local-first Windows desktop AI pet."
 readme = "README.md"
 requires-python = ">=3.12,<3.14"
 license = { text = "Proprietary" }
 authors = [
-  { name = "SJTUClaw Contributors" },
+  { name = "ArkClaw Contributors" },
 ]
 dependencies = [
     "openai==2.48.0",
@@ -30,11 +30,12 @@ packaging = [
 ]
 
 [project.scripts]
-sjtuclaw-agent-demo = "sjtuclaw.__main__:main"
+arkclaw-agent-demo = "arkclaw.__main__:main"
 
 [project.gui-scripts]
-sjtuclaw-gui = "sjtuclaw.presentation.qt.application:run"
-sjtuclaw-pet-placeholder = "sjtuclaw.presentation.qt.pet_application:run"
+arkclaw-gui = "arkclaw.presentation.qt.application:run"
+arkclaw-pet = "arkclaw.presentation.qt.pet_application:run"
+arkclaw-pet-placeholder = "arkclaw.presentation.qt.pet_application:run"
 
 [tool.setuptools]
 package-dir = { "" = "src" }

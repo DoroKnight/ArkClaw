@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from sjtuclaw.application.pet_geometry import (
+from arkclaw.application.pet_geometry import (
     Point,
     Rect,
     Size,
@@ -10,11 +10,11 @@ from sjtuclaw.application.pet_geometry import (
     physical_to_logical_rect,
     select_workspace,
 )
-from sjtuclaw.application.pet_motion import (
+from arkclaw.application.pet_motion import (
     PetMotionConfig,
     PetMotionModel,
 )
-from sjtuclaw.application.pet_state import (
+from arkclaw.application.pet_state import (
     PetActivityState,
     PetBehaviorState,
     PetFacing,
@@ -111,6 +111,36 @@ def test_releasing_drag_starts_falling() -> None:
 
     assert model.state.motion is PetMotionState.FALLING
     assert PetBehaviorState.DRAG_STRUGGLE not in model.state.behaviors
+
+
+@pytest.mark.parametrize(
+    ("candidate_x", "expected_x"),
+    [(-500.0, -84.0), (1_000.0, 784.0)],
+)
+def test_drag_retains_a_sixteen_pixel_recoverable_strip(
+    candidate_x: float,
+    expected_x: float,
+) -> None:
+    model = PetMotionModel(Point(20, 10), _WINDOW)
+    model.start_dragging()
+
+    dragged = model.drag_to(Point(candidate_x, 200), (_WORKSPACE,))
+
+    assert dragged.position == Point(expected_x, 200)
+
+
+def test_drag_below_workspace_floor_release_clamps_then_recovers() -> None:
+    model = PetMotionModel(Point(20, 10), _WINDOW)
+    model.start_dragging()
+    dragged = model.drag_to(Point(-500, 650), (_WORKSPACE,))
+
+    released = model.release_drag((_WORKSPACE,))
+
+    assert dragged.position == Point(-84, 650)
+    assert released.position == Point(0, 480)
+    assert released.state.motion is PetMotionState.LANDING
+    assert released.vertical_velocity == 0.0
+    assert released.horizontal_velocity == 0.0
 
 
 def test_fall_reaches_landing_then_returns_to_idle() -> None:
@@ -228,7 +258,17 @@ def test_idle_pet_is_recovered_when_a_monitor_workspace_disappears() -> None:
     recovered = model.update(0.1, (Rect(0, 0, 800, 600),))
 
     assert recovered.state.motion is PetMotionState.IDLE
-    assert recovered.position == Point(700, 100)
+    assert recovered.position == Point(700, 480)
+    assert recovered.position.y + _WINDOW.height == _WORKSPACE.bottom
+
+
+def test_restored_settled_window_bottom_equals_workspace_bottom() -> None:
+    model = PetMotionModel(Point(20, 480), _WINDOW)
+
+    restored = model.restore_position(Point(300, 100), (_WORKSPACE,))
+
+    assert restored.position == Point(300, 480)
+    assert restored.position.y + _WINDOW.height == _WORKSPACE.bottom
 
 
 def test_closing_rejects_interaction_and_stops_physics() -> None:

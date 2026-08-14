@@ -5,25 +5,25 @@ from dataclasses import replace
 import pytest
 from tests.fakes.pet_animation_player import FakeAnimationPlayer
 
-from sjtuclaw.application.pet_action_sequence import (
+from arkclaw.application.pet_action_sequence import (
     AnimationRegistry,
     PetActionName,
     PlaybackHealth,
     default_animation_registry,
 )
-from sjtuclaw.application.pet_animation import (
+from arkclaw.application.pet_animation import (
     PetAnimationEngine,
     PetAnimationEvent,
 )
-from sjtuclaw.application.pet_geometry import Point, Rect, Size
-from sjtuclaw.application.pet_motion import PetMotionModel
-from sjtuclaw.application.pet_state import (
+from arkclaw.application.pet_geometry import Point, Rect, Size
+from arkclaw.application.pet_motion import PetMotionModel
+from arkclaw.application.pet_state import (
     PetActivityState,
     PetLayeredStateMachine,
     PetMotionState,
     assert_animation_compatible,
 )
-from sjtuclaw.application.pet_track0 import (
+from arkclaw.application.pet_track0 import (
     ActionOutcome,
     PetTrack0Controller,
     PlaybackEvent,

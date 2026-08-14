@@ -21,8 +21,8 @@ BUILD_RELATIVE_PATH = Path("build/windows-standalone")
 REPORT_RELATIVE_PATH = BUILD_RELATIVE_PATH / "compilation-report.xml"
 AUDIT_RELATIVE_PATH = BUILD_RELATIVE_PATH / "artifact_audit.json"
 RAW_DIST_RELATIVE_PATH = Path("packaging/deployment/pet_entry.dist")
-FINAL_DIST_RELATIVE_PATH = Path("dist/SJTUClaw.dist")
-MAIN_EXECUTABLE = "SJTUClaw.exe"
+FINAL_DIST_RELATIVE_PATH = Path("dist/ArkClaw.dist")
+MAIN_EXECUTABLE = "ArkClaw.exe"
 MAX_REPORT_BYTES = 64 * 1024 * 1024
 MAX_FILE_BYTES = 512 * 1024 * 1024
 MAX_DIST_BYTES = 4 * 1024**3
@@ -69,14 +69,14 @@ _FORBIDDEN_CHARACTER_SUFFIXES = frozenset(
     {".atlas", ".png", ".skel"}
 )
 _FORBIDDEN_BYTE_LITERALS = (
-    b"SJTUClaw/Test/OpenAI/APIKey",
-    b"SJTUClaw/Test/DeepSeek/APIKey",
+    b"ArkClaw/Test/OpenAI/APIKey",
+    b"ArkClaw/Test/DeepSeek/APIKey",
     b"D:\\ark-model",
     b"D:/ark-model",
 )
 _LOCAL_PATH_LITERALS = (
-    b"D:\\SJTUClaw",
-    b"D:/SJTUClaw",
+    b"D:\\ArkClaw",
+    b"D:/ArkClaw",
     b"C:\\Users\\LENOVO",
     b"C:/Users/LENOVO",
     b"\\.venv\\",
@@ -106,10 +106,10 @@ _FORBIDDEN_PRODUCTION_DISTRIBUTIONS = frozenset(
 )
 _REQUIRED_AUTOSTART_MODULES = frozenset(
     {
-        "sjtuclaw.application.autostart_service",
-        "sjtuclaw.infrastructure.autostart.windows_run_key",
-        "sjtuclaw.presentation.qt.autostart_controller",
-        "sjtuclaw.presentation.qt.provider_settings_dialog",
+        "arkclaw.application.autostart_service",
+        "arkclaw.infrastructure.autostart.windows_run_key",
+        "arkclaw.presentation.qt.autostart_controller",
+        "arkclaw.presentation.qt.provider_settings_dialog",
     }
 )
 _KNOWN_SYSTEM_DLLS = frozenset(
@@ -763,8 +763,8 @@ def _audit_compilation_report(path: Path) -> tuple[bool, dict[str, object]]:
             missing_required_autostart_modules
         ),
         "manual_targets_present": (
-            "SJTUClaw/Test/OpenAI/APIKey" in report_text
-            or "SJTUClaw/Test/DeepSeek/APIKey" in report_text
+            "ArkClaw/Test/OpenAI/APIKey" in report_text
+            or "ArkClaw/Test/DeepSeek/APIKey" in report_text
         ),
         "external_character_path_present": (
             "D:\\ark-model" in report_text

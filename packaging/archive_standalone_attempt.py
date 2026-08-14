@@ -271,7 +271,7 @@ def record_dry_run_incident(
 ) -> ArchiveOutcome:
     try:
         root = repository_root.resolve(strict=True)
-        final_directory = root / "dist/SJTUClaw.dist"
+        final_directory = root / "dist/ArkClaw.dist"
         build_directory = root / SOURCE_BUILD_RELATIVE_PATH
         raw_directory = root / "packaging/deployment/pet_entry.dist"
         target = root / INCIDENT_RELATIVE_PATH
@@ -289,7 +289,7 @@ def record_dry_run_incident(
             or len(final_manifest) != EXPECTED_FINAL_FILE_COUNT
             or sum(size for size, _ in final_manifest.values())
             != EXPECTED_FINAL_TOTAL_SIZE
-            or final_manifest.get("SJTUClaw.exe", (0, ""))[1]
+            or final_manifest.get("ArkClaw.exe", (0, ""))[1]
             != EXPECTED_FINAL_EXE_SHA256
             or len(build_manifest) != 7
         ):
@@ -549,7 +549,7 @@ def archive_degraded_surviving_evidence(
     try:
         root = repository_root.resolve(strict=True)
         source_dist = root / DIST_RELATIVE_PATH
-        source_final = source_dist / "SJTUClaw.dist"
+        source_final = source_dist / "ArkClaw.dist"
         source_build = root / SOURCE_BUILD_RELATIVE_PATH
         source_raw = root / SOURCE_DEPLOYMENT_RELATIVE_PATH
         incident_directory = root / INCIDENT_RELATIVE_PATH
@@ -564,7 +564,7 @@ def archive_degraded_surviving_evidence(
             or not source_build.is_dir()
             or not incident_directory.is_dir()
             or sorted(path.name for path in source_dist.iterdir())
-            != ["SJTUClaw.dist"]
+            != ["ArkClaw.dist"]
         ):
             raise OSError("degraded_archive_source_invalid")
         final_manifest = _directory_manifest(source_final)
@@ -577,7 +577,7 @@ def archive_degraded_surviving_evidence(
         )
         if (
             final_manifest != audit_manifest
-            or final_manifest.get("SJTUClaw.exe", (0, ""))[1]
+            or final_manifest.get("ArkClaw.exe", (0, ""))[1]
             != EXPECTED_FINAL_EXE_SHA256
             or len(final_manifest) != EXPECTED_FINAL_FILE_COUNT
             or sum(size for size, _ in final_manifest.values())
@@ -622,7 +622,7 @@ def archive_degraded_surviving_evidence(
     moved: list[tuple[Path, Path]] = []
     combined = {
         **{
-            f"dist/SJTUClaw.dist/{name}": details
+            f"dist/ArkClaw.dist/{name}": details
             for name, details in final_manifest.items()
         },
         **{
@@ -661,7 +661,7 @@ def archive_degraded_surviving_evidence(
             or os.path.lexists(source_build)
             or os.path.lexists(source_raw)
             or _directory_manifest(
-                archived_dist / "SJTUClaw.dist"
+                archived_dist / "ArkClaw.dist"
             )
             != final_manifest
             or _directory_manifest(archived_build)
@@ -674,7 +674,7 @@ def archive_degraded_surviving_evidence(
             or os.path.lexists(source_build)
             or os.path.lexists(source_raw)
             or _directory_manifest(
-                archive_target / "dist/SJTUClaw.dist"
+                archive_target / "dist/ArkClaw.dist"
             )
             != final_manifest
             or _directory_manifest(

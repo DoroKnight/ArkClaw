@@ -12,9 +12,9 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtCore import QObject
 from PySide6.QtWidgets import QApplication
 
-from sjtuclaw.application.pet_production_actions import ProductionAction
-from sjtuclaw.application.pet_track0 import ActionOutcome
-from sjtuclaw.presentation.qt.system_tray import (
+from arkclaw.application.pet_production_actions import ProductionAction
+from arkclaw.application.pet_track0 import ActionOutcome
+from arkclaw.presentation.qt.system_tray import (
     PetTrayState,
     SystemTrayController,
     TrayCallbacks,

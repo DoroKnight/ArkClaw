@@ -4,7 +4,7 @@ from dataclasses import replace
 
 from tests.fakes.pet_animation_player import FakeAnimationPlayer
 
-from sjtuclaw.application.pet_action_sequence import (
+from arkclaw.application.pet_action_sequence import (
     SEQUENCE_CATALOG,
     AnimationRegistry,
     InterruptClass,
@@ -13,7 +13,7 @@ from sjtuclaw.application.pet_action_sequence import (
     SequenceName,
     default_animation_registry,
 )
-from sjtuclaw.application.pet_track0 import (
+from arkclaw.application.pet_track0 import (
     ActionOutcome,
     ActionRequest,
     CancellationMode,
@@ -85,7 +85,7 @@ def test_every_play_and_clear_attempt_consumes_generation() -> None:
     assert controller.generation == 2
 
 
-def test_replace_uses_clear_generation_then_play_generation() -> None:
+def test_replace_installs_new_animation_without_clearing_mix_source() -> None:
     player = FakeAnimationPlayer()
     controller = _controller(player)
     controller.play(_request(SequenceName.DRAG_RELEASE))
@@ -97,8 +97,8 @@ def test_replace_uses_clear_generation_then_play_generation() -> None:
     )
 
     assert outcome is ActionOutcome.ACCEPTED
-    assert [call.operation for call in player.calls] == ["play", "clear", "play"]
-    assert [call.generation for call in player.calls] == [1, 2, 3]
+    assert [call.operation for call in player.calls] == ["play", "play"]
+    assert [call.generation for call in player.calls] == [1, 2]
     assert controller.state.desired_action is PetActionName.DRAG_START
 
 

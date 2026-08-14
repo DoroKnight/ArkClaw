@@ -8,15 +8,15 @@ from pathlib import Path
 
 from PySide6.QtCore import QCoreApplication, QThread, QTimer
 
-from sjtuclaw.application.provider_profile_service import (
+from arkclaw.application.provider_profile_service import (
     ProviderActivationOptions,
 )
-from sjtuclaw.bootstrap.qt_runtime import (
+from arkclaw.bootstrap.qt_runtime import (
     QT_SMOKE_SECONDARY_PROFILE_ID,
     FakeQtRuntimeCompositionRoot,
 )
-from sjtuclaw.domain.models import FAKE_DEFAULT_PROFILE_ID
-from sjtuclaw.presentation.qt.runtime_bridge import QtRuntimeBridge
+from arkclaw.domain.models import FAKE_DEFAULT_PROFILE_ID
+from arkclaw.presentation.qt.runtime_bridge import QtRuntimeBridge
 
 _OPTIONS = ProviderActivationOptions(
     timeout_seconds=30.0,
@@ -159,7 +159,7 @@ def _run_smoke(metadata_path: Path) -> int:
 
 
 def main() -> int:
-    with tempfile.TemporaryDirectory(prefix="sjtuclaw-qt-smoke-") as directory:
+    with tempfile.TemporaryDirectory(prefix="arkclaw-qt-smoke-") as directory:
         return _run_smoke(Path(directory) / "provider-profiles.json")
 
 

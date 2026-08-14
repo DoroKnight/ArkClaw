@@ -15,22 +15,22 @@ if __package__ in {None, ""}:
 from PySide6.QtCore import QObject, QTimer, qInstallMessageHandler
 from PySide6.QtWidgets import QApplication
 
-from scripts.qt_pet_smoke import (
-    _EXPECTED_QT_PLATFORM_WARNING_COUNTS,
-    _QtMessageAudit,
-)
-from sjtuclaw.application.pet_state import PetLifecycleState
-from sjtuclaw.bootstrap.qt_runtime import FakeQtRuntimeCompositionRoot
-from sjtuclaw.presentation.qt.main_window import MainWindow
-from sjtuclaw.presentation.qt.pet_application import (
+from arkclaw.application.pet_state import PetLifecycleState
+from arkclaw.bootstrap.qt_runtime import FakeQtRuntimeCompositionRoot
+from arkclaw.presentation.qt.main_window import MainWindow
+from arkclaw.presentation.qt.pet_application import (
     PetApplicationCoordinator,
 )
-from sjtuclaw.presentation.qt.pet_window import PetWindow
-from sjtuclaw.presentation.qt.runtime_bridge import QtRuntimeBridge
-from sjtuclaw.presentation.qt.system_tray import (
+from arkclaw.presentation.qt.pet_window import PetWindow
+from arkclaw.presentation.qt.runtime_bridge import QtRuntimeBridge
+from arkclaw.presentation.qt.system_tray import (
     PetTrayState,
     SystemTrayController,
     TrayCallbacks,
+)
+from scripts.qt_pet_smoke import (
+    _EXPECTED_QT_PLATFORM_WARNING_COUNTS,
+    _QtMessageAudit,
 )
 
 _EXPECTED_TRAY_QT_WARNING_COUNTS = (
@@ -83,7 +83,7 @@ def _run_smoke(message_audit: _QtMessageAudit) -> int:
     timed_out = False
     shutdown_results: list[tuple[bool, str]] = []
     with tempfile.TemporaryDirectory(
-        prefix="sjtuclaw-tray-smoke-"
+        prefix="arkclaw-tray-smoke-"
     ) as directory:
         bridge = QtRuntimeBridge(
             FakeQtRuntimeCompositionRoot(

@@ -24,23 +24,23 @@ from PySide6.QtGui import QPainter
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 
-from sjtuclaw.application.pet_animation import (
+from arkclaw.application.pet_animation import (
     PetAnimationConfig,
     PetRenderFrame,
 )
-from sjtuclaw.application.pet_state import (
+from arkclaw.application.pet_state import (
     PetBehaviorState,
     PetFacing,
     PetMotionState,
 )
-from sjtuclaw.bootstrap.qt_runtime import FakeQtRuntimeCompositionRoot
-from sjtuclaw.presentation.qt.main_window import MainWindow
-from sjtuclaw.presentation.qt.pet_application import (
+from arkclaw.bootstrap.qt_runtime import FakeQtRuntimeCompositionRoot
+from arkclaw.presentation.qt.main_window import MainWindow
+from arkclaw.presentation.qt.pet_application import (
     PetApplicationCoordinator,
 )
-from sjtuclaw.presentation.qt.pet_renderer import PlaceholderPetRenderer
-from sjtuclaw.presentation.qt.pet_window import PetWindow
-from sjtuclaw.presentation.qt.runtime_bridge import QtRuntimeBridge
+from arkclaw.presentation.qt.pet_renderer import PlaceholderPetRenderer
+from arkclaw.presentation.qt.pet_window import PetWindow
+from arkclaw.presentation.qt.runtime_bridge import QtRuntimeBridge
 
 _PYSIDE_FONT_DIRECTORY = (
     Path(PySide6.__file__).resolve().parent / "lib" / "fonts"
@@ -149,7 +149,7 @@ def _run_smoke(message_audit: _QtMessageAudit) -> int:
     app.setQuitOnLastWindowClosed(False)
     timed_out = False
     shutdown_results: list[tuple[bool, str]] = []
-    with tempfile.TemporaryDirectory(prefix="sjtuclaw-pet-smoke-") as directory:
+    with tempfile.TemporaryDirectory(prefix="arkclaw-pet-smoke-") as directory:
         bridge = QtRuntimeBridge(
             FakeQtRuntimeCompositionRoot(
                 Path(directory) / "profiles.json"

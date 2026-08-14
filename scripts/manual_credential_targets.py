@@ -8,17 +8,17 @@ from __future__ import annotations
 
 from typing import ClassVar
 
-from sjtuclaw.domain.models import (
+from arkclaw.domain.models import (
     DEEPSEEK_MANUAL_TEST_CREDENTIAL_ID,
     OPENAI_MANUAL_TEST_CREDENTIAL_ID,
     CredentialId,
 )
-from sjtuclaw.infrastructure.security.windows_credential_store import (
+from arkclaw.infrastructure.security.windows_credential_store import (
     CredentialTargetResolutionError,
 )
 
-OPENAI_MANUAL_TEST_TARGET = "SJTUClaw/Test/OpenAI/APIKey"
-DEEPSEEK_MANUAL_TEST_TARGET = "SJTUClaw/Test/DeepSeek/APIKey"
+OPENAI_MANUAL_TEST_TARGET = "ArkClaw/Test/OpenAI/APIKey"
+DEEPSEEK_MANUAL_TEST_TARGET = "ArkClaw/Test/DeepSeek/APIKey"
 
 
 class ManualCredentialTargetResolver:

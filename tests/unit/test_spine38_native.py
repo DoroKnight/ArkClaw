@@ -17,7 +17,7 @@ from typing import Any, NoReturn, cast
 
 import pytest
 
-from sjtuclaw.application.pet_external_assets import ExternalPetAssetSnapshot
+from arkclaw.application.pet_external_assets import ExternalPetAssetSnapshot
 
 
 class FakeFunction:
@@ -74,6 +74,13 @@ class FakeTexturePageView(ctypes.Structure):
     ]
 
 
+class FakeRootTransform(ctypes.Structure):
+    _fields_ = [
+        ("x", ctypes.c_float),
+        ("y", ctypes.c_float),
+    ]
+
+
 class FakeLibrary:
     """In-process ABI fake; it replaces only the external DLL boundary."""
 
@@ -97,7 +104,9 @@ class FakeLibrary:
         self.animation_name_bytes_override: bytes | None = None
         self.skin_name_bytes_override: bytes | None = None
         self.bounds = (-2.0, 3.0, 4.0, 5.0)
+        self.root_transform = (6.0, -7.0)
         self.set_animation_calls: list[tuple[int, bytes, int]] = []
+        self.mix_animation_calls: list[tuple[int, bytes, int, float]] = []
         self.update_calls: list[float] = []
         self.clear_track_calls: list[int] = []
         self.events: list[tuple[int, int, int, bytes]] = []
@@ -124,31 +133,42 @@ class FakeLibrary:
         self.animation_count_started: threading.Event | None = None
         self.animation_count_release: threading.Event | None = None
         self.create_inputs: tuple[bytes, bytes] | None = None
-        self.sjtuclaw_spine38_abi_version = FakeFunction(self._abi_version)
-        self.sjtuclaw_spine38_create = FakeFunction(self._create)
-        self.sjtuclaw_spine38_destroy = FakeFunction(self._destroy)
-        self.sjtuclaw_spine38_animation_count = FakeFunction(self._animation_count)
-        self.sjtuclaw_spine38_animation_name_size = FakeFunction(
+        self.arkclaw_spine38_abi_version = FakeFunction(self._abi_version)
+        self.arkclaw_spine38_create = FakeFunction(self._create)
+        self.arkclaw_spine38_destroy = FakeFunction(self._destroy)
+        self.arkclaw_spine38_animation_count = FakeFunction(self._animation_count)
+        self.arkclaw_spine38_animation_name_size = FakeFunction(
             self._animation_name_size
         )
-        self.sjtuclaw_spine38_animation_info = FakeFunction(self._animation_info)
-        self.sjtuclaw_spine38_skin_count = FakeFunction(self._skin_count)
-        self.sjtuclaw_spine38_skin_name_size = FakeFunction(self._skin_name_size)
-        self.sjtuclaw_spine38_skin_info = FakeFunction(self._skin_info)
-        self.sjtuclaw_spine38_setup_bounds = FakeFunction(self._setup_bounds)
-        self.sjtuclaw_spine38_set_animation = FakeFunction(self._set_animation)
-        self.sjtuclaw_spine38_update = FakeFunction(self._update)
-        self.sjtuclaw_spine38_clear_track = FakeFunction(self._clear_track)
-        self.sjtuclaw_spine38_event_count = FakeFunction(self._event_count)
-        self.sjtuclaw_spine38_event_view = FakeFunction(self._event_view)
-        self.sjtuclaw_spine38_texture_page_view = FakeFunction(
+        self.arkclaw_spine38_animation_info = FakeFunction(self._animation_info)
+        self.arkclaw_spine38_skin_count = FakeFunction(self._skin_count)
+        self.arkclaw_spine38_skin_name_size = FakeFunction(self._skin_name_size)
+        self.arkclaw_spine38_skin_info = FakeFunction(self._skin_info)
+        self.arkclaw_spine38_setup_bounds = FakeFunction(self._setup_bounds)
+        self.arkclaw_spine38_root_transform = FakeFunction(self._root_transform)
+        self.arkclaw_spine38_set_animation = FakeFunction(self._set_animation)
+        self.arkclaw_spine38_mix_animation = FakeFunction(self._mix_animation)
+        self.arkclaw_spine38_update = FakeFunction(self._update)
+        self.arkclaw_spine38_clear_track = FakeFunction(self._clear_track)
+        self.arkclaw_spine38_event_count = FakeFunction(self._event_count)
+        self.arkclaw_spine38_event_view = FakeFunction(self._event_view)
+        self.arkclaw_spine38_texture_page_view = FakeFunction(
             self._texture_page_view
         )
-        self.sjtuclaw_spine38_draw_count = FakeFunction(self._draw_count)
-        self.sjtuclaw_spine38_draw_view = FakeFunction(self._draw_view)
+        self.arkclaw_spine38_draw_count = FakeFunction(self._draw_count)
+        self.arkclaw_spine38_draw_view = FakeFunction(self._draw_view)
 
     def _abi_version(self) -> int:
         return self.abi_version
+
+    def _root_transform(self, handle: object, out_transform: object) -> int:
+        self._assert_handle(handle)
+        transform = ctypes.cast(
+            cast(Any, out_transform),
+            ctypes.POINTER(FakeRootTransform),
+        )[0]
+        transform.x, transform.y = self.root_transform
+        return 0
 
     def _texture_page_view(
         self,
@@ -284,6 +304,26 @@ class FakeLibrary:
                 cast(int, track),
                 ctypes.string_at(cast(Any, name), cast(Any, name_size)),
                 cast(int, loop),
+            )
+        )
+        return self.set_animation_code
+
+    def _mix_animation(
+        self,
+        handle: object,
+        track: object,
+        name: object,
+        name_size: object,
+        loop: object,
+        mix_seconds: object,
+    ) -> int:
+        self._assert_handle(handle)
+        self.mix_animation_calls.append(
+            (
+                cast(int, track),
+                ctypes.string_at(cast(Any, name), cast(Any, name_size)),
+                cast(int, loop),
+                float(cast(float, mix_seconds)),
             )
         )
         return self.set_animation_code
@@ -424,7 +464,7 @@ def _snapshot_with_skeleton_size(size: int) -> ExternalPetAssetSnapshot:
 
 
 def test_native_binding_rejects_wrong_abi(fake_library: FakeLibrary) -> None:
-    native = importlib.import_module("sjtuclaw.infrastructure.spine38_native")
+    native = importlib.import_module("arkclaw.infrastructure.spine38_native")
     fake_library.abi_version = 2
 
     with pytest.raises(native.Spine38NativeError) as caught:
@@ -436,8 +476,8 @@ def test_native_binding_rejects_wrong_abi(fake_library: FakeLibrary) -> None:
 def test_native_binding_rejects_library_missing_a_bridge_symbol(
     fake_library: FakeLibrary,
 ) -> None:
-    native = importlib.import_module("sjtuclaw.infrastructure.spine38_native")
-    del fake_library.sjtuclaw_spine38_setup_bounds
+    native = importlib.import_module("arkclaw.infrastructure.spine38_native")
+    del fake_library.arkclaw_spine38_setup_bounds
 
     with pytest.raises(native.Spine38NativeError) as caught:
         native.Spine38NativeLibrary(fake_library)
@@ -448,111 +488,126 @@ def test_native_binding_rejects_library_missing_a_bridge_symbol(
 def test_native_binding_declares_every_catalog_abi_signature(
     fake_library: FakeLibrary,
 ) -> None:
-    native = importlib.import_module("sjtuclaw.infrastructure.spine38_native")
+    native = importlib.import_module("arkclaw.infrastructure.spine38_native")
 
     native.Spine38NativeLibrary(fake_library)
 
-    assert fake_library.sjtuclaw_spine38_abi_version.argtypes == []
-    assert fake_library.sjtuclaw_spine38_abi_version.restype is ctypes.c_uint32
-    assert fake_library.sjtuclaw_spine38_create.argtypes == [
+    assert fake_library.arkclaw_spine38_abi_version.argtypes == []
+    assert fake_library.arkclaw_spine38_abi_version.restype is ctypes.c_uint32
+    assert fake_library.arkclaw_spine38_create.argtypes == [
         ctypes.POINTER(ctypes.c_uint8),
         ctypes.c_size_t,
         ctypes.POINTER(ctypes.c_char),
         ctypes.c_size_t,
         ctypes.POINTER(ctypes.c_void_p),
     ]
-    assert fake_library.sjtuclaw_spine38_create.restype is ctypes.c_int
-    assert fake_library.sjtuclaw_spine38_destroy.argtypes == [ctypes.c_void_p]
-    assert fake_library.sjtuclaw_spine38_destroy.restype is None
-    assert fake_library.sjtuclaw_spine38_animation_count.argtypes == [ctypes.c_void_p]
-    assert fake_library.sjtuclaw_spine38_animation_count.restype is ctypes.c_size_t
-    assert fake_library.sjtuclaw_spine38_animation_name_size.argtypes == [
+    assert fake_library.arkclaw_spine38_create.restype is ctypes.c_int
+    assert fake_library.arkclaw_spine38_destroy.argtypes == [ctypes.c_void_p]
+    assert fake_library.arkclaw_spine38_destroy.restype is None
+    assert fake_library.arkclaw_spine38_animation_count.argtypes == [ctypes.c_void_p]
+    assert fake_library.arkclaw_spine38_animation_count.restype is ctypes.c_size_t
+    assert fake_library.arkclaw_spine38_animation_name_size.argtypes == [
         ctypes.c_void_p,
         ctypes.c_size_t,
     ]
-    assert fake_library.sjtuclaw_spine38_animation_name_size.restype is ctypes.c_size_t
-    assert fake_library.sjtuclaw_spine38_animation_info.argtypes == [
+    assert fake_library.arkclaw_spine38_animation_name_size.restype is ctypes.c_size_t
+    assert fake_library.arkclaw_spine38_animation_info.argtypes == [
         ctypes.c_void_p,
         ctypes.c_size_t,
         ctypes.POINTER(ctypes.c_char),
         ctypes.c_size_t,
         ctypes.POINTER(ctypes.c_float),
     ]
-    assert fake_library.sjtuclaw_spine38_animation_info.restype is ctypes.c_int
-    assert fake_library.sjtuclaw_spine38_skin_count.argtypes == [ctypes.c_void_p]
-    assert fake_library.sjtuclaw_spine38_skin_count.restype is ctypes.c_size_t
-    assert fake_library.sjtuclaw_spine38_skin_name_size.argtypes == [
+    assert fake_library.arkclaw_spine38_animation_info.restype is ctypes.c_int
+    assert fake_library.arkclaw_spine38_skin_count.argtypes == [ctypes.c_void_p]
+    assert fake_library.arkclaw_spine38_skin_count.restype is ctypes.c_size_t
+    assert fake_library.arkclaw_spine38_skin_name_size.argtypes == [
         ctypes.c_void_p,
         ctypes.c_size_t,
     ]
-    assert fake_library.sjtuclaw_spine38_skin_name_size.restype is ctypes.c_size_t
-    assert fake_library.sjtuclaw_spine38_skin_info.argtypes == [
+    assert fake_library.arkclaw_spine38_skin_name_size.restype is ctypes.c_size_t
+    assert fake_library.arkclaw_spine38_skin_info.argtypes == [
         ctypes.c_void_p,
         ctypes.c_size_t,
         ctypes.POINTER(ctypes.c_char),
         ctypes.c_size_t,
     ]
-    assert fake_library.sjtuclaw_spine38_skin_info.restype is ctypes.c_int
-    assert fake_library.sjtuclaw_spine38_setup_bounds.argtypes == [
+    assert fake_library.arkclaw_spine38_skin_info.restype is ctypes.c_int
+    assert fake_library.arkclaw_spine38_setup_bounds.argtypes == [
         ctypes.c_void_p,
-        ctypes.POINTER(native._SjtuclawSpine38Bounds),
+        ctypes.POINTER(native._ArkClawSpine38Bounds),
     ]
-    assert fake_library.sjtuclaw_spine38_setup_bounds.restype is ctypes.c_int
-    assert fake_library.sjtuclaw_spine38_set_animation.argtypes == [
+    assert fake_library.arkclaw_spine38_setup_bounds.restype is ctypes.c_int
+    assert fake_library.arkclaw_spine38_root_transform.argtypes == [
+        ctypes.c_void_p,
+        ctypes.POINTER(native._ArkClawSpine38RootTransform),
+    ]
+    assert fake_library.arkclaw_spine38_root_transform.restype is ctypes.c_int
+    assert fake_library.arkclaw_spine38_set_animation.argtypes == [
         ctypes.c_void_p,
         ctypes.c_uint32,
         ctypes.POINTER(ctypes.c_char),
         ctypes.c_size_t,
         ctypes.c_uint8,
     ]
-    assert fake_library.sjtuclaw_spine38_set_animation.restype is ctypes.c_int
-    assert fake_library.sjtuclaw_spine38_update.argtypes == [
+    assert fake_library.arkclaw_spine38_set_animation.restype is ctypes.c_int
+    assert fake_library.arkclaw_spine38_mix_animation.argtypes == [
+        ctypes.c_void_p,
+        ctypes.c_uint32,
+        ctypes.POINTER(ctypes.c_char),
+        ctypes.c_size_t,
+        ctypes.c_uint8,
+        ctypes.c_float,
+    ]
+    assert fake_library.arkclaw_spine38_mix_animation.restype is ctypes.c_int
+    assert fake_library.arkclaw_spine38_update.argtypes == [
         ctypes.c_void_p,
         ctypes.c_float,
     ]
-    assert fake_library.sjtuclaw_spine38_update.restype is ctypes.c_int
-    assert fake_library.sjtuclaw_spine38_clear_track.argtypes == [
+    assert fake_library.arkclaw_spine38_update.restype is ctypes.c_int
+    assert fake_library.arkclaw_spine38_clear_track.argtypes == [
         ctypes.c_void_p,
         ctypes.c_uint32,
     ]
-    assert fake_library.sjtuclaw_spine38_clear_track.restype is ctypes.c_int
-    assert fake_library.sjtuclaw_spine38_event_count.argtypes == [ctypes.c_void_p]
-    assert fake_library.sjtuclaw_spine38_event_count.restype is ctypes.c_size_t
-    assert fake_library.sjtuclaw_spine38_event_view.argtypes == [
+    assert fake_library.arkclaw_spine38_clear_track.restype is ctypes.c_int
+    assert fake_library.arkclaw_spine38_event_count.argtypes == [ctypes.c_void_p]
+    assert fake_library.arkclaw_spine38_event_count.restype is ctypes.c_size_t
+    assert fake_library.arkclaw_spine38_event_view.argtypes == [
         ctypes.c_void_p,
         ctypes.c_size_t,
-        ctypes.POINTER(native._SjtuclawSpine38EventView),
+        ctypes.POINTER(native._ArkClawSpine38EventView),
         ctypes.c_size_t,
     ]
-    assert fake_library.sjtuclaw_spine38_event_view.restype is ctypes.c_int
-    assert fake_library.sjtuclaw_spine38_texture_page_view.argtypes == [
+    assert fake_library.arkclaw_spine38_event_view.restype is ctypes.c_int
+    assert fake_library.arkclaw_spine38_texture_page_view.argtypes == [
         ctypes.c_void_p,
-        ctypes.POINTER(native._SjtuclawSpine38TexturePageView),
+        ctypes.POINTER(native._ArkClawSpine38TexturePageView),
         ctypes.c_size_t,
     ]
-    assert fake_library.sjtuclaw_spine38_texture_page_view.restype is ctypes.c_int
-    assert fake_library.sjtuclaw_spine38_draw_count.argtypes == [ctypes.c_void_p]
-    assert fake_library.sjtuclaw_spine38_draw_count.restype is ctypes.c_size_t
-    assert fake_library.sjtuclaw_spine38_draw_view.argtypes == [
+    assert fake_library.arkclaw_spine38_texture_page_view.restype is ctypes.c_int
+    assert fake_library.arkclaw_spine38_draw_count.argtypes == [ctypes.c_void_p]
+    assert fake_library.arkclaw_spine38_draw_count.restype is ctypes.c_size_t
+    assert fake_library.arkclaw_spine38_draw_view.argtypes == [
         ctypes.c_void_p,
         ctypes.c_size_t,
-        ctypes.POINTER(native._SjtuclawSpine38DrawView),
+        ctypes.POINTER(native._ArkClawSpine38DrawView),
         ctypes.c_size_t,
     ]
-    assert fake_library.sjtuclaw_spine38_draw_view.restype is ctypes.c_int
+    assert fake_library.arkclaw_spine38_draw_view.restype is ctypes.c_int
 
 
 def test_native_binding_copies_catalog_strings_and_validates_values(
     fake_library: FakeLibrary,
     snapshot: ExternalPetAssetSnapshot,
 ) -> None:
-    native = importlib.import_module("sjtuclaw.infrastructure.spine38_native")
+    native = importlib.import_module("arkclaw.infrastructure.spine38_native")
     port = native.Spine38NativeLibrary(fake_library).create(snapshot)
 
     assert fake_library.create_inputs == (snapshot.skeleton_bytes, snapshot.atlas_bytes)
     assert port.catalog() == (native.Spine38AnimationInfo("idle-猫", 1.25),)
     assert port.skins() == ("default",)
     assert port.setup_bounds() == native.Spine38Bounds(-2.0, 3.0, 4.0, 5.0)
+    assert port.root_transform() == native.Spine38RootTransform(6.0, -7.0)
     assert port.texture_page_info() == native.Spine38TexturePageInfo(
         native.Spine38TextureFilter.NEAREST,
         native.Spine38TextureFilter.LINEAR,
@@ -565,14 +620,18 @@ def test_native_binding_controls_playback_and_copies_draw_views_immediately(
     fake_library: FakeLibrary,
     snapshot: ExternalPetAssetSnapshot,
 ) -> None:
-    native = importlib.import_module("sjtuclaw.infrastructure.spine38_native")
+    native = importlib.import_module("arkclaw.infrastructure.spine38_native")
     port = native.Spine38NativeLibrary(fake_library).create(snapshot)
 
     port.set_animation(0, "idle-猫", True)
+    port.mix_animation(0, "idle-猫", False, 0.12)
     port.update(0.25)
     commands = port.draw_commands()
 
     assert fake_library.set_animation_calls == [(0, "idle-猫".encode(), 1)]
+    assert fake_library.mix_animation_calls == [
+        (0, "idle-猫".encode(), 0, pytest.approx(0.12))
+    ]
     assert fake_library.update_calls == [0.25]
     assert commands == (
         native.Spine38DrawCommand(
@@ -597,7 +656,7 @@ def test_native_binding_rejects_unknown_texture_filter(
     fake_library: FakeLibrary,
     snapshot: ExternalPetAssetSnapshot,
 ) -> None:
-    native = importlib.import_module("sjtuclaw.infrastructure.spine38_native")
+    native = importlib.import_module("arkclaw.infrastructure.spine38_native")
     fake_library.texture_filters = (99, 2)
     port = native.Spine38NativeLibrary(fake_library).create(snapshot)
 
@@ -611,7 +670,7 @@ def test_native_binding_copies_playback_events_before_native_mutation(
     fake_library: FakeLibrary,
     snapshot: ExternalPetAssetSnapshot,
 ) -> None:
-    native = importlib.import_module("sjtuclaw.infrastructure.spine38_native")
+    native = importlib.import_module("arkclaw.infrastructure.spine38_native")
     fake_library.events = [(2, 0, 3, b"Move")]
     port = native.Spine38NativeLibrary(fake_library).create(snapshot)
 
@@ -647,7 +706,7 @@ def test_native_binding_rejects_invalid_playback_arguments_before_native_call(
     name: str,
     loop: object,
 ) -> None:
-    native = importlib.import_module("sjtuclaw.infrastructure.spine38_native")
+    native = importlib.import_module("arkclaw.infrastructure.spine38_native")
     port = native.Spine38NativeLibrary(fake_library).create(snapshot)
 
     with pytest.raises(native.Spine38NativeError) as caught:
@@ -663,7 +722,7 @@ def test_native_binding_rejects_invalid_update_before_native_call(
     snapshot: ExternalPetAssetSnapshot,
     delta: object,
 ) -> None:
-    native = importlib.import_module("sjtuclaw.infrastructure.spine38_native")
+    native = importlib.import_module("arkclaw.infrastructure.spine38_native")
     port = native.Spine38NativeLibrary(fake_library).create(snapshot)
 
     with pytest.raises(native.Spine38NativeError) as caught:
@@ -690,7 +749,7 @@ def test_native_binding_rejects_invalid_or_unbounded_draw_views(
     attribute: str,
     value: int,
 ) -> None:
-    native = importlib.import_module("sjtuclaw.infrastructure.spine38_native")
+    native = importlib.import_module("arkclaw.infrastructure.spine38_native")
     setattr(fake_library, attribute, value)
     port = native.Spine38NativeLibrary(fake_library).create(
         _snapshot_with_skeleton_size(4097)
@@ -706,7 +765,7 @@ def test_native_binding_rejects_out_of_range_native_draw_index(
     fake_library: FakeLibrary,
     snapshot: ExternalPetAssetSnapshot,
 ) -> None:
-    native = importlib.import_module("sjtuclaw.infrastructure.spine38_native")
+    native = importlib.import_module("arkclaw.infrastructure.spine38_native")
     fake_library.draw_indices[2] = 3
     port = native.Spine38NativeLibrary(fake_library).create(snapshot)
 
@@ -718,7 +777,7 @@ def test_native_binding_rejects_out_of_range_native_draw_index(
 
 @pytest.mark.parametrize("path", ["bridge.dll", Path("relative/bridge.dll")])
 def test_native_binding_rejects_non_absolute_dll_paths(path: str | Path) -> None:
-    native = importlib.import_module("sjtuclaw.infrastructure.spine38_native")
+    native = importlib.import_module("arkclaw.infrastructure.spine38_native")
 
     with pytest.raises(native.Spine38NativeError) as caught:
         native.Spine38NativeLibrary.from_dll_path(path)
@@ -727,7 +786,7 @@ def test_native_binding_rejects_non_absolute_dll_paths(path: str | Path) -> None
 
 
 def test_native_binding_rejects_missing_dll_path(tmp_path: Path) -> None:
-    native = importlib.import_module("sjtuclaw.infrastructure.spine38_native")
+    native = importlib.import_module("arkclaw.infrastructure.spine38_native")
 
     with pytest.raises(native.Spine38NativeError) as caught:
         native.Spine38NativeLibrary.from_dll_path(tmp_path / "missing.dll")
@@ -739,7 +798,7 @@ def test_native_binding_discards_dll_loader_diagnostics(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    native = importlib.import_module("sjtuclaw.infrastructure.spine38_native")
+    native = importlib.import_module("arkclaw.infrastructure.spine38_native")
     dll_path = tmp_path / "sentinel-private-path.dll"
     dll_path.write_bytes(b"not-a-dll")
 
@@ -763,7 +822,7 @@ def test_native_binding_never_leaks_unknown_native_codes(
     snapshot: ExternalPetAssetSnapshot,
     native_code: int,
 ) -> None:
-    native = importlib.import_module("sjtuclaw.infrastructure.spine38_native")
+    native = importlib.import_module("arkclaw.infrastructure.spine38_native")
     fake_library.create_code = native_code
 
     with pytest.raises(native.Spine38NativeError) as caught:
@@ -792,7 +851,7 @@ def test_native_binding_rejects_invalid_catalog_values(
     duration: float,
     bounds: tuple[float, float, float, float],
 ) -> None:
-    native = importlib.import_module("sjtuclaw.infrastructure.spine38_native")
+    native = importlib.import_module("arkclaw.infrastructure.spine38_native")
     fake_library.animations = (("idle", duration),)
     fake_library.bounds = bounds
     port = native.Spine38NativeLibrary(fake_library).create(snapshot)
@@ -816,7 +875,7 @@ def test_native_binding_accepts_zero_catalog_counts(
     method_name: str,
     count_attribute: str,
 ) -> None:
-    native = importlib.import_module("sjtuclaw.infrastructure.spine38_native")
+    native = importlib.import_module("arkclaw.infrastructure.spine38_native")
     setattr(fake_library, count_attribute, 0)
     port = native.Spine38NativeLibrary(fake_library).create(snapshot)
 
@@ -832,7 +891,7 @@ def test_native_binding_accepts_catalog_count_at_policy_boundary(
     method_name: str,
     count_attribute: str,
 ) -> None:
-    native = importlib.import_module("sjtuclaw.infrastructure.spine38_native")
+    native = importlib.import_module("arkclaw.infrastructure.spine38_native")
     setattr(fake_library, count_attribute, 4096)
     port = native.Spine38NativeLibrary(fake_library).create(
         _snapshot_with_skeleton_size(4096)
@@ -856,7 +915,7 @@ def test_native_binding_rejects_invalid_or_excessive_catalog_counts_before_itera
     reject_size_call_attribute: str,
     count: int,
 ) -> None:
-    native = importlib.import_module("sjtuclaw.infrastructure.spine38_native")
+    native = importlib.import_module("arkclaw.infrastructure.spine38_native")
     setattr(fake_library, count_attribute, count)
     setattr(fake_library, reject_size_call_attribute, True)
     port = native.Spine38NativeLibrary(fake_library).create(
@@ -878,7 +937,7 @@ def test_native_binding_bounds_catalog_count_by_verified_skeleton_size(
     method_name: str,
     count_attribute: str,
 ) -> None:
-    native = importlib.import_module("sjtuclaw.infrastructure.spine38_native")
+    native = importlib.import_module("arkclaw.infrastructure.spine38_native")
     setattr(fake_library, count_attribute, 9)
     port = native.Spine38NativeLibrary(fake_library).create(
         _snapshot_with_skeleton_size(8)
@@ -905,7 +964,7 @@ def test_native_binding_accepts_name_capacity_at_safe_boundaries(
     payload_attribute: str,
     capacity: int,
 ) -> None:
-    native = importlib.import_module("sjtuclaw.infrastructure.spine38_native")
+    native = importlib.import_module("arkclaw.infrastructure.spine38_native")
     setattr(fake_library, capacity_attribute, capacity)
     setattr(fake_library, payload_attribute, b"a" * (capacity - 1) + b"\0")
     port = native.Spine38NativeLibrary(fake_library).create(
@@ -933,7 +992,7 @@ def test_native_binding_rejects_invalid_or_excessive_name_capacities_before_allo
     info_calls_attribute: str,
     capacity: int,
 ) -> None:
-    native = importlib.import_module("sjtuclaw.infrastructure.spine38_native")
+    native = importlib.import_module("arkclaw.infrastructure.spine38_native")
     setattr(fake_library, capacity_attribute, capacity)
     port = native.Spine38NativeLibrary(fake_library).create(
         _snapshot_with_skeleton_size(4097)
@@ -959,7 +1018,7 @@ def test_native_binding_bounds_name_capacity_by_verified_skeleton_size(
     method_name: str,
     capacity_attribute: str,
 ) -> None:
-    native = importlib.import_module("sjtuclaw.infrastructure.spine38_native")
+    native = importlib.import_module("arkclaw.infrastructure.spine38_native")
     setattr(fake_library, capacity_attribute, 9)
     port = native.Spine38NativeLibrary(fake_library).create(
         _snapshot_with_skeleton_size(8)
@@ -986,7 +1045,7 @@ def test_native_binding_normalizes_native_size_conversion_failures(
     capacity_attribute: str,
     error_type: type[MemoryError] | type[OverflowError],
 ) -> None:
-    native = importlib.import_module("sjtuclaw.infrastructure.spine38_native")
+    native = importlib.import_module("arkclaw.infrastructure.spine38_native")
     setattr(fake_library, capacity_attribute, _ExplodingInteger(error_type))
     port = native.Spine38NativeLibrary(fake_library).create(snapshot)
 
@@ -1004,7 +1063,7 @@ def test_native_binding_normalizes_name_buffer_allocation_failures(
     monkeypatch: pytest.MonkeyPatch,
     error_type: type[MemoryError] | type[OverflowError],
 ) -> None:
-    native = importlib.import_module("sjtuclaw.infrastructure.spine38_native")
+    native = importlib.import_module("arkclaw.infrastructure.spine38_native")
 
     def fail_buffer_fill(*args: object) -> NoReturn:
         raise error_type("sensitive-allocation-detail")
@@ -1046,7 +1105,7 @@ def test_native_binding_rejects_malformed_native_names(
     capacity: int,
     payload: bytes,
 ) -> None:
-    native = importlib.import_module("sjtuclaw.infrastructure.spine38_native")
+    native = importlib.import_module("arkclaw.infrastructure.spine38_native")
     setattr(fake_library, capacity_attribute, capacity)
     setattr(fake_library, payload_attribute, payload)
     port = native.Spine38NativeLibrary(fake_library).create(snapshot)
@@ -1061,7 +1120,7 @@ def test_native_binding_close_is_idempotent_and_closed_ports_fail(
     fake_library: FakeLibrary,
     snapshot: ExternalPetAssetSnapshot,
 ) -> None:
-    native = importlib.import_module("sjtuclaw.infrastructure.spine38_native")
+    native = importlib.import_module("arkclaw.infrastructure.spine38_native")
     port = native.Spine38NativeLibrary(fake_library).create(snapshot)
 
     port.close()
@@ -1077,7 +1136,7 @@ def test_native_binding_finalizer_destroys_an_unclosed_handle_once(
     fake_library: FakeLibrary,
     snapshot: ExternalPetAssetSnapshot,
 ) -> None:
-    native = importlib.import_module("sjtuclaw.infrastructure.spine38_native")
+    native = importlib.import_module("arkclaw.infrastructure.spine38_native")
     port = native.Spine38NativeLibrary(fake_library).create(snapshot)
     port_reference = weakref.ref(port)
 
@@ -1092,7 +1151,7 @@ def test_native_binding_concurrent_close_calls_destroy_once(
     fake_library: FakeLibrary,
     snapshot: ExternalPetAssetSnapshot,
 ) -> None:
-    native = importlib.import_module("sjtuclaw.infrastructure.spine38_native")
+    native = importlib.import_module("arkclaw.infrastructure.spine38_native")
     port = native.Spine38NativeLibrary(fake_library).create(snapshot)
     port._closed = _TwoThreadFalseGate()
     failures: list[BaseException] = []
@@ -1118,7 +1177,7 @@ def test_native_binding_close_waits_for_complete_catalog_operation(
     fake_library: FakeLibrary,
     snapshot: ExternalPetAssetSnapshot,
 ) -> None:
-    native = importlib.import_module("sjtuclaw.infrastructure.spine38_native")
+    native = importlib.import_module("arkclaw.infrastructure.spine38_native")
     fake_library.animation_count_started = threading.Event()
     fake_library.animation_count_release = threading.Event()
     port = native.Spine38NativeLibrary(fake_library).create(snapshot)
@@ -1162,7 +1221,7 @@ def test_native_binding_close_waits_for_complete_catalog_operation(
 
 
 def test_native_module_has_no_agent_imports() -> None:
-    spine38_native = importlib.import_module("sjtuclaw.infrastructure.spine38_native")
+    spine38_native = importlib.import_module("arkclaw.infrastructure.spine38_native")
 
     source = inspect.getsource(spine38_native)
 

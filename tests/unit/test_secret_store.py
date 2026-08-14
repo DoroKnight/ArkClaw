@@ -3,9 +3,9 @@ import logging
 
 import pytest
 
-from sjtuclaw.config.errors import SecretStoreReadOnlyError
-from sjtuclaw.config.loader import ConfigLoader
-from sjtuclaw.config.secrets import (
+from arkclaw.config.errors import SecretStoreReadOnlyError
+from arkclaw.config.loader import ConfigLoader
+from arkclaw.config.secrets import (
     EnvironmentSecretStore,
     InMemorySecretStore,
     SecretValue,
@@ -50,7 +50,7 @@ def test_api_key_is_absent_from_config_serialization_repr_and_logs(
     config = ConfigLoader().load(
         environ={
             "OPENAI_API_KEY": api_key,
-            "SJTUCLAW_PROVIDER": "fake",
+            "ARKCLAW_PROVIDER": "fake",
         }
     )
     secret = EnvironmentSecretStore({"OPENAI_API_KEY": api_key}).get_openai_api_key()

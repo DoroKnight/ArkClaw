@@ -23,7 +23,7 @@ from startup_secondary_environment import (
     prepare_launch_pair,
 )
 
-_REPOSITORY_ROOT: Final = Path(r"D:\SJTUClaw")
+_REPOSITORY_ROOT: Final = Path(r"D:\ArkClaw")
 _NONCE_PATTERN: Final = re.compile(r"[0-9a-f]{32}")
 _SHA256_PATTERN: Final = re.compile(r"[0-9a-f]{64}")
 _PROCESS_QUERY_LIMITED_INFORMATION: Final = 0x1000
@@ -366,7 +366,7 @@ def main() -> int:
     evidence_root = arguments.evidence_root.resolve(strict=False)
     executable = arguments.executable.resolve(strict=True)
     expected_executable = (
-        _REPOSITORY_ROOT / "dist" / "SJTUClaw.dist" / "SJTUClaw.exe"
+        _REPOSITORY_ROOT / "dist" / "ArkClaw.dist" / "ArkClaw.exe"
     ).resolve(strict=True)
     if (
         evidence_root != expected_root

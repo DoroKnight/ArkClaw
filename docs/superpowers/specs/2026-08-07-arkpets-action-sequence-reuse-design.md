@@ -8,7 +8,7 @@ ArkPets animation-sequencing mechanisms
 ## 1. Objective
 
 Adapt selected GPL-3.0 ArkPets animation-sequencing mechanisms into
-SJTUClaw's existing Python desktop-pet architecture without changing the
+ArkClaw's existing Python desktop-pet architecture without changing the
 locally deployed Agent runtime.
 
 The selected reuse scope is limited to the ideas and code structure embodied
@@ -27,7 +27,7 @@ The following decisions remain approved:
 
 1. Use an independent action-sequence module rather than embedding sequencing
    in the renderer or state machine.
-2. Intend to migrate the distributable SJTUClaw source code to
+2. Intend to migrate the distributable ArkClaw source code to
    `GPL-3.0-only`, but perform that migration only after the license and
    provenance audit in section 12 returns `PASS`.
 3. Attribute the adapted implementation to ArkPets and Harry Huang.
@@ -46,7 +46,7 @@ The following decisions remain approved:
 
 ## 3. Authority and Core Invariants
 
-SJTUClaw retains one authority for each kind of state:
+ArkClaw retains one authority for each kind of state:
 
 - `PetLayeredStateMachine` in `pet_state.py` owns semantic pet state and
   validates lifecycle, exclusive motion, and behavior transitions.
@@ -909,7 +909,7 @@ never Agent content or secrets.
 Add:
 
 ```text
-src/sjtuclaw/application/pet_action_sequence.py
+src/arkclaw/application/pet_action_sequence.py
 ```
 
 It contains immutable sequence types, registry types, the runner, arbiter,
@@ -962,7 +962,7 @@ docs/legal/gpl_migration_audit.md
 The audit must include:
 
 1. **Relicensing authority.** Identify copyright holders for all original
-   SJTUClaw source and obtain an explicit project-owner attestation that the
+   ArkClaw source and obtain an explicit project-owner attestation that the
    code may be distributed as `GPL-3.0-only`. Git authorship is evidence, not
    proof of ownership or authority.
 2. **Code provenance.** Search for school-provided code, employer code,
@@ -971,7 +971,7 @@ The audit must include:
 3. **Dependency inventory.** Record direct, transitive, optional, build, and
    packaging dependencies and the license version actually shipped. The audit
    must separately review OpenAI Python, PySide6/Qt, Nuitka, and any bundled
-   native libraries; dependencies are not relicensed merely because SJTUClaw
+   native libraries; dependencies are not relicensed merely because ArkClaw
    changes license.
 4. **Distribution mode.** Record whether each dependency is merely separate,
    dynamically linked, statically linked, bundled, or modified, because those

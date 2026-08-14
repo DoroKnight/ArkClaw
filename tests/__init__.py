@@ -1,1 +1,1 @@
-"""SJTUClaw automated tests."""
+"""ArkClaw automated tests."""

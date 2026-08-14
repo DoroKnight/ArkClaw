@@ -8,7 +8,7 @@ from collections import deque
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 
-from sjtuclaw.infrastructure.llm.openai_sdk import (
+from arkclaw.infrastructure.llm.openai_sdk import (
     OpenAIRequest,
     OpenAIResponseEvent,
     OpenAIResponseStream,

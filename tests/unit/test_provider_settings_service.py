@@ -7,20 +7,20 @@ from pathlib import Path
 
 import pytest
 
-from sjtuclaw.application.active_turn_coordinator import (
+from arkclaw.application.active_turn_coordinator import (
     DefaultActiveTurnCoordinator,
 )
-from sjtuclaw.application.provider_profile_service import (
+from arkclaw.application.provider_profile_service import (
     ActiveTurnHandling,
     ProviderActivationOptions,
     ProviderProfileServiceError,
 )
-from sjtuclaw.application.provider_settings_service import (
+from arkclaw.application.provider_settings_service import (
     ProviderSettingsService,
     ProviderSettingsServiceError,
 )
-from sjtuclaw.config.secrets import InMemorySecretStore, SecretValue
-from sjtuclaw.domain.models import (
+from arkclaw.config.secrets import InMemorySecretStore, SecretValue
+from arkclaw.domain.models import (
     DEEPSEEK_DEFAULT_CREDENTIAL_ID,
     DEEPSEEK_PROVIDER_ID,
     FAKE_DEFAULT_PROFILE_ID,
@@ -34,11 +34,11 @@ from sjtuclaw.domain.models import (
     ProviderCapabilities,
     ProviderProfile,
 )
-from sjtuclaw.domain.ports import LLMProvider
-from sjtuclaw.infrastructure.config.json_provider_profile_repository import (
+from arkclaw.domain.ports import LLMProvider
+from arkclaw.infrastructure.config.json_provider_profile_repository import (
     JsonProviderProfileRepository,
 )
-from sjtuclaw.infrastructure.llm.fake_provider import FakeProvider
+from arkclaw.infrastructure.llm.fake_provider import FakeProvider
 
 _OPTIONS = ProviderActivationOptions(
     timeout_seconds=30.0,

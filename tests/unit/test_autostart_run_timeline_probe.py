@@ -30,7 +30,7 @@ def _load_module() -> ModuleType:
 probe: Any = _load_module()
 
 
-EXPECTED = '"D:\\fixed\\SJTUClaw.exe" --startup'
+EXPECTED = '"D:\\fixed\\ArkClaw.exe" --startup'
 TEST_SECRET = "unsafe-autostart-timeline-value-never-record"
 NONCE = "0123456789abcdef0123456789abcdef"
 OTHER_NONCE = "fedcba9876543210fedcba9876543210"
@@ -1265,10 +1265,10 @@ def test_t1_rejects_ui_probe_false_positive_and_registry_presence(
     [
         r"\\server\share\session",
         "relative-session",
-        "D:\\SJTUClaw\\build\\autostart-run-timeline-probes\\..\\escape",
-        "D:\\SJTUClaw\\build\\autostart-run-timeline-probe",
-        "D:\\SJTUClaw\\build\\autostart-run-timeline-probes\\bad.name",
-        "D:\\SJTUClaw\\build\\autostart-run-timeline-probes\\"
+        "D:\\ArkClaw\\build\\autostart-run-timeline-probes\\..\\escape",
+        "D:\\ArkClaw\\build\\autostart-run-timeline-probe",
+        "D:\\ArkClaw\\build\\autostart-run-timeline-probes\\bad.name",
+        "D:\\ArkClaw\\build\\autostart-run-timeline-probes\\"
         + ("x" * 200),
     ],
 )
@@ -1404,7 +1404,7 @@ def test_fake_clock_full_observer_flow_waits_then_completes(
     monkeypatch.setattr(
         probe,
         "_authoritative_executable",
-        lambda expected_sha256: (tmp_path / "SJTUClaw.exe", EXPECTED),
+        lambda expected_sha256: (tmp_path / "ArkClaw.exe", EXPECTED),
     )
     monkeypatch.setattr(probe, "_repository_root", lambda: tmp_path)
 

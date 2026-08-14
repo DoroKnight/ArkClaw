@@ -21,21 +21,21 @@ _EXPECTED_ANIMATIONS = {
 
 
 def test_real_schwarz_catalog_confirms_six_production_animations() -> None:
-    bridge_value = os.environ.get("SJTUCLAW_SPINE38_BRIDGE_DLL")
-    asset_root_value = os.environ.get("SJTUCLAW_SPINE38_ASSET_ROOT")
+    bridge_value = os.environ.get("ARKCLAW_SPINE38_BRIDGE_DLL")
+    asset_root_value = os.environ.get("ARKCLAW_SPINE38_ASSET_ROOT")
     if bridge_value is None or asset_root_value is None:
         pytest.skip(
-            "requires SJTUCLAW_SPINE38_BRIDGE_DLL and "
-            "SJTUCLAW_SPINE38_ASSET_ROOT"
+            "requires ARKCLAW_SPINE38_BRIDGE_DLL and "
+            "ARKCLAW_SPINE38_ASSET_ROOT"
         )
 
-    assets = importlib.import_module("sjtuclaw.application.pet_external_assets")
-    model = importlib.import_module("sjtuclaw.application.pet_renderer_model")
-    runtime = importlib.import_module("sjtuclaw.application.spine38_runtime")
+    assets = importlib.import_module("arkclaw.application.pet_external_assets")
+    model = importlib.import_module("arkclaw.application.pet_renderer_model")
+    runtime = importlib.import_module("arkclaw.application.spine38_runtime")
     filesystem = importlib.import_module(
-        "sjtuclaw.infrastructure.pet_external_asset_filesystem"
+        "arkclaw.infrastructure.pet_external_asset_filesystem"
     )
-    native = importlib.import_module("sjtuclaw.infrastructure.spine38_native")
+    native = importlib.import_module("arkclaw.infrastructure.spine38_native")
 
     bridge_path = Path(bridge_value)
     asset_root = Path(asset_root_value)
@@ -96,8 +96,8 @@ def test_real_schwarz_catalog_confirms_six_production_animations() -> None:
         assert not any(
             name.startswith(
                 (
-                    "sjtuclaw.agent",
-                    "sjtuclaw.infrastructure.llm",
+                    "arkclaw.agent",
+                    "arkclaw.infrastructure.llm",
                     "openai",
                     "anthropic",
                 )

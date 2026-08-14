@@ -1,10 +1,10 @@
-# SJTUClaw Spine 3.8 桌宠开源项目研究
+# ArkClaw Spine 3.8 桌宠开源项目研究
 
 日期：2026-08-06
 
 ## 研究范围与结论
 
-本次只查阅项目官方仓库、官方源代码和 Esoteric Software 官方文档。结论是：SJTUClaw 可以借鉴开源项目的**状态拆分、触发规则、失败回退和程序架构**，但不应复制任何第三方角色图像、动画帧、Spine 工程或宠物包。
+本次只查阅项目官方仓库、官方源代码和 Esoteric Software 官方文档。结论是：ArkClaw 可以借鉴开源项目的**状态拆分、触发规则、失败回退和程序架构**，但不应复制任何第三方角色图像、动画帧、Spine 工程或宠物包。
 
 最可靠的组合是：
 
@@ -82,13 +82,13 @@
 ### 可借鉴机制
 
 1. `WorkingState` 把 Normal、Work、Sleep、Travel 和扩展状态分开，说明“业务状态”应独立于当前正在播放的动画名。
-2. 空闲计时逻辑只在可交互的默认状态触发，并随机选择移动、待机或睡眠；拖拽时不进入随机空闲行为。这适合 SJTUClaw 的长期桌面驻留。
+2. 空闲计时逻辑只在可交互的默认状态触发，并随机选择移动、待机或睡眠；拖拽时不进入随机空闲行为。这适合 ArkClaw 的长期桌面驻留。
 3. `AnimatType.A_Start / B_Loop / C_End` 是非常适合本项目的三段式合同：
    - `sit_down -> sit_idle -> return_idle`；
    - `sleep_start -> sleep_loop -> sleep_end`；
    - `drag_start -> drag_loop -> drag_end`。
 4. `DisplaySleep` 明确区分进入、循环和退出；`DisplayRaised`/`DisplayRaising` 明确区分抬起、动态拖拽、静态拖拽和释放后的回退。
-5. 找不到动画时逐级回退到 Default，最终停止宠物模块而不是无限递归或崩溃。这可转化为 SJTUClaw 的 `requested -> semantic fallback -> idle -> placeholder` 策略。
+5. 找不到动画时逐级回退到 Default，最终停止宠物模块而不是无限递归或崩溃。这可转化为 ArkClaw 的 `requested -> semantic fallback -> idle -> placeholder` 策略。
 
 ### 不应复制的内容
 
@@ -139,11 +139,11 @@
 
 ### 可借鉴机制
 
-1. OpenPets 把桌宠本体与提醒、专注计时、喝水提示、Mood Check-in 等能力分成插件，适合 SJTUClaw 将“Agent/提醒业务”与 Spine 播放器隔离。
+1. OpenPets 把桌宠本体与提醒、专注计时、喝水提示、Mood Check-in 等能力分成插件，适合 ArkClaw 将“Agent/提醒业务”与 Spine 播放器隔离。
 2. SDK 提供 `once`、`every`、`daily`、`cron` 和指定时间调度，提醒应由调度事件触发 `remind`，而不是写死在动画内部。
-3. 官方 Reminders 支持提示、铃声和 snooze。SJTUClaw 可把 `remind` 设计成一次性不可丢失状态，并允许用户点击确认或推迟后返回先前状态。
+3. 官方 Reminders 支持提示、铃声和 snooze。ArkClaw 可把 `remind` 设计成一次性不可丢失状态，并允许用户点击确认或推迟后返回先前状态。
 4. Agent 集成把 `thinking`、`editing`、`testing`、`success`、`error` 作为语义反应，并通过本地 IPC/MCP 触发。可对应到 `think`、`type`、`happy`、`confused/angry`，但程序只发送稳定的语义名，不直接控制骨骼。
-5. 动态内容必须过滤敏感路径、日志和秘密。这个安全边界比动画本身更重要，适合 SJTUClaw 的本地 Agent 气泡和提醒文案。
+5. 动态内容必须过滤敏感路径、日志和秘密。这个安全边界比动画本身更重要，适合 ArkClaw 的本地 Agent 气泡和提醒文案。
 
 ## 5. 对 25 个目标动画的借鉴矩阵
 

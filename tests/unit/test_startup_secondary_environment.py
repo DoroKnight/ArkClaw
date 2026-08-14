@@ -64,7 +64,7 @@ def _environment(tmp_path: Path) -> Any:
             "PYTHONPATH": "must-not-survive",
             "VIRTUAL_ENV": "must-not-survive",
             "QT_PLUGIN_PATH": "must-not-survive",
-            "SJTUCLAW_SESSION_NONCE": "old-nonce",
+            "ARKCLAW_SESSION_NONCE": "old-nonce",
         },
         repository_root=tmp_path,
         runtime_root=tmp_path / "build" / "runtime",
@@ -133,7 +133,7 @@ def test_sensitive_proxy_python_qt_and_old_namespace_are_removed(
         "PYTHONPATH",
         "VIRTUAL_ENV",
         "QT_PLUGIN_PATH",
-        "SJTUCLAW_SESSION_NONCE",
+        "ARKCLAW_SESSION_NONCE",
     ):
         assert forbidden not in names
 

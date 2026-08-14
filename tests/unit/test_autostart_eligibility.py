@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from sjtuclaw.application.autostart_eligibility import (
+from arkclaw.application.autostart_eligibility import (
     AutostartEligibilityReason,
     AutostartEligibilityResult,
     ExecutableFacts,
@@ -212,7 +212,7 @@ def test_marker_attribute_failure_is_reduced_to_fixed_reason(
     attribute: str,
     expected: AutostartEligibilityReason,
 ) -> None:
-    executable = tmp_path / "SJTUClaw.exe"
+    executable = tmp_path / "ArkClaw.exe"
     executable.write_bytes(b"offline-placeholder")
 
     class _Marker:
@@ -236,9 +236,9 @@ def test_marker_attribute_failure_is_reduced_to_fixed_reason(
 def test_nuitka_four_standalone_containing_directory_is_supported(
     tmp_path: Path,
 ) -> None:
-    distribution = tmp_path / "SJTUClaw.dist"
+    distribution = tmp_path / "ArkClaw.dist"
     distribution.mkdir()
-    executable = distribution / "SJTUClaw.exe"
+    executable = distribution / "ArkClaw.exe"
     executable.write_bytes(b"offline-placeholder")
 
     class _Marker:
@@ -256,9 +256,9 @@ def test_nuitka_four_standalone_containing_directory_is_supported(
 def test_direct_executable_parent_is_not_nuitka_four_containing_directory(
     tmp_path: Path,
 ) -> None:
-    distribution = tmp_path / "SJTUClaw.dist"
+    distribution = tmp_path / "ArkClaw.dist"
     distribution.mkdir()
-    executable = distribution / "SJTUClaw.exe"
+    executable = distribution / "ArkClaw.exe"
     executable.write_bytes(b"offline-placeholder")
 
     class _Marker:

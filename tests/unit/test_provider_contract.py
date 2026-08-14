@@ -4,18 +4,18 @@ from collections.abc import Callable
 
 import pytest
 
-from sjtuclaw.application.agent_loop import AgentLoop, CancellationToken
-from sjtuclaw.application.context_manager import ContextManager
-from sjtuclaw.domain.errors import ProviderError
-from sjtuclaw.domain.events import AgentEvent, AgentEventType, LLMEvent, LLMEventType
-from sjtuclaw.domain.models import (
+from arkclaw.application.agent_loop import AgentLoop, CancellationToken
+from arkclaw.application.context_manager import ContextManager
+from arkclaw.domain.errors import ProviderError
+from arkclaw.domain.events import AgentEvent, AgentEventType, LLMEvent, LLMEventType
+from arkclaw.domain.models import (
     LLMRequest,
     ProviderCapabilities,
     ProviderContinuation,
     UserMessageCommand,
 )
-from sjtuclaw.domain.ports import LLMProvider
-from sjtuclaw.infrastructure.llm.fake_provider import FakeProvider
+from arkclaw.domain.ports import LLMProvider
+from arkclaw.infrastructure.llm.fake_provider import FakeProvider
 
 type ProviderBuilder = Callable[[], LLMProvider]
 
@@ -367,4 +367,4 @@ def test_continuation_state_is_excluded_from_repr_logs_and_sdk_types(
     assert all(secret not in event.error_message for event in mismatch_events)
     assert secret not in caplog.text
     assert type(continuation.state) is bytes
-    assert ProviderContinuation.__module__ == "sjtuclaw.domain.models"
+    assert ProviderContinuation.__module__ == "arkclaw.domain.models"

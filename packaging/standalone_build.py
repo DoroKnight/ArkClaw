@@ -30,7 +30,7 @@ THIRD_BUILD_TEMP_RELATIVE_PATH = Path(
     "build/standalone-third-build-temp"
 )
 RAW_DIST_RELATIVE_PATH = Path("packaging/deployment/pet_entry.dist")
-FINAL_DIST_RELATIVE_PATH = Path("dist/SJTUClaw.dist")
+FINAL_DIST_RELATIVE_PATH = Path("dist/ArkClaw.dist")
 TRACKED_SPEC_RELATIVE_PATH = Path("packaging/pysidedeploy.spec")
 BUILD_SPEC_NAME = "pysidedeploy.spec"
 REPORT_NAME = "compilation-report.xml"
@@ -601,7 +601,7 @@ def prepare_dry_run_workspace(
         rendered_text = rendered_bytes.decode("utf-8")
         forbidden_paths = (
             "packaging/deployment",
-            "dist/SJTUClaw.dist",
+            "dist/ArkClaw.dist",
             "build/windows-standalone",
         )
         if any(value in rendered_text for value in forbidden_paths):
@@ -820,7 +820,7 @@ def _postconditions(
     report = root / BUILD_RELATIVE_PATH / REPORT_NAME
     raw_dist = root / RAW_DIST_RELATIVE_PATH
     final_dist = root / FINAL_DIST_RELATIVE_PATH
-    executable = final_dist / "SJTUClaw.exe"
+    executable = final_dist / "ArkClaw.exe"
     report_parseable = False
     try:
         if report.stat().st_size <= MAX_REPORT_BYTES:

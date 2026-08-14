@@ -39,7 +39,7 @@ if ($Mode -ceq "Disabled") {
 
 $ErrorActionPreference = "Stop"
 
-$RepositoryRoot = "D:\SJTUClaw"
+$RepositoryRoot = "D:\ArkClaw"
 $RecoveryRoot = Join-Path `
     $RepositoryRoot `
     "build\packaged-runtime-supervisor-recovery"
@@ -50,8 +50,8 @@ $VerificationRoot = if ($Mode -ceq "Dummy") {
 } else {
     Join-Path $RecoveryRoot "packaged-diagnostic"
 }
-$DistRoot = Join-Path $RepositoryRoot "dist\SJTUClaw.dist"
-$ExecutablePath = Join-Path $DistRoot "SJTUClaw.exe"
+$DistRoot = Join-Path $RepositoryRoot "dist\ArkClaw.dist"
+$ExecutablePath = Join-Path $DistRoot "ArkClaw.exe"
 $DummyPowerShellPath = "$PSHOME\powershell.exe"
 $DummyScriptPath = Join-Path `
     $RepositoryRoot `
@@ -1116,7 +1116,7 @@ function Invoke-SupervisedChild {
                     "packaged_executable_unavailable"
                 )
             }
-            if (Get-Process -Name "SJTUClaw" -ErrorAction SilentlyContinue) {
+            if (Get-Process -Name "ArkClaw" -ErrorAction SilentlyContinue) {
                 throw [InvalidOperationException]::new(
                     "packaged_process_already_running"
                 )

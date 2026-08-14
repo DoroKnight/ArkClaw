@@ -1,4 +1,4 @@
-# SJTUClaw GPL-3.0-only Migration Audit
+# ArkClaw GPL-3.0-only Migration Audit
 
 Audit date: 2026-08-08  
 Inventory snapshot: `a712a3d`  
@@ -13,7 +13,7 @@ source-license statement, and package metadata must remain unchanged.
 This checklist reproduces section 12 of the frozen design specification:
 
 1. **Relicensing authority.** Identify copyright holders for all original
-   SJTUClaw source and obtain an explicit project-owner attestation that the
+   ArkClaw source and obtain an explicit project-owner attestation that the
    code may be distributed as `GPL-3.0-only`. Git authorship is evidence, not
    proof of ownership or authority.
 2. **Code provenance.** Search for school-provided code, employer code,
@@ -22,7 +22,7 @@ This checklist reproduces section 12 of the frozen design specification:
 3. **Dependency inventory.** Record direct, transitive, optional, build, and
    packaging dependencies and the license version actually shipped. The audit
    must separately review OpenAI Python, PySide6/Qt, Nuitka, and any bundled
-   native libraries; dependencies are not relicensed merely because SJTUClaw
+   native libraries; dependencies are not relicensed merely because ArkClaw
    changes license.
 4. **Distribution mode.** Record whether each dependency is merely separate,
    dynamically linked, statically linked, bundled, or modified, because those
@@ -119,7 +119,7 @@ of copyright ownership or relicensing authority.
 | pytest | 9.1.1 |
 | ruff | 0.16.0 |
 | shiboken6 | 6.11.1 |
-| sjtuclaw | 0.1.0 |
+| arkclaw | 0.1.0 |
 | sniffio | 1.3.1 |
 | tqdm | 4.69.0 |
 | typing-extensions | 4.16.0 |

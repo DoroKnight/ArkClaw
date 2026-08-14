@@ -11,17 +11,17 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtCore import QObject, Signal
 from PySide6.QtWidgets import QApplication
 
-from sjtuclaw.application.autostart_operation_journal import (
+from arkclaw.application.autostart_operation_journal import (
     AutostartOperationOrigin,
 )
-from sjtuclaw.application.autostart_service import (
+from arkclaw.application.autostart_service import (
     AutostartSnapshot,
     AutostartStatus,
 )
-from sjtuclaw.presentation.qt.autostart_controller import (
+from arkclaw.presentation.qt.autostart_controller import (
     AutostartUiController,
 )
-from sjtuclaw.presentation.qt.runtime_bridge import QtRuntimeBridge
+from arkclaw.presentation.qt.runtime_bridge import QtRuntimeBridge
 
 
 @pytest.fixture

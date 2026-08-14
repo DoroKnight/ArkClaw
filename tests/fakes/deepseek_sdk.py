@@ -8,7 +8,7 @@ from collections import deque
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 
-from sjtuclaw.infrastructure.llm.deepseek_sdk import (
+from arkclaw.infrastructure.llm.deepseek_sdk import (
     DeepSeekEvent,
     DeepSeekRequest,
     DeepSeekStream,

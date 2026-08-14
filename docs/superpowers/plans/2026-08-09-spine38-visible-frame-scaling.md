@@ -10,8 +10,8 @@
 
 ## Global Constraints
 
-- Work only in `D:\SJTUClaw\.worktrees\arkpets-spine-idle-vertical-slice` on branch `codex/arkpets-spine-idle-vertical-slice`.
-- Use `D:\SJTUClaw\.venv\Scripts\python.exe` for Python commands so editable-import resolution is deterministic.
+- Work only in `D:\ArkClaw\.worktrees\arkpets-spine-idle-vertical-slice` on branch `codex/arkpets-spine-idle-vertical-slice`.
+- Use `D:\ArkClaw\.venv\Scripts\python.exe` for Python commands so editable-import resolution is deterministic.
 - Preserve the existing public filenames, class names, native ABI, approved asset hashes, `Relax` animation selection, 160×180 window, click-through behavior, Agent isolation, and placeholder fallback.
 - Keep the approved ArkPets assets read-only. Do not copy or track assets, DLLs, screenshots, generated evidence, or build output.
 - Do not change the default raster pet renderer or the Agent/action runtime.
@@ -27,7 +27,7 @@
 
 **Files:**
 
-- Modify: `src/sjtuclaw/application/spine38_runtime.py`
+- Modify: `src/arkclaw/application/spine38_runtime.py`
 - Modify: `tests/unit/test_spine38_runtime.py`
 
 **Interface produced:** `Spine38Runtime.visible_bounds() -> Spine38Bounds`
@@ -92,7 +92,7 @@ def test_visible_bounds_keeps_entire_partially_visible_command() -> None:
 - [ ] Run:
 
 ```powershell
-D:\SJTUClaw\.venv\Scripts\python.exe -m pytest tests\unit\test_spine38_runtime.py -k visible_bounds -v
+D:\ArkClaw\.venv\Scripts\python.exe -m pytest tests\unit\test_spine38_runtime.py -k visible_bounds -v
 ```
 
 Expected RED: the tests collect successfully and fail inside their bodies because `Spine38Runtime.visible_bounds` does not exist.
@@ -141,14 +141,14 @@ def visible_bounds(self) -> Spine38Bounds:
 - [ ] Run the full runtime unit file:
 
 ```powershell
-D:\SJTUClaw\.venv\Scripts\python.exe -m pytest tests\unit\test_spine38_runtime.py -v
+D:\ArkClaw\.venv\Scripts\python.exe -m pytest tests\unit\test_spine38_runtime.py -v
 ```
 
 - [ ] Run static verification:
 
 ```powershell
-D:\SJTUClaw\.venv\Scripts\python.exe -m ruff check src\sjtuclaw\application\spine38_runtime.py tests\unit\test_spine38_runtime.py
-D:\SJTUClaw\.venv\Scripts\python.exe -m mypy --strict src\sjtuclaw\application\spine38_runtime.py tests\unit\test_spine38_runtime.py
+D:\ArkClaw\.venv\Scripts\python.exe -m ruff check src\arkclaw\application\spine38_runtime.py tests\unit\test_spine38_runtime.py
+D:\ArkClaw\.venv\Scripts\python.exe -m mypy --strict src\arkclaw\application\spine38_runtime.py tests\unit\test_spine38_runtime.py
 git diff --check
 ```
 
@@ -159,7 +159,7 @@ git diff --check
 - [ ] Commit only these two files:
 
 ```powershell
-git add -- src\sjtuclaw\application\spine38_runtime.py tests\unit\test_spine38_runtime.py
+git add -- src\arkclaw\application\spine38_runtime.py tests\unit\test_spine38_runtime.py
 git commit -m "feat: derive visible spine frame bounds"
 ```
 
@@ -169,7 +169,7 @@ git commit -m "feat: derive visible spine frame bounds"
 
 **Files:**
 
-- Modify: `src/sjtuclaw/presentation/qt/spine38_renderer.py`
+- Modify: `src/arkclaw/presentation/qt/spine38_renderer.py`
 - Modify: `tests/qt/test_spine38_renderer.py`
 - Modify: `tests/qt/test_spine38_schwarz_smoke.py`
 
@@ -215,7 +215,7 @@ These thresholds verify meaningful window fill while tolerating transparent text
 - [ ] Run the Qt unit tests:
 
 ```powershell
-D:\SJTUClaw\.venv\Scripts\python.exe -m pytest tests\qt\test_spine38_renderer.py -v
+D:\ArkClaw\.venv\Scripts\python.exe -m pytest tests\qt\test_spine38_renderer.py -v
 ```
 
 Expected RED: initialization did not call `update(0.0)`, did not request visible bounds, and still exposes the old y=160 baseline/8 px margin.
@@ -223,9 +223,9 @@ Expected RED: initialization did not call `update(0.0)`, did not request visible
 - [ ] Run the real approved-asset smoke before changing the renderer:
 
 ```powershell
-$env:SJTUCLAW_SPINE38_BRIDGE_DLL='D:\SJTUClaw\.worktrees\arkpets-spine-idle-vertical-slice\build\spine38\Release\sjtuclaw_spine38_bridge.dll'
-$env:SJTUCLAW_SPINE38_ASSET_ROOT='D:\Spine\test\stage3_idle_rebuild_20260806_145235\runtime_input'
-D:\SJTUClaw\.venv\Scripts\python.exe -m pytest tests\qt\test_spine38_schwarz_smoke.py::test_real_schwarz_renders_three_relax_loops_and_proves_fallback -v
+$env:ARKCLAW_SPINE38_BRIDGE_DLL='D:\ArkClaw\.worktrees\arkpets-spine-idle-vertical-slice\build\spine38\Release\arkclaw_spine38_bridge.dll'
+$env:ARKCLAW_SPINE38_ASSET_ROOT='D:\Spine\test\stage3_idle_rebuild_20260806_145235\runtime_input'
+D:\ArkClaw\.venv\Scripts\python.exe -m pytest tests\qt\test_spine38_schwarz_smoke.py::test_real_schwarz_renders_three_relax_loops_and_proves_fallback -v
 ```
 
 Expected RED: the existing setup-bounds transform produces approximately 17–18 px width and 28 px height, violating the new minimum size assertions.
@@ -265,8 +265,8 @@ scene = self._runtime.mesh_scene(transform, texture)
 - [ ] Run:
 
 ```powershell
-D:\SJTUClaw\.venv\Scripts\python.exe -m pytest tests\unit\test_spine38_runtime.py tests\qt\test_spine38_renderer.py -v
-D:\SJTUClaw\.venv\Scripts\python.exe -m pytest tests\qt\test_pet_window.py tests\qt\test_pet_renderer.py -q
+D:\ArkClaw\.venv\Scripts\python.exe -m pytest tests\unit\test_spine38_runtime.py tests\qt\test_spine38_renderer.py -v
+D:\ArkClaw\.venv\Scripts\python.exe -m pytest tests\qt\test_pet_window.py tests\qt\test_pet_renderer.py -q
 ```
 
 - [ ] Rerun the exact real smoke command from Step 3. Expected GREEN:
@@ -277,8 +277,8 @@ D:\SJTUClaw\.venv\Scripts\python.exe -m pytest tests\qt\test_pet_window.py tests
 - [ ] Run:
 
 ```powershell
-D:\SJTUClaw\.venv\Scripts\python.exe -m ruff check src\sjtuclaw\presentation\qt\spine38_renderer.py tests\qt\test_spine38_renderer.py tests\qt\test_spine38_schwarz_smoke.py
-D:\SJTUClaw\.venv\Scripts\python.exe -m mypy --strict src\sjtuclaw\presentation\qt\spine38_renderer.py tests\qt\test_spine38_renderer.py tests\qt\test_spine38_schwarz_smoke.py
+D:\ArkClaw\.venv\Scripts\python.exe -m ruff check src\arkclaw\presentation\qt\spine38_renderer.py tests\qt\test_spine38_renderer.py tests\qt\test_spine38_schwarz_smoke.py
+D:\ArkClaw\.venv\Scripts\python.exe -m mypy --strict src\arkclaw\presentation\qt\spine38_renderer.py tests\qt\test_spine38_renderer.py tests\qt\test_spine38_schwarz_smoke.py
 git diff --check
 ```
 
@@ -289,7 +289,7 @@ git diff --check
 - [ ] Commit only the three Task 2 files:
 
 ```powershell
-git add -- src\sjtuclaw\presentation\qt\spine38_renderer.py tests\qt\test_spine38_renderer.py tests\qt\test_spine38_schwarz_smoke.py
+git add -- src\arkclaw\presentation\qt\spine38_renderer.py tests\qt\test_spine38_renderer.py tests\qt\test_spine38_schwarz_smoke.py
 git commit -m "fix: fit spine renderer to visible frame"
 ```
 
@@ -299,7 +299,7 @@ git commit -m "fix: fit spine renderer to visible frame"
 
 **Files:**
 
-- Modify: `docs/spine38_local_vertical_slice.md`
+- Modify: `docs/rendering/spine38_local_vertical_slice.md`
 - Read/verify only: `scripts/qt_spine38_vertical_slice.py`
 - Read/verify only: `docs/superpowers/specs/2026-08-09-spine38-visible-frame-scaling-design.md`
 
@@ -323,22 +323,22 @@ Expected: CTest 1/1 passes and the wrapper emits `spine38_build_complete`.
 - [ ] Run all focused Python/Qt coverage:
 
 ```powershell
-D:\SJTUClaw\.venv\Scripts\python.exe -m pytest tests\unit\test_spine38_runtime.py tests\unit\test_spine38_native.py tests\qt\test_spine38_renderer.py tests\qt\test_pet_renderer.py tests\qt\test_pet_window.py tests\integration\test_spine38_schwarz_catalog.py -q
+D:\ArkClaw\.venv\Scripts\python.exe -m pytest tests\unit\test_spine38_runtime.py tests\unit\test_spine38_native.py tests\qt\test_spine38_renderer.py tests\qt\test_pet_renderer.py tests\qt\test_pet_window.py tests\integration\test_spine38_schwarz_catalog.py -q
 ```
 
 - [ ] Run the real opt-in smoke once more with the approved Release DLL/assets and retain only ignored evidence.
-- [ ] From `D:\SJTUClaw\.worktrees\arkpets-action-runtime`, run the untouched action/runtime regression exactly:
+- [ ] From `D:\ArkClaw\.worktrees\arkpets-action-runtime`, run the untouched action/runtime regression exactly:
 
 ```powershell
-D:\SJTUClaw\.venv\Scripts\python.exe -m pytest tests\unit\test_pet_action_sequence_catalog.py tests\unit\test_pet_track0_controller.py tests\unit\test_pet_track0_watchdog.py tests\unit\test_pet_state_animation_compatibility.py tests\unit\test_pet_animation_transactions.py -q
+D:\ArkClaw\.venv\Scripts\python.exe -m pytest tests\unit\test_pet_action_sequence_catalog.py tests\unit\test_pet_track0_controller.py tests\unit\test_pet_track0_watchdog.py tests\unit\test_pet_state_animation_compatibility.py tests\unit\test_pet_animation_transactions.py -q
 ```
 
 Expected: `1169 passed`, with the pre-existing `docs/legal/gpl_migration_audit.md` change untouched.
 - [ ] Run final static and repository checks:
 
 ```powershell
-D:\SJTUClaw\.venv\Scripts\python.exe -m ruff check src\sjtuclaw\application\spine38_runtime.py src\sjtuclaw\presentation\qt\spine38_renderer.py tests\unit\test_spine38_runtime.py tests\qt\test_spine38_renderer.py tests\qt\test_spine38_schwarz_smoke.py
-D:\SJTUClaw\.venv\Scripts\python.exe -m mypy --strict src\sjtuclaw\application\spine38_runtime.py src\sjtuclaw\presentation\qt\spine38_renderer.py
+D:\ArkClaw\.venv\Scripts\python.exe -m ruff check src\arkclaw\application\spine38_runtime.py src\arkclaw\presentation\qt\spine38_renderer.py tests\unit\test_spine38_runtime.py tests\qt\test_spine38_renderer.py tests\qt\test_spine38_schwarz_smoke.py
+D:\ArkClaw\.venv\Scripts\python.exe -m mypy --strict src\arkclaw\application\spine38_runtime.py src\arkclaw\presentation\qt\spine38_renderer.py
 git diff --check
 git status --short
 ```
@@ -359,10 +359,10 @@ git commit -m "docs: describe visible spine framing"
 - [ ] Start the existing diagnostic with `pythonw.exe` so the user sees only the transparent desktop-pet window:
 
 ```powershell
-Start-Process -FilePath 'D:\SJTUClaw\.venv\Scripts\pythonw.exe' -WorkingDirectory 'D:\SJTUClaw\.worktrees\arkpets-spine-idle-vertical-slice' -ArgumentList @(
+Start-Process -FilePath 'D:\ArkClaw\.venv\Scripts\pythonw.exe' -WorkingDirectory 'D:\ArkClaw\.worktrees\arkpets-spine-idle-vertical-slice' -ArgumentList @(
   'scripts\qt_spine38_vertical_slice.py',
   '--asset-root', 'D:\Spine\test\stage3_idle_rebuild_20260806_145235\runtime_input',
-  '--bridge-dll', 'D:\SJTUClaw\.worktrees\arkpets-spine-idle-vertical-slice\build\spine38\Release\sjtuclaw_spine38_bridge.dll',
+  '--bridge-dll', 'D:\ArkClaw\.worktrees\arkpets-spine-idle-vertical-slice\build\spine38\Release\arkclaw_spine38_bridge.dll',
   '--animation', 'Relax',
   '--loops', '3'
 )

@@ -17,14 +17,14 @@ from tests.fakes.openai_sdk import (
     FakeOpenAIScenario,
 )
 
-from sjtuclaw.config.secrets import SecretValue
-from sjtuclaw.domain.models import (
+from arkclaw.config.secrets import SecretValue
+from arkclaw.domain.models import (
     OPENAI_DEFAULT_CREDENTIAL_ID,
     OPENAI_MANUAL_TEST_CREDENTIAL_ID,
     CredentialId,
 )
-from sjtuclaw.infrastructure.llm.openai_provider import OpenAIProvider
-from sjtuclaw.infrastructure.llm.openai_sdk import (
+from arkclaw.infrastructure.llm.openai_provider import OpenAIProvider
+from arkclaw.infrastructure.llm.openai_sdk import (
     JSONObject,
     OpenAIClientFactory,
     OpenAIRequest,
@@ -961,7 +961,7 @@ def test_budget_failure_repr_traceback_and_logging_are_payload_free(
                     )
                 )
             )
-            logging.getLogger("sjtuclaw.test").exception(
+            logging.getLogger("arkclaw.test").exception(
                 "safe budget failure"
             )
         else:
@@ -1367,7 +1367,7 @@ def test_owned_store_ownership_error_is_fully_sanitized(
             owned_store.get_openai_api_key()
         except manual._TargetOwnershipLost as caught:
             safe_error = caught
-            logging.getLogger("sjtuclaw.test").exception(
+            logging.getLogger("arkclaw.test").exception(
                 "safe ownership failure"
             )
 

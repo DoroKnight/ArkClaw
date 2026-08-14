@@ -14,12 +14,12 @@ from tests.fakes.openai_sdk import (
     FakeOpenAIScenario,
 )
 
-from sjtuclaw.application.agent_loop import AgentLoop, CancellationToken
-from sjtuclaw.application.context_manager import ContextManager
-from sjtuclaw.config.secrets import InMemorySecretStore, SecretValue
-from sjtuclaw.domain.errors import ProviderError
-from sjtuclaw.domain.events import AgentEvent, AgentEventType, LLMEvent, LLMEventType
-from sjtuclaw.domain.models import (
+from arkclaw.application.agent_loop import AgentLoop, CancellationToken
+from arkclaw.application.context_manager import ContextManager
+from arkclaw.config.secrets import InMemorySecretStore, SecretValue
+from arkclaw.domain.errors import ProviderError
+from arkclaw.domain.events import AgentEvent, AgentEventType, LLMEvent, LLMEventType
+from arkclaw.domain.models import (
     ChatMessage,
     CredentialId,
     LLMRequest,
@@ -32,8 +32,8 @@ from sjtuclaw.domain.models import (
     ToolSpec,
     UserMessageCommand,
 )
-from sjtuclaw.infrastructure.llm.openai_provider import OpenAIProvider
-from sjtuclaw.infrastructure.llm.openai_sdk import (
+from arkclaw.infrastructure.llm.openai_provider import OpenAIProvider
+from arkclaw.infrastructure.llm.openai_sdk import (
     JSONObject,
     OpenAIRequest,
     OpenAIResponseEvent,
@@ -1318,7 +1318,7 @@ def test_nonstandard_or_ambiguous_tool_json_fails_closed(
 
         assert events[-1].error_code == "invalid_response"
         assert LLMEventType.TOOL_CALL not in {event.type for event in events}
-        logging.getLogger("sjtuclaw.test").error("events=%r", events)
+        logging.getLogger("arkclaw.test").error("events=%r", events)
 
     with caplog.at_level(logging.ERROR):
         asyncio.run(scenario())
@@ -1928,7 +1928,7 @@ def test_continuation_payload_and_hmac_key_are_redacted_and_key_is_dropped(
                     error.__traceback__,
                 )
             )
-            logging.getLogger("sjtuclaw.test").exception(
+            logging.getLogger("arkclaw.test").exception(
                 "safe continuation failure"
             )
         assert sensitive not in formatted

@@ -6,25 +6,25 @@ from pathlib import Path
 
 import pytest
 
-from sjtuclaw.application.active_turn_coordinator import (
+from arkclaw.application.active_turn_coordinator import (
     DefaultActiveTurnCoordinator,
 )
-from sjtuclaw.application.agent_loop import AgentLoop
-from sjtuclaw.application.context_manager import ContextManager
-from sjtuclaw.application.provider_profile_service import (
+from arkclaw.application.agent_loop import AgentLoop
+from arkclaw.application.context_manager import ContextManager
+from arkclaw.application.provider_profile_service import (
     ActiveTurnHandling,
     ProviderActivationOptions,
     ProviderLifecycleState,
     ProviderProfileService,
 )
-from sjtuclaw.application.runtime_session_controller import (
+from arkclaw.application.runtime_session_controller import (
     RuntimeEvent,
     RuntimeEventType,
     RuntimeSessionController,
     RuntimeState,
 )
-from sjtuclaw.domain.events import LLMEvent
-from sjtuclaw.domain.models import (
+from arkclaw.domain.events import LLMEvent
+from arkclaw.domain.models import (
     FAKE_PROVIDER_ID,
     CredentialBinding,
     Embedding,
@@ -34,8 +34,8 @@ from sjtuclaw.domain.models import (
     ProviderContinuation,
     ProviderProfile,
 )
-from sjtuclaw.domain.ports import LLMProvider
-from sjtuclaw.infrastructure.config.json_provider_profile_repository import (
+from arkclaw.domain.ports import LLMProvider
+from arkclaw.infrastructure.config.json_provider_profile_repository import (
     JsonProviderProfileRepository,
 )
 
@@ -686,7 +686,7 @@ def test_shutdown_cancels_turn_closes_provider_and_leaves_no_tasks(
 
 def test_application_runtime_modules_do_not_import_qt() -> None:
     application_directory = (
-        Path(__file__).parents[2] / "src" / "sjtuclaw" / "application"
+        Path(__file__).parents[2] / "src" / "arkclaw" / "application"
     )
     for filename in (
         "active_turn_coordinator.py",

@@ -323,7 +323,7 @@ def _must_filter(upper_name: str) -> bool:
     return (
         upper_name in _FILTERED_NAMES
         or upper_name.startswith("QT_")
-        or upper_name.startswith("SJTUCLAW_")
+        or upper_name.startswith("ARKCLAW_")
         or upper_name.endswith("_PROXY")
         or any(marker in upper_name for marker in _SENSITIVE_MARKERS)
     )

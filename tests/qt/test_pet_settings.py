@@ -19,33 +19,33 @@ from PySide6.QtGui import QPainter
 from PySide6.QtTest import QSignalSpy
 from PySide6.QtWidgets import QApplication
 
-from sjtuclaw.application.pet_animation import PetRenderFrame
-from sjtuclaw.application.pet_geometry import Size
-from sjtuclaw.application.pet_renderer_model import (
+from arkclaw.application.pet_animation import PetRenderFrame
+from arkclaw.application.pet_geometry import Size
+from arkclaw.application.pet_renderer_model import (
     PetRendererAction,
     PetRendererActionRequest,
     PetRendererAnimationCapability,
     placeholder_animation_capability,
 )
-from sjtuclaw.application.pet_settings import (
+from arkclaw.application.pet_settings import (
     PetSettings,
     PetSettingsLoadResult,
     PetSettingsRepository,
 )
-from sjtuclaw.presentation.qt import (
+from arkclaw.presentation.qt import (
     pet_application,
     pet_settings_controller,
 )
-from sjtuclaw.presentation.qt.main_window import MainWindow
-from sjtuclaw.presentation.qt.pet_application import (
+from arkclaw.presentation.qt.main_window import MainWindow
+from arkclaw.presentation.qt.pet_application import (
     PetApplicationCoordinator,
 )
-from sjtuclaw.presentation.qt.pet_settings_controller import (
+from arkclaw.presentation.qt.pet_settings_controller import (
     PetSettingsController,
 )
-from sjtuclaw.presentation.qt.pet_window import PetWindow
-from sjtuclaw.presentation.qt.runtime_bridge import QtRuntimeBridge
-from sjtuclaw.presentation.qt.system_tray import SystemTrayController
+from arkclaw.presentation.qt.pet_window import PetWindow
+from arkclaw.presentation.qt.runtime_bridge import QtRuntimeBridge
+from arkclaw.presentation.qt.system_tray import SystemTrayController
 
 
 class _ManualShutdownBridge(QObject):
@@ -189,10 +189,14 @@ def test_restore_applies_topmost_and_authoritative_motion_position(
     restored = pet.persisted_presentation_state()
 
     assert restored == (pet.x(), pet.y(), False)
-    assert restored[:2] == (40, 50)
+    screen = QApplication.primaryScreen()
+    assert screen is not None
+    workspace = screen.availableGeometry()
+    assert restored[0] == 40
+    assert restored[1] + pet.height() == workspace.y() + workspace.height()
     assert repository.load_count == 1
     pet.physics_timer.timeout.emit()
-    assert (pet.x(), pet.y()) == (40, 50)
+    assert (pet.x(), pet.y()) == restored[:2]
     pet.complete_safe_close()
 
 
@@ -256,6 +260,7 @@ def test_successful_runtime_shutdown_saves_exactly_once(
     coordinator.restore_pet_settings()
     pet.restore_persisted_position(90, 100)
     pet.set_always_on_top(False)
+    expected_position = pet.persisted_presentation_state()[:2]
 
     pet.request_safe_exit()
     bridge.shutdown_finished.emit(True, "none")
@@ -265,7 +270,9 @@ def test_successful_runtime_shutdown_saves_exactly_once(
     assert quit_spy.count() == 0
     QApplication.processEvents()
     assert quit_spy.count() == 1
-    assert repository.saved == [PetSettings(90, 100, False)]
+    assert repository.saved == [
+        PetSettings(expected_position[0], expected_position[1], False)
+    ]
     assert controller.save_count == 1
     assert not pet.physics_timer.isActive()
 

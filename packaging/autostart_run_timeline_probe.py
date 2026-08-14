@@ -1,8 +1,8 @@
-"""Strict timeline observer for the fixed SJTUClaw HKCU Run value.
+"""Strict timeline observer for the fixed ArkClaw HKCU Run value.
 
 The default entry point is inert. Real registry observation requires the
 explicit ``--confirm-real-registry`` flag and always targets the one fixed
-SJTUClaw value. Registry value text and exception details are never persisted.
+ArkClaw value. Registry value text and exception details are never persisted.
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ from typing import Protocol, TypeGuard
 
 SCHEMA_VERSION = 2
 RUN_KEY_PATH = r"Software\Microsoft\Windows\CurrentVersion\Run"
-RUN_VALUE_NAME = "SJTUClaw"
+RUN_VALUE_NAME = "ArkClaw"
 AUTOSTART_ARGUMENT = "--startup"
 REGISTRY_STRING_VALUE_TYPE = 1
 POLL_INTERVAL_SECONDS = 0.2
@@ -31,7 +31,7 @@ READY_UNARMED_TIMEOUT_SECONDS = 60 * 60
 ACTIVE_TIMEOUT_SECONDS = 90 * 60
 STAGE_LEASE_SECONDS = 30 * 60
 TOTAL_RUNTIME_SECONDS = 3 * 60 * 60
-EXPECTED_EXECUTABLE_RELATIVE_PATH = Path("dist/SJTUClaw.dist/SJTUClaw.exe")
+EXPECTED_EXECUTABLE_RELATIVE_PATH = Path("dist/ArkClaw.dist/ArkClaw.exe")
 EVIDENCE_PARENT_RELATIVE_PATH = Path("build/autostart-run-timeline-probes")
 OWNER_UI_EVIDENCE_PARENT_RELATIVE_PATH = Path(
     "build/autostart-owner-ui-readiness"

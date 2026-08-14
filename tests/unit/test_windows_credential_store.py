@@ -9,21 +9,21 @@ from typing import cast
 import pytest
 from scripts.manual_credential_targets import ManualCredentialTargetResolver
 
-from sjtuclaw.config.errors import (
+from arkclaw.config.errors import (
     SecretStoreAccessDeniedError,
     SecretStoreCorruptedError,
     SecretStoreError,
     SecretStoreUnavailableError,
 )
-from sjtuclaw.config.loader import ConfigLoader
-from sjtuclaw.config.secrets import SecretValue
-from sjtuclaw.domain.models import (
+from arkclaw.config.loader import ConfigLoader
+from arkclaw.config.secrets import SecretValue
+from arkclaw.domain.models import (
     DEEPSEEK_MANUAL_TEST_CREDENTIAL_ID,
     OPENAI_MANUAL_TEST_CREDENTIAL_ID,
     CredentialId,
 )
-from sjtuclaw.infrastructure.security import windows_credential_store
-from sjtuclaw.infrastructure.security.windows_credential_store import (
+from arkclaw.infrastructure.security import windows_credential_store
+from arkclaw.infrastructure.security.windows_credential_store import (
     OPENAI_API_KEY_TARGET,
     CredentialBackendAccessDeniedError,
     CredentialBackendCorruptedError,
@@ -34,7 +34,7 @@ from sjtuclaw.infrastructure.security.windows_credential_store import (
     WindowsCredentialSecretStore,
 )
 
-_TEST_TARGET = "SJTUClaw/Test/OpenAI/APIKey"
+_TEST_TARGET = "ArkClaw/Test/OpenAI/APIKey"
 _FAKE_API_KEY = "sk-test-never-use-this-value"
 
 
@@ -110,7 +110,7 @@ def _assert_sensitive_error_is_sanitized(
 
 
 def test_default_credential_target_is_stable() -> None:
-    assert OPENAI_API_KEY_TARGET == "SJTUClaw/OpenAI/APIKey"
+    assert OPENAI_API_KEY_TARGET == "ArkClaw/OpenAI/APIKey"
 
 
 @pytest.mark.parametrize(
@@ -130,7 +130,7 @@ def test_production_resolver_rejects_manual_test_ids(
         CredentialTargetResolver.resolve(credential_id)
 
     assert credential_id.value not in str(raised.value)
-    assert "SJTUClaw/" not in str(raised.value)
+    assert "ArkClaw/" not in str(raised.value)
 
 
 @pytest.mark.parametrize(
@@ -464,7 +464,7 @@ def test_non_windows_default_backend_fails_explicitly(
 
 def test_module_import_does_not_construct_or_access_native_backend() -> None:
     module = importlib.import_module(
-        "sjtuclaw.infrastructure.security.windows_credential_store"
+        "arkclaw.infrastructure.security.windows_credential_store"
     )
 
     assert not any(

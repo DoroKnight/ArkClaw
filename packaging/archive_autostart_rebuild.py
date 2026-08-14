@@ -93,7 +93,7 @@ def _preflight(root: Path) -> tuple[bool, dict[str, object]]:
         )
         final = _relative_snapshot(
             root / "dist",
-            Path("SJTUClaw.dist"),
+            Path("ArkClaw.dist"),
         )
         build_files = snapshots["build/windows-standalone"].files
     except OSError:

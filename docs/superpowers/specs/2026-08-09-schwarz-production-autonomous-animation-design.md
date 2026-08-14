@@ -8,7 +8,7 @@ autonomous behavior, explicit action requests, and reusable external role packs
 
 ## 1. Objective
 
-Deliver the first production-capable Schwarz animation experience in SJTUClaw:
+Deliver the first production-capable Schwarz animation experience in ArkClaw:
 
 1. the desktop pet remains alive in the system tray until the user explicitly
    exits;
@@ -948,7 +948,7 @@ This milestone is complete only when:
 This milestone does not:
 
 - implement or fabricate the remaining future 25-action catalog;
-- copy Ark-models assets into SJTUClaw;
+- copy Ark-models assets into ArkClaw;
 - mix individual art attachments across skeleton packages;
 - reproduce ArkPets' full application, tray, Java classes, or fixed source
   matrix;

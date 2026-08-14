@@ -2,16 +2,16 @@
 
 **Date:** 2026-08-08
 **Status:** Approved design, pending user review of this written specification
-**Scope:** Local, noncommercial Spine 3.8 playback in SJTUClaw
+**Scope:** Local, noncommercial Spine 3.8 playback in ArkClaw
 
 ## 1. Objective
 
-Integrate the existing Schwarz Spine 3.8 Runtime asset into SJTUClaw while
+Integrate the existing Schwarz Spine 3.8 Runtime asset into ArkClaw while
 preserving the existing Agent, semantic state machine, and ArkPets-inspired
 action-sequencing architecture.
 
 The integration uses animations already exercised by ArkPets before any
-SJTUClaw-authored replacement. Custom animations remain supplements for
+ArkClaw-authored replacement. Custom animations remain supplements for
 logical actions that the original skeleton cannot provide; they do not replace
 a semantically suitable original animation merely to normalize naming.
 
@@ -57,10 +57,10 @@ contracts:
 - `2026-08-06-spine-desktop-pet-open-source-research.md` remains
   authoritative for Spine 3.8 Runtime mechanisms and license boundaries.
 
-The earlier prohibition on importing ArkPets or Arknights art into SJTUClaw is
+The earlier prohibition on importing ArkPets or Arknights art into ArkClaw is
 retained as a repository and distribution boundary. This design authorizes
 read-only local loading from an external path; it does not authorize copying
-the files into the SJTUClaw repository or relicensing them as project source.
+the files into the ArkClaw repository or relicensing them as project source.
 
 ## 4. Asset and Animation Priority
 
@@ -68,7 +68,7 @@ The source order is fixed:
 
 1. **ArkPets-compatible original animation.** Use a semantically correct
    animation found in the accepted, hash-pinned original `.skel`.
-2. **Audited SJTUClaw supplement.** Use a separately exported custom animation
+2. **Audited ArkClaw supplement.** Use a separately exported custom animation
    only when the accepted original skeleton lacks the required semantic action
    or lacks a safe sparse overlay.
 3. **Programmatic placeholder.** Retain the current placeholder renderer when
@@ -290,9 +290,9 @@ not copies of the character assets.
 ## 12. Repository and License Boundaries
 
 - Do not copy `.skel`, `.atlas`, `.png`, `.spine`, screenshots, or Runtime
-  exports into `D:\SJTUClaw`.
-- Do not commit Ark-Models assets to the SJTUClaw GitHub repository.
-- Do not describe the character assets as GPL-covered SJTUClaw source.
+  exports into `D:\ArkClaw`.
+- Do not commit Ark-Models assets to the ArkClaw GitHub repository.
+- Do not describe the character assets as GPL-covered ArkClaw source.
 - Preserve ArkPets attribution for adapted GPL-3.0 code.
 - Preserve the separate Spine Runtimes license and required notices.
 - Treat Ark-Models and Arknights art under their own repository notice and

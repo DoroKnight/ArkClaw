@@ -13,8 +13,8 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtGui import QImage
 from PySide6.QtWidgets import QApplication
 
-from sjtuclaw.application.pet_geometry import Size
-from sjtuclaw.application.pet_mesh_model import (
+from arkclaw.application.pet_geometry import Size
+from arkclaw.application.pet_mesh_model import (
     PetMeshBlendMode,
     PetMeshColor,
     PetMeshDrawCommand,
@@ -23,7 +23,7 @@ from sjtuclaw.application.pet_mesh_model import (
     PetMeshTextureData,
     PetMeshVertex,
 )
-from sjtuclaw.presentation.qt.pet_mesh_spike import (
+from arkclaw.presentation.qt.pet_mesh_spike import (
     MeshSpikeError,
     MeshSpikeSafeCode,
     OffscreenOpenGLMeshPetRenderer,
@@ -32,7 +32,7 @@ from sjtuclaw.presentation.qt.pet_mesh_spike import (
     SoftwareTexturedMeshRenderer,
     generate_mesh_spike_scene,
 )
-from sjtuclaw.presentation.qt.pet_renderer import SafePetRenderer
+from arkclaw.presentation.qt.pet_renderer import SafePetRenderer
 
 
 @pytest.fixture(scope="module")

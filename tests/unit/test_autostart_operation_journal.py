@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from sjtuclaw.application.autostart_operation_journal import (
+from arkclaw.application.autostart_operation_journal import (
     AutostartOperationContext,
     AutostartOperationEvent,
     AutostartOperationJournal,
@@ -13,8 +13,8 @@ from sjtuclaw.application.autostart_operation_journal import (
     AutostartOperationOrigin,
     AutostartOperationRuntimeState,
 )
-from sjtuclaw.application.autostart_service import AutostartService
-from sjtuclaw.presentation.qt.autostart_operation_diagnostics import (
+from arkclaw.application.autostart_service import AutostartService
+from arkclaw.presentation.qt.autostart_operation_diagnostics import (
     AutostartOperationDiagnosticArgumentError,
     prepare_autostart_operation_diagnostic_launch,
 )
@@ -32,7 +32,7 @@ class _Backend:
         return self.value
 
     def write_value(self, command: str) -> None:
-        from sjtuclaw.application.autostart_service import (
+        from arkclaw.application.autostart_service import (
             REGISTRY_STRING_VALUE_TYPE,
             AutostartStoredValue,
         )
@@ -104,9 +104,9 @@ def test_delete_is_blocked_when_entered_event_cannot_be_persisted(
 ) -> None:
     from typing import cast
 
-    from sjtuclaw.application.autostart_service import AutostartBackend
+    from arkclaw.application.autostart_service import AutostartBackend
 
-    executable = tmp_path / "SJTUClaw.exe"
+    executable = tmp_path / "ArkClaw.exe"
     executable.write_bytes(b"offline-placeholder")
     backend = _Backend()
     journal = AutostartOperationJournal(tmp_path / "journal.jsonl", "b" * 32)
@@ -155,9 +155,9 @@ def test_external_delete_has_no_application_delete_event(
 ) -> None:
     from typing import cast
 
-    from sjtuclaw.application.autostart_service import AutostartBackend
+    from arkclaw.application.autostart_service import AutostartBackend
 
-    executable = tmp_path / "SJTUClaw.exe"
+    executable = tmp_path / "ArkClaw.exe"
     executable.write_bytes(b"offline-placeholder")
     backend = _Backend()
     path = tmp_path / "journal.jsonl"
@@ -187,9 +187,9 @@ def test_backend_delete_is_correlated_only_to_explicit_disable(
 ) -> None:
     from typing import cast
 
-    from sjtuclaw.application.autostart_service import AutostartBackend
+    from arkclaw.application.autostart_service import AutostartBackend
 
-    executable = tmp_path / "SJTUClaw.exe"
+    executable = tmp_path / "ArkClaw.exe"
     executable.write_bytes(b"offline-placeholder")
     backend = _Backend()
     path = tmp_path / "journal.jsonl"
@@ -245,7 +245,7 @@ def test_operation_diagnostic_is_default_off_and_exact_opt_in(
 ) -> None:
     root = tmp_path / "repository"
     (root / "build").mkdir(parents=True)
-    executable = root / "dist" / "SJTUClaw.dist" / "SJTUClaw.exe"
+    executable = root / "dist" / "ArkClaw.dist" / "ArkClaw.exe"
     executable.parent.mkdir(parents=True)
     executable.write_bytes(b"offline-placeholder")
 

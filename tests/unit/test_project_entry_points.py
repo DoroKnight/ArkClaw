@@ -13,11 +13,12 @@ def test_console_and_gui_entry_points_keep_reviewed_names_and_roles() -> None:
     project = cast(dict[str, object], document["project"])
 
     assert project["scripts"] == {
-        "sjtuclaw-agent-demo": "sjtuclaw.__main__:main",
+        "arkclaw-agent-demo": "arkclaw.__main__:main",
     }
     assert project["gui-scripts"] == {
-        "sjtuclaw-gui": "sjtuclaw.presentation.qt.application:run",
-        "sjtuclaw-pet-placeholder": (
-            "sjtuclaw.presentation.qt.pet_application:run"
+        "arkclaw-gui": "arkclaw.presentation.qt.application:run",
+        "arkclaw-pet": "arkclaw.presentation.qt.pet_application:run",
+        "arkclaw-pet-placeholder": (
+            "arkclaw.presentation.qt.pet_application:run"
         ),
     }

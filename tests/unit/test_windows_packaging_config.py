@@ -28,7 +28,7 @@ _PYPROJECT_PATH = _PROJECT_ROOT / "pyproject.toml"
 _LOCK_PATH = _PROJECT_ROOT / "uv.lock"
 _TYPECHECK_SCRIPT_PATH = _PROJECT_ROOT / "scripts" / "typecheck.ps1"
 _OPENAI_SDK_PATH = (
-    _PROJECT_ROOT / "src/sjtuclaw/infrastructure/llm/openai_sdk.py"
+    _PROJECT_ROOT / "src/arkclaw/infrastructure/llm/openai_sdk.py"
 )
 
 
@@ -44,7 +44,7 @@ def test_packaging_spec_uses_only_relative_repository_paths() -> None:
     parser = _load_spec()
 
     assert re.search(r"(?im)^[a-z]:[\\/]", text) is None
-    assert "D:\\SJTUClaw" not in text
+    assert "D:\\ArkClaw" not in text
     assert "C:\\Users\\" not in text
     for key in ("project_dir", "input_file", "exec_directory"):
         assert not Path(parser["app"][key]).is_absolute()
@@ -54,7 +54,7 @@ def test_packaging_spec_has_fixed_standalone_gui_configuration() -> None:
     parser = _load_spec()
     extra_args = parser["nuitka"]["extra_args"].split()
 
-    assert parser["app"]["title"] == "SJTUClaw"
+    assert parser["app"]["title"] == "ArkClaw"
     assert parser["app"]["input_file"] == "packaging/pet_entry.py"
     assert parser["app"]["exec_directory"] == "dist"
     assert parser["python"]["packages"] == "Nuitka==4.0"
@@ -63,7 +63,7 @@ def test_packaging_spec_has_fixed_standalone_gui_configuration() -> None:
     assert not any(argument.startswith("--output-dir") for argument in extra_args)
     assert "--msvc=14.4" in extra_args
     assert "--disable-cache=ccache" in extra_args
-    assert "--output-filename=SJTUClaw.exe" in extra_args
+    assert "--output-filename=ArkClaw.exe" in extra_args
     assert (
         "--report=build/windows-standalone/compilation-report.xml"
         in extra_args
@@ -214,7 +214,7 @@ def test_mypy_scope_is_explicit_and_generated_outputs_are_excluded() -> None:
     ):
         assert exclusion.search(excluded)
     for checked in (
-        "src/sjtuclaw/__init__.py",
+        "src/arkclaw/__init__.py",
         "tests/unit/test_example.py",
         "scripts/manual_openai_verification.py",
         "packaging/standalone_build.py",
@@ -480,7 +480,7 @@ def test_build_script_checks_nuitka_version_and_never_compiles_on_parse() -> Non
         "qt_pet_smoke",
         "qt_gui_smoke",
         "CredentialBlob",
-        "SJTUClaw/Test/",
+        "ArkClaw/Test/",
         "ark-model",
         ".env",
         ".log",
@@ -513,7 +513,7 @@ def test_packaging_entry_has_exact_minimal_structure() -> None:
     ]
 
     assert imported_names == [
-        ("sjtuclaw.presentation.qt.pet_application", ("run",))
+        ("arkclaw.presentation.qt.pet_application", ("run",))
     ]
     assert len(calls) == 1
     assert isinstance(calls[0].func, ast.Name)
@@ -527,7 +527,7 @@ def test_packaging_entry_import_is_inert(
 ) -> None:
     run_calls = 0
     fake_application = ModuleType(
-        "sjtuclaw.presentation.qt.pet_application"
+        "arkclaw.presentation.qt.pet_application"
     )
 
     def fake_run() -> None:
@@ -537,11 +537,11 @@ def test_packaging_entry_import_is_inert(
     fake_application.run = fake_run  # type: ignore[attr-defined]
     monkeypatch.setitem(
         sys.modules,
-        "sjtuclaw.presentation.qt.pet_application",
+        "arkclaw.presentation.qt.pet_application",
         fake_application,
     )
     spec = importlib.util.spec_from_file_location(
-        "_sjtuclaw_packaging_entry_test",
+        "_arkclaw_packaging_entry_test",
         _ENTRY_PATH,
     )
     assert spec is not None
@@ -559,11 +559,11 @@ import importlib.util
 import socket
 from pathlib import Path
 from PySide6.QtCore import QCoreApplication
-from sjtuclaw.bootstrap.qt_runtime import ProductionQtRuntimeCompositionRoot
-from sjtuclaw.infrastructure.security.windows_credential_store import (
+from arkclaw.bootstrap.qt_runtime import ProductionQtRuntimeCompositionRoot
+from arkclaw.infrastructure.security.windows_credential_store import (
     WindowsCredentialSecretStore,
 )
-from sjtuclaw.presentation.qt.runtime_thread import RuntimeThread
+from arkclaw.presentation.qt.runtime_thread import RuntimeThread
 
 def forbidden(*args, **kwargs):
     raise AssertionError("packaging entry import crossed a runtime or I/O boundary")
@@ -644,11 +644,11 @@ def test_lock_uses_only_official_pypi_domains() -> None:
 
 
 def test_production_source_contains_no_manual_target_prefix() -> None:
-    source_root = _PROJECT_ROOT / "src" / "sjtuclaw"
+    source_root = _PROJECT_ROOT / "src" / "arkclaw"
     matches = [
         path
         for path in source_root.rglob("*.py")
-        if "SJTUClaw/Test/" in path.read_text(encoding="utf-8")
+        if "ArkClaw/Test/" in path.read_text(encoding="utf-8")
     ]
 
     assert matches == []

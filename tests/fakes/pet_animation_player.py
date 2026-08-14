@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from sjtuclaw.application.pet_track0 import (
+from arkclaw.application.pet_track0 import (
     AnimationPlayerCapabilities,
     PlaybackRequest,
     PlaybackToken,

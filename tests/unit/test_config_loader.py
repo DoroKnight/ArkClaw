@@ -2,7 +2,7 @@ from dataclasses import FrozenInstanceError
 
 import pytest
 
-from sjtuclaw.config.defaults import (
+from arkclaw.config.defaults import (
     DEFAULT_DEEPSEEK_MAX_RETRIES,
     DEFAULT_DEEPSEEK_MODEL,
     DEFAULT_MAX_OUTPUT_TOKENS,
@@ -14,9 +14,9 @@ from sjtuclaw.config.defaults import (
     DEFAULT_PROVIDER_TIMEOUT_SECONDS,
     DEFAULT_STREAM,
 )
-from sjtuclaw.config.errors import ConfigError
-from sjtuclaw.config.loader import ConfigLoader
-from sjtuclaw.config.models import ProviderName, RuntimeConfig
+from arkclaw.config.errors import ConfigError
+from arkclaw.config.loader import ConfigLoader
+from arkclaw.config.models import ProviderName, RuntimeConfig
 
 
 def test_defaults_start_with_fake_provider() -> None:
@@ -40,14 +40,14 @@ def test_invalid_provider_has_clear_error() -> None:
         ConfigError,
         match=r"provider.*fake, openai, deepseek, ollama",
     ):
-        ConfigLoader().load(environ={"SJTUCLAW_PROVIDER": "unknown"})
+        ConfigLoader().load(environ={"ARKCLAW_PROVIDER": "unknown"})
 
 
 def test_cli_overrides_environment() -> None:
     config = ConfigLoader().load(
         environ={
-            "SJTUCLAW_PROVIDER": "ollama",
-            "SJTUCLAW_OPENAI_MODEL": "environment-model",
+            "ARKCLAW_PROVIDER": "ollama",
+            "ARKCLAW_OPENAI_MODEL": "environment-model",
         },
         cli_args=["--provider", "openai", "--openai-model", "cli-model"],
     )
@@ -64,9 +64,9 @@ def test_environment_overrides_application_settings() -> None:
             "max_output_tokens": 512,
         },
         environ={
-            "SJTUCLAW_PROVIDER": "ollama",
-            "SJTUCLAW_OLLAMA_MODEL": "environment-model",
-            "SJTUCLAW_MAX_OUTPUT_TOKENS": "2048",
+            "ARKCLAW_PROVIDER": "ollama",
+            "ARKCLAW_OLLAMA_MODEL": "environment-model",
+            "ARKCLAW_MAX_OUTPUT_TOKENS": "2048",
         },
     )
 
@@ -105,7 +105,7 @@ def test_provider_and_turn_timeouts_are_independent() -> None:
 
 def test_max_turn_cli_overrides_environment() -> None:
     config = ConfigLoader().load(
-        environ={"SJTUCLAW_MAX_TURN_SECONDS": "20"},
+        environ={"ARKCLAW_MAX_TURN_SECONDS": "20"},
         cli_args=["--max-turn-seconds", "10"],
     )
 
@@ -115,7 +115,7 @@ def test_max_turn_cli_overrides_environment() -> None:
 def test_max_turn_environment_overrides_application_settings() -> None:
     config = ConfigLoader().load(
         app_settings={"max_turn_seconds": 30},
-        environ={"SJTUCLAW_MAX_TURN_SECONDS": "15"},
+        environ={"ARKCLAW_MAX_TURN_SECONDS": "15"},
     )
 
     assert config.max_turn_seconds == 15.0
@@ -138,9 +138,9 @@ def test_deepseek_configuration_is_independent_and_serializes_no_key() -> None:
     fake_key = "sk-deepseek-test-never-use"
     config = ConfigLoader().load(
         environ={
-            "SJTUCLAW_PROVIDER": "deepseek",
-            "SJTUCLAW_DEEPSEEK_MODEL": "deepseek-test-model",
-            "SJTUCLAW_DEEPSEEK_MAX_RETRIES": "0",
+            "ARKCLAW_PROVIDER": "deepseek",
+            "ARKCLAW_DEEPSEEK_MODEL": "deepseek-test-model",
+            "ARKCLAW_DEEPSEEK_MAX_RETRIES": "0",
             "DEEPSEEK_API_KEY": fake_key,
         },
     )

@@ -1,6 +1,6 @@
 from datetime import UTC, datetime, timedelta
 
-from sjtuclaw.domain.models import (
+from arkclaw.domain.models import (
     ApprovalRecord,
     ExecutionContext,
     PolicyOutcome,
@@ -8,7 +8,7 @@ from sjtuclaw.domain.models import (
     ToolRisk,
     ToolSpec,
 )
-from sjtuclaw.domain.policies import DefaultToolPolicy
+from arkclaw.domain.policies import DefaultToolPolicy
 
 
 def _call(

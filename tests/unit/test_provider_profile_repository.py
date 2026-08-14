@@ -9,25 +9,25 @@ from pathlib import Path
 
 import pytest
 
-from sjtuclaw.application.provider_profile_repository import (
+from arkclaw.application.provider_profile_repository import (
     ProviderMetadataConflictError,
     ProviderMetadataCorruptedError,
     ProviderMetadataReferenceError,
     ProviderMetadataSchemaError,
     ProviderMetadataWriteError,
 )
-from sjtuclaw.config.provider_profile_policy import (
+from arkclaw.config.provider_profile_policy import (
     ProviderProfilePolicyError,
     build_supported_credential_binding,
     build_supported_profile,
     validate_supported_credential_binding,
 )
-from sjtuclaw.config.provider_profiles import (
+from arkclaw.config.provider_profiles import (
     deepseek_profile,
     openai_profile,
 )
-from sjtuclaw.config.secrets import InMemorySecretStore, SecretValue
-from sjtuclaw.domain.models import (
+from arkclaw.config.secrets import InMemorySecretStore, SecretValue
+from arkclaw.domain.models import (
     DEEPSEEK_MANUAL_TEST_CREDENTIAL_ID,
     DEEPSEEK_PROVIDER_ID,
     OPENAI_MANUAL_TEST_CREDENTIAL_ID,
@@ -38,7 +38,7 @@ from sjtuclaw.domain.models import (
     ProfileId,
     ProviderId,
 )
-from sjtuclaw.infrastructure.config.json_provider_profile_repository import (
+from arkclaw.infrastructure.config.json_provider_profile_repository import (
     JsonProviderProfileRepository,
 )
 

@@ -5,7 +5,7 @@ from dataclasses import FrozenInstanceError
 
 import pytest
 
-from sjtuclaw.application.pet_action_sequence import (
+from arkclaw.application.pet_action_sequence import (
     SEQUENCE_CATALOG,
     AnimationBinding,
     AnimationRegistry,
@@ -127,6 +127,11 @@ def test_catalog_union_covers_all_25_names_and_track_ownership() -> None:
         step.action not in {PetActionName.BREATHING, PetActionName.BLINK}
         for entry in SEQUENCE_CATALOG.values()
         if entry.track == 0
+        for step in entry.sequence.steps
+    )
+    assert all(
+        step.mix_seconds == pytest.approx(0.12)
+        for entry in SEQUENCE_CATALOG.values()
         for step in entry.sequence.steps
     )
 

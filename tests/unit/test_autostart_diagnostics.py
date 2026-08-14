@@ -8,19 +8,19 @@ from typing import cast
 
 import pytest
 
-from sjtuclaw.application.autostart_eligibility import (
+from arkclaw.application.autostart_eligibility import (
     AutostartEligibilityReason,
     AutostartEligibilityResult,
 )
-from sjtuclaw.application.autostart_service import (
+from arkclaw.application.autostart_service import (
     AutostartService,
     AutostartStatus,
 )
-from sjtuclaw.application.startup_mode import (
+from arkclaw.application.startup_mode import (
     AUTOSTART_DIAGNOSTIC_ARGUMENT,
 )
-from sjtuclaw.bootstrap import autostart_diagnostics
-from sjtuclaw.presentation.qt import pet_application
+from arkclaw.bootstrap import autostart_diagnostics
+from arkclaw.presentation.qt import pet_application
 
 _SENSITIVE_TEXT = (
     "unsafe-runtime-detail-never-display "
@@ -118,7 +118,7 @@ def test_diagnostic_mode_constructs_no_qt_runtime_registry_or_network(
     )
 
     exit_code = pet_application.main(
-        ["SJTUClaw.exe", AUTOSTART_DIAGNOSTIC_ARGUMENT]
+        ["ArkClaw.exe", AUTOSTART_DIAGNOSTIC_ARGUMENT]
     )
 
     captured = capsys.readouterr()
@@ -132,13 +132,13 @@ def test_diagnostic_mode_constructs_no_qt_runtime_registry_or_network(
 
 def test_diagnostic_argument_must_be_the_only_option() -> None:
     assert autostart_diagnostics.is_autostart_runtime_diagnostic_requested(
-        ["SJTUClaw.exe", AUTOSTART_DIAGNOSTIC_ARGUMENT]
+        ["ArkClaw.exe", AUTOSTART_DIAGNOSTIC_ARGUMENT]
     )
     assert not autostart_diagnostics.is_autostart_runtime_diagnostic_requested(
-        ["SJTUClaw.exe"]
+        ["ArkClaw.exe"]
     )
     assert not autostart_diagnostics.is_autostart_runtime_diagnostic_requested(
-        ["SJTUClaw.exe", AUTOSTART_DIAGNOSTIC_ARGUMENT, "--startup"]
+        ["ArkClaw.exe", AUTOSTART_DIAGNOSTIC_ARGUMENT, "--startup"]
     )
 
 
@@ -147,7 +147,7 @@ def test_internal_reason_maps_to_existing_public_safe_state(
     caplog: pytest.LogCaptureFixture,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    executable = tmp_path / "SJTUClaw.exe"
+    executable = tmp_path / "ArkClaw.exe"
     executable.write_bytes(b"offline-placeholder")
     service = AutostartService(
         _ForbiddenBackend(),
@@ -182,7 +182,7 @@ def test_invalid_internal_probe_result_fails_closed_without_leaking(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    executable = tmp_path / "SJTUClaw.exe"
+    executable = tmp_path / "ArkClaw.exe"
     executable.write_bytes(b"offline-placeholder")
     service = AutostartService(
         _ForbiddenBackend(),

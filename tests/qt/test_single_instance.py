@@ -20,14 +20,14 @@ from PySide6.QtCore import (
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from PySide6.QtWidgets import QApplication
 
-from sjtuclaw.presentation.qt import pet_application
-from sjtuclaw.presentation.qt.main_window import MainWindow
-from sjtuclaw.presentation.qt.pet_application import (
+from arkclaw.presentation.qt import pet_application
+from arkclaw.presentation.qt.main_window import MainWindow
+from arkclaw.presentation.qt.pet_application import (
     PetApplicationCoordinator,
 )
-from sjtuclaw.presentation.qt.pet_window import PetWindow
-from sjtuclaw.presentation.qt.runtime_bridge import QtRuntimeBridge
-from sjtuclaw.presentation.qt.single_instance import (
+from arkclaw.presentation.qt.pet_window import PetWindow
+from arkclaw.presentation.qt.runtime_bridge import QtRuntimeBridge
+from arkclaw.presentation.qt.single_instance import (
     ActivationMessageStatus,
     SingleInstanceManager,
     SingleInstanceResult,
@@ -332,7 +332,7 @@ def _run_until(
 
 
 def _namespace() -> str:
-    return f"SJTUClaw.Test.SingleInstance.{uuid.uuid4().hex}"
+    return f"ArkClaw.Test.SingleInstance.{uuid.uuid4().hex}"
 
 
 def _probe_path() -> Path:
@@ -1463,7 +1463,7 @@ def test_startup_owner_keeps_agent_hidden_and_starts_pet_and_tray(
         lambda coordinator, autostart_controller, parent: object(),
     )
 
-    exit_code = pet_application.main(["SJTUClaw.exe", "--startup"])
+    exit_code = pet_application.main(["ArkClaw.exe", "--startup"])
 
     assert exit_code == 0
     assert events[:2] == ["owner", "runtime_root"]

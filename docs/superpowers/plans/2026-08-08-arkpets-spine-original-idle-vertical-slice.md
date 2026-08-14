@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Load the hash-pinned Schwarz Ark-Models Spine 3.8 triplet through official `spine-cpp`, enumerate its real animation catalog, and visibly loop the original `Relax` candidate for at least three cycles in SJTUClaw's existing transparent pet window with fail-closed placeholder fallback.
+**Goal:** Load the hash-pinned Schwarz Ark-Models Spine 3.8 triplet through official `spine-cpp`, enumerate its real animation catalog, and visibly loop the original `Relax` candidate for at least three cycles in ArkClaw's existing transparent pet window with fail-closed placeholder fallback.
 
 **Architecture:** A version-pinned C++17 DLL wraps official `spine-cpp` behind a C ABI and receives already-verified in-memory atlas/skeleton bytes. A framework-neutral Python adapter owns Runtime state and converts evaluated region/mesh/clipped geometry into the existing `PetMeshScene` contract; a Qt renderer sends those scenes to the existing offscreen OpenGL backend and remains contained by `SafePetRenderer`. This milestone uses the legacy direct renderer path and does not enable `PetTrack0Controller` production sequencing or claim completion callbacks for the other logical actions.
 
@@ -40,19 +40,19 @@
 
 - `native/spine38_bridge/CMakeLists.txt`: consume an exact verified Runtime source directory and compile the local DLL plus CTest target.
 - `native/spine38_bridge/spine-runtimes.lock.json`: machine-readable repository URL, commit, Runtime data version, and license filename.
-- `native/spine38_bridge/include/sjtuclaw_spine38_bridge.h`: stable C ABI, POD draw views, fixed error codes, and ownership rules.
-- `native/spine38_bridge/src/sjtuclaw_spine38_bridge.cpp`: `spine-cpp` asset loading, catalog, `AnimationState`, region/mesh extraction, `SkeletonClipping`, and exception containment.
+- `native/spine38_bridge/include/arkclaw_spine38_bridge.h`: stable C ABI, POD draw views, fixed error codes, and ownership rules.
+- `native/spine38_bridge/src/arkclaw_spine38_bridge.cpp`: `spine-cpp` asset loading, catalog, `AnimationState`, region/mesh extraction, `SkeletonClipping`, and exception containment.
 - `native/spine38_bridge/tests/spine38_bridge_contract_test.cpp`: invalid-input, catalog, lifecycle, and draw-buffer ownership tests without character assets.
 - `scripts/build_spine38_bridge.ps1`: reproducible local Debug/Release configuration and build command.
 
 ### Python application and infrastructure
 
-- `src/sjtuclaw/application/pet_external_assets.py`: retain verified immutable bytes alongside metadata and read-only handle ownership.
-- `src/sjtuclaw/application/spine38_runtime.py`: framework-neutral catalog/draw models, Runtime protocol, transform, and adapter lifecycle.
-- `src/sjtuclaw/infrastructure/spine38_native.py`: `ctypes` binding, DLL ABI/version check, fixed-code conversion, and native handle ownership.
-- `src/sjtuclaw/application/pet_mesh_model.py`: add renderer-neutral slot blend modes only; do not add Spine concepts.
-- `src/sjtuclaw/presentation/qt/pet_mesh_opengl_renderer.py`: implement the new generic blend functions while preserving existing alpha behavior.
-- `src/sjtuclaw/presentation/qt/spine38_renderer.py`: decode the verified PNG, convert evaluated draw data to `PetMeshScene`, and delegate rendering to the generic backend.
+- `src/arkclaw/application/pet_external_assets.py`: retain verified immutable bytes alongside metadata and read-only handle ownership.
+- `src/arkclaw/application/spine38_runtime.py`: framework-neutral catalog/draw models, Runtime protocol, transform, and adapter lifecycle.
+- `src/arkclaw/infrastructure/spine38_native.py`: `ctypes` binding, DLL ABI/version check, fixed-code conversion, and native handle ownership.
+- `src/arkclaw/application/pet_mesh_model.py`: add renderer-neutral slot blend modes only; do not add Spine concepts.
+- `src/arkclaw/presentation/qt/pet_mesh_opengl_renderer.py`: implement the new generic blend functions while preserving existing alpha behavior.
+- `src/arkclaw/presentation/qt/spine38_renderer.py`: decode the verified PNG, convert evaluated draw data to `PetMeshScene`, and delegate rendering to the generic backend.
 
 ### Diagnostics and tests
 
@@ -65,7 +65,7 @@
 - `tests/qt/test_spine38_renderer.py`: fake-runtime renderer lifecycle, frame replacement, and `SafePetRenderer` fallback tests.
 - `tests/integration/test_spine38_schwarz_catalog.py`: opt-in tests against the external Schwarz triplet and compiled bridge.
 - `tests/qt/test_spine38_schwarz_smoke.py`: opt-in subprocess assertion over the three-loop Windows smoke JSON.
-- `docs/spine38_local_vertical_slice.md`: local build/run instructions, evidence schema, license boundary, and precise non-claims.
+- `docs/rendering/spine38_local_vertical_slice.md`: local build/run instructions, evidence schema, license boundary, and precise non-claims.
 
 ---
 
@@ -74,13 +74,13 @@
 **Files:**
 - Create: `native/spine38_bridge/spine-runtimes.lock.json`
 - Create: `native/spine38_bridge/CMakeLists.txt`
-- Create: `native/spine38_bridge/src/sjtuclaw_spine38_bridge.cpp`
+- Create: `native/spine38_bridge/src/arkclaw_spine38_bridge.cpp`
 - Create: `scripts/build_spine38_bridge.ps1`
 - Create: `tests/unit/test_spine38_build_contract.py`
 
 **Interfaces:**
 - Consumes: CMake generator `Visual Studio 18 2026`; official Git repository URL and exact commit from Global Constraints.
-- Produces: `build/spine38/Release/sjtuclaw_spine38_bridge.dll`, copied upstream `LICENSE`, and `spine38-build-manifest.json` containing commit, configuration, architecture, and bridge ABI.
+- Produces: `build/spine38/Release/arkclaw_spine38_bridge.dll`, copied upstream `LICENSE`, and `spine38-build-manifest.json` containing commit, configuration, architecture, and bridge ABI.
 
 - [ ] **Step 1: Write failing build-wrapper behavior tests**
 
@@ -112,11 +112,11 @@ Expected: two test failures inside the test bodies because the build wrapper/loc
 
 - [ ] **Step 3: Add the lock, CMake build, and PowerShell wrapper**
 
-The PowerShell wrapper must clone the official repository into ignored `build/spine38/source/` on the first build, check out the exact commit in detached-HEAD state, and verify `git rev-parse HEAD` on every build. CMake must perform no network access: it receives the verified checkout through required `SPINE_RUNTIMES_SOURCE_DIR`, builds the official `spine-cpp/spine-cpp/src/spine/*.cpp` sources as a static internal target, compiles the local bridge as a shared library, copies the upstream `LICENSE` beside the DLL, and enables CTest. The initial bridge source exports only `sjtuclaw_spine38_abi_version()` returning `1`; Task 3 replaces the stub with the catalog implementation.
+The PowerShell wrapper must clone the official repository into ignored `build/spine38/source/` on the first build, check out the exact commit in detached-HEAD state, and verify `git rev-parse HEAD` on every build. CMake must perform no network access: it receives the verified checkout through required `SPINE_RUNTIMES_SOURCE_DIR`, builds the official `spine-cpp/spine-cpp/src/spine/*.cpp` sources as a static internal target, compiles the local bridge as a shared library, copies the upstream `LICENSE` beside the DLL, and enables CTest. The initial bridge source exports only `arkclaw_spine38_abi_version()` returning `1`; Task 3 replaces the stub with the catalog implementation.
 
 ```cmake
 cmake_minimum_required(VERSION 3.25)
-project(sjtuclaw_spine38_bridge LANGUAGES CXX)
+project(arkclaw_spine38_bridge LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(SPINE_RUNTIMES_SOURCE_DIR "" CACHE PATH "Exact pinned spine-runtimes checkout")
@@ -129,10 +129,10 @@ add_library(spine38_runtime STATIC ${SPINE38_SOURCES})
 target_include_directories(spine38_runtime PUBLIC
   "${SPINE_RUNTIMES_SOURCE_DIR}/spine-cpp/spine-cpp/include")
 set_target_properties(spine38_runtime PROPERTIES POSITION_INDEPENDENT_CODE ON)
-add_library(sjtuclaw_spine38_bridge SHARED
-  src/sjtuclaw_spine38_bridge.cpp)
-target_link_libraries(sjtuclaw_spine38_bridge PRIVATE spine38_runtime)
-target_include_directories(sjtuclaw_spine38_bridge PUBLIC include)
+add_library(arkclaw_spine38_bridge SHARED
+  src/arkclaw_spine38_bridge.cpp)
+target_link_libraries(arkclaw_spine38_bridge PRIVATE spine38_runtime)
+target_include_directories(arkclaw_spine38_bridge PUBLIC include)
 ```
 
 The PowerShell script must configure x64 Release by default, use an explicit repository-relative build directory, fail if the produced DLL or copied license is missing, and emit only fixed build-stage codes plus ordinary compiler output.
@@ -152,14 +152,14 @@ Expected: the pinned source is fetched once, CMake uses `Visual Studio 18 2026` 
 - [ ] **Step 6: Commit the build contract**
 
 ```powershell
-git add native/spine38_bridge/CMakeLists.txt native/spine38_bridge/spine-runtimes.lock.json native/spine38_bridge/src/sjtuclaw_spine38_bridge.cpp scripts/build_spine38_bridge.ps1 tests/unit/test_spine38_build_contract.py
+git add native/spine38_bridge/CMakeLists.txt native/spine38_bridge/spine-runtimes.lock.json native/spine38_bridge/src/arkclaw_spine38_bridge.cpp scripts/build_spine38_bridge.ps1 tests/unit/test_spine38_build_contract.py
 git commit -m "build: pin spine cpp 3.8 bridge"
 ```
 
 ### Task 2: Preserve verified asset bytes atomically
 
 **Files:**
-- Modify: `src/sjtuclaw/application/pet_external_assets.py`
+- Modify: `src/arkclaw/application/pet_external_assets.py`
 - Modify: `tests/unit/test_pet_external_assets.py`
 
 **Interfaces:**
@@ -211,15 +211,15 @@ Expected: PASS, including hash mismatch, changed-during-read, limits, and handle
 - [ ] **Step 5: Commit the immutable asset handoff**
 
 ```powershell
-git add src/sjtuclaw/application/pet_external_assets.py tests/unit/test_pet_external_assets.py
+git add src/arkclaw/application/pet_external_assets.py tests/unit/test_pet_external_assets.py
 git commit -m "feat: retain verified spine asset bytes"
 ```
 
 ### Task 3: Implement the catalog-only C ABI
 
 **Files:**
-- Create: `native/spine38_bridge/include/sjtuclaw_spine38_bridge.h`
-- Modify: `native/spine38_bridge/src/sjtuclaw_spine38_bridge.cpp`
+- Create: `native/spine38_bridge/include/arkclaw_spine38_bridge.h`
+- Modify: `native/spine38_bridge/src/arkclaw_spine38_bridge.cpp`
 - Create: `native/spine38_bridge/tests/spine38_bridge_contract_test.cpp`
 - Modify: `native/spine38_bridge/CMakeLists.txt`
 
@@ -232,24 +232,24 @@ git commit -m "feat: retain verified spine asset bytes"
 The character-asset-free contract must assert ABI version `1`, null/empty input rejection, NULL-safe native destroy with exactly-once non-null destroy, no C++ exception crossing the ABI, buffer-capacity rejection, and deterministic fixed error values. Task 4's owning Python `close()` is idempotent; the fixed raw-pointer native destroy is not. Exact catalog values are covered by Task 5's opt-in real-asset integration test.
 
 ```cpp
-enum SjtuclawSpine38Code {
-    SJTUCLAW_SPINE38_OK = 0,
-    SJTUCLAW_SPINE38_INVALID_ARGUMENT = 1,
-    SJTUCLAW_SPINE38_ATLAS_LOAD_FAILED = 2,
-    SJTUCLAW_SPINE38_SKELETON_LOAD_FAILED = 3,
-    SJTUCLAW_SPINE38_ANIMATION_NOT_FOUND = 4,
-    SJTUCLAW_SPINE38_RUNTIME_FAILURE = 5
+enum ArkClawSpine38Code {
+    ARKCLAW_SPINE38_OK = 0,
+    ARKCLAW_SPINE38_INVALID_ARGUMENT = 1,
+    ARKCLAW_SPINE38_ATLAS_LOAD_FAILED = 2,
+    ARKCLAW_SPINE38_SKELETON_LOAD_FAILED = 3,
+    ARKCLAW_SPINE38_ANIMATION_NOT_FOUND = 4,
+    ARKCLAW_SPINE38_RUNTIME_FAILURE = 5
 };
 
-extern "C" uint32_t sjtuclaw_spine38_abi_version(void);
-extern "C" SjtuclawSpine38Code sjtuclaw_spine38_create(
+extern "C" uint32_t arkclaw_spine38_abi_version(void);
+extern "C" ArkClawSpine38Code arkclaw_spine38_create(
     const uint8_t* skeleton, size_t skeleton_size,
     const char* atlas, size_t atlas_size,
-    SjtuclawSpine38Handle** out_handle);
-extern "C" void sjtuclaw_spine38_destroy(SjtuclawSpine38Handle* handle);
-extern "C" size_t sjtuclaw_spine38_animation_count(const SjtuclawSpine38Handle* handle);
-extern "C" SjtuclawSpine38Code sjtuclaw_spine38_animation_info(
-    const SjtuclawSpine38Handle* handle, size_t index,
+    ArkClawSpine38Handle** out_handle);
+extern "C" void arkclaw_spine38_destroy(ArkClawSpine38Handle* handle);
+extern "C" size_t arkclaw_spine38_animation_count(const ArkClawSpine38Handle* handle);
+extern "C" ArkClawSpine38Code arkclaw_spine38_animation_info(
+    const ArkClawSpine38Handle* handle, size_t index,
     char* name_utf8, size_t name_capacity, float* duration_seconds);
 ```
 
@@ -281,7 +281,7 @@ git commit -m "feat: expose spine 3.8 catalog bridge"
 ### Task 4: Bind the C ABI safely through `ctypes`
 
 **Files:**
-- Create: `src/sjtuclaw/infrastructure/spine38_native.py`
+- Create: `src/arkclaw/infrastructure/spine38_native.py`
 - Create: `tests/unit/test_spine38_native.py`
 
 **Interfaces:**
@@ -292,7 +292,7 @@ git commit -m "feat: expose spine 3.8 catalog bridge"
 
 ```python
 def test_native_binding_rejects_wrong_abi(fake_library: FakeLibrary) -> None:
-    native = importlib.import_module("sjtuclaw.infrastructure.spine38_native")
+    native = importlib.import_module("arkclaw.infrastructure.spine38_native")
     fake_library.abi_version = 2
     with pytest.raises(native.Spine38NativeError) as caught:
         native.Spine38NativeLibrary(fake_library)
@@ -308,7 +308,7 @@ def test_native_module_has_no_agent_imports() -> None:
 
 Run: `.venv\Scripts\python.exe -m pytest tests\unit\test_spine38_native.py -v`
 
-Expected: pytest collects the test, then FAILS inside the test body with `ModuleNotFoundError` for `sjtuclaw.infrastructure.spine38_native`.
+Expected: pytest collects the test, then FAILS inside the test body with `ModuleNotFoundError` for `arkclaw.infrastructure.spine38_native`.
 
 - [ ] **Step 3: Implement exact signatures and ownership**
 
@@ -326,21 +326,21 @@ class Spine38CatalogNativePort(Protocol):
 
 Run: `.venv\Scripts\python.exe -m pytest tests\unit\test_spine38_native.py -v`
 
-Run: `.venv\Scripts\python.exe -m mypy src\sjtuclaw\infrastructure\spine38_native.py tests\unit\test_spine38_native.py`
+Run: `.venv\Scripts\python.exe -m mypy src\arkclaw\infrastructure\spine38_native.py tests\unit\test_spine38_native.py`
 
 Expected: PASS.
 
 - [ ] **Step 5: Commit the native binding**
 
 ```powershell
-git add src/sjtuclaw/infrastructure/spine38_native.py tests/unit/test_spine38_native.py
+git add src/arkclaw/infrastructure/spine38_native.py tests/unit/test_spine38_native.py
 git commit -m "feat: bind spine 3.8 catalog dll"
 ```
 
 ### Task 5: Enumerate the real Schwarz catalog and gate `Relax`
 
 **Files:**
-- Create: `src/sjtuclaw/application/spine38_runtime.py`
+- Create: `src/arkclaw/application/spine38_runtime.py`
 - Create: `tests/unit/test_spine38_runtime.py`
 - Create: `tests/integration/test_spine38_schwarz_catalog.py`
 - Create: `scripts/qt_spine38_vertical_slice.py`
@@ -353,7 +353,7 @@ git commit -m "feat: bind spine 3.8 catalog dll"
 
 ```python
 def test_exact_relax_candidate_is_required() -> None:
-    runtime = importlib.import_module("sjtuclaw.application.spine38_runtime")
+    runtime = importlib.import_module("arkclaw.application.spine38_runtime")
     catalog = runtime.Spine38Catalog((runtime.Spine38AnimationInfo("Relax", 3.2),))
     assert catalog.require_animation("Relax").duration_seconds == 3.2
     with pytest.raises(runtime.Spine38CatalogError):
@@ -370,7 +370,7 @@ def test_catalog_never_selects_by_similarity() -> None:
 
 Run: `.venv\Scripts\python.exe -m pytest tests\unit\test_spine38_runtime.py -v`
 
-Expected: pytest collects the test, then FAILS inside the test body with `ModuleNotFoundError` for `sjtuclaw.application.spine38_runtime`.
+Expected: pytest collects the test, then FAILS inside the test body with `ModuleNotFoundError` for `arkclaw.application.spine38_runtime`.
 
 - [ ] **Step 3: Implement catalog models and list-only CLI mode**
 
@@ -381,7 +381,7 @@ The script must require explicit `--bridge-dll` and `--asset-root`, build the ex
 Run:
 
 ```powershell
-.venv\Scripts\python.exe scripts\qt_spine38_vertical_slice.py --list-only --bridge-dll "build\spine38\Release\sjtuclaw_spine38_bridge.dll" --asset-root "D:\Spine\test\stage3_idle_rebuild_20260806_145235\runtime_input"
+.venv\Scripts\python.exe scripts\qt_spine38_vertical_slice.py --list-only --bridge-dll "build\spine38\Release\arkclaw_spine38_bridge.dll" --asset-root "D:\Spine\test\stage3_idle_rebuild_20260806_145235\runtime_input"
 ```
 
 Expected: exit `0`; all three recomputed hashes match; the JSON contains every exact animation name and positive duration; `Relax` appears exactly once. If `Relax` is absent, stop execution at this task and report `spine38_relax_unconfirmed` without choosing another animation.
@@ -389,8 +389,8 @@ Expected: exit `0`; all three recomputed hashes match; the JSON contains every e
 - [ ] **Step 5: Run the opt-in catalog integration test**
 
 ```powershell
-$env:SJTUCLAW_SPINE38_BRIDGE_DLL=(Resolve-Path "build\spine38\Release\sjtuclaw_spine38_bridge.dll")
-$env:SJTUCLAW_SPINE38_ASSET_ROOT='D:\Spine\test\stage3_idle_rebuild_20260806_145235\runtime_input'
+$env:ARKCLAW_SPINE38_BRIDGE_DLL=(Resolve-Path "build\spine38\Release\arkclaw_spine38_bridge.dll")
+$env:ARKCLAW_SPINE38_ASSET_ROOT='D:\Spine\test\stage3_idle_rebuild_20260806_145235\runtime_input'
 .venv\Scripts\python.exe -m pytest tests\integration\test_spine38_schwarz_catalog.py -v
 ```
 
@@ -399,17 +399,17 @@ Expected: PASS with exact hashes, Spine version `3.8.x`, nonempty skin/catalog, 
 - [ ] **Step 6: Commit catalog inspection**
 
 ```powershell
-git add src/sjtuclaw/application/spine38_runtime.py tests/unit/test_spine38_runtime.py tests/integration/test_spine38_schwarz_catalog.py scripts/qt_spine38_vertical_slice.py
+git add src/arkclaw/application/spine38_runtime.py tests/unit/test_spine38_runtime.py tests/integration/test_spine38_schwarz_catalog.py scripts/qt_spine38_vertical_slice.py
 git commit -m "feat: inspect original schwarz animations"
 ```
 
 ### Task 6: Evaluate `Relax` and expose renderer-neutral draw views
 
 **Files:**
-- Modify: `native/spine38_bridge/include/sjtuclaw_spine38_bridge.h`
-- Modify: `native/spine38_bridge/src/sjtuclaw_spine38_bridge.cpp`
+- Modify: `native/spine38_bridge/include/arkclaw_spine38_bridge.h`
+- Modify: `native/spine38_bridge/src/arkclaw_spine38_bridge.cpp`
 - Modify: `native/spine38_bridge/tests/spine38_bridge_contract_test.cpp`
-- Modify: `src/sjtuclaw/infrastructure/spine38_native.py`
+- Modify: `src/arkclaw/infrastructure/spine38_native.py`
 - Modify: `tests/unit/test_spine38_native.py`
 
 **Interfaces:**
@@ -430,13 +430,13 @@ class Spine38NativePort(Spine38CatalogNativePort, Protocol):
 Character-asset-free CTests must reject null handles, negative/nonfinite delta, undersized output views, and invalid draw indices with fixed codes. Task 8's injected fake proves `setAnimation(0, name, true)` is issued only once, while Task 9's opt-in real-asset smoke exercises region/mesh/clipping output across three full `Relax` cycles.
 
 ```cpp
-struct SjtuclawSpine38Vertex {
+struct ArkClawSpine38Vertex {
     float x, y, u, v;
     uint8_t r, g, b, a;
 };
 
-struct SjtuclawSpine38DrawView {
-    const SjtuclawSpine38Vertex* vertices;
+struct ArkClawSpine38DrawView {
+    const ArkClawSpine38Vertex* vertices;
     size_t vertex_count;
     const uint32_t* indices;
     size_t index_count;
@@ -467,18 +467,18 @@ Expected: PASS.
 - [ ] **Step 5: Commit Runtime evaluation**
 
 ```powershell
-git add native/spine38_bridge src/sjtuclaw/infrastructure/spine38_native.py tests/unit/test_spine38_native.py
+git add native/spine38_bridge src/arkclaw/infrastructure/spine38_native.py tests/unit/test_spine38_native.py
 git commit -m "feat: evaluate spine 3.8 draw data"
 ```
 
 ### Task 7: Extend the generic mesh backend for Spine slot blend modes
 
 **Files:**
-- Modify: `src/sjtuclaw/application/pet_mesh_model.py`
-- Modify: `src/sjtuclaw/presentation/qt/pet_mesh_opengl_renderer.py`
+- Modify: `src/arkclaw/application/pet_mesh_model.py`
+- Modify: `src/arkclaw/presentation/qt/pet_mesh_opengl_renderer.py`
 - Modify: `tests/unit/test_pet_mesh_model.py`
 - Modify: `tests/qt/test_pet_mesh_opengl_backend.py`
-- Modify: `docs/pet_opengl_mesh_backend.md`
+- Modify: `docs/rendering/pet_opengl_mesh_backend.md`
 
 **Interfaces:**
 - Consumes: `PetMeshBlendMode.NORMAL_STRAIGHT`, `NORMAL_PREMULTIPLIED`, `ADDITIVE`, `MULTIPLY`, and `SCREEN`.
@@ -507,15 +507,15 @@ Expected: all prior 15 tests plus the new blend cases PASS; existing UV, alpha, 
 - [ ] **Step 5: Commit generic blend support**
 
 ```powershell
-git add src/sjtuclaw/application/pet_mesh_model.py src/sjtuclaw/presentation/qt/pet_mesh_opengl_renderer.py tests/unit/test_pet_mesh_model.py tests/qt/test_pet_mesh_opengl_backend.py docs/pet_opengl_mesh_backend.md
+git add src/arkclaw/application/pet_mesh_model.py src/arkclaw/presentation/qt/pet_mesh_opengl_renderer.py tests/unit/test_pet_mesh_model.py tests/qt/test_pet_mesh_opengl_backend.py docs/rendering/pet_opengl_mesh_backend.md
 git commit -m "feat: support generic mesh blend modes"
 ```
 
 ### Task 8: Convert Runtime frames and render in the existing pet window
 
 **Files:**
-- Modify: `src/sjtuclaw/application/spine38_runtime.py`
-- Create: `src/sjtuclaw/presentation/qt/spine38_renderer.py`
+- Modify: `src/arkclaw/application/spine38_runtime.py`
+- Create: `src/arkclaw/presentation/qt/spine38_renderer.py`
 - Modify: `tests/unit/test_spine38_runtime.py`
 - Create: `tests/qt/test_spine38_renderer.py`
 - Modify: `scripts/qt_spine38_vertical_slice.py`
@@ -539,7 +539,7 @@ def test_transform_is_fixed_from_setup_bounds() -> None:
 
 
 def test_renderer_sets_relax_once_and_only_advances_time(fake_runtime) -> None:
-    module = importlib.import_module("sjtuclaw.presentation.qt.spine38_renderer")
+    module = importlib.import_module("arkclaw.presentation.qt.spine38_renderer")
     renderer = module.Spine38PetRenderer(fake_runtime, verified_texture_bytes)
     renderer.initialize(Size(160, 180))
     renderer.update(0.016)
@@ -552,7 +552,7 @@ def test_renderer_sets_relax_once_and_only_advances_time(fake_runtime) -> None:
 
 Run: `.venv\Scripts\python.exe -m pytest tests\unit\test_spine38_runtime.py tests\qt\test_spine38_renderer.py -v`
 
-Expected: pytest collects the test, then FAILS inside the test body with `ModuleNotFoundError` for `sjtuclaw.presentation.qt.spine38_renderer`.
+Expected: pytest collects the test, then FAILS inside the test body with `ModuleNotFoundError` for `arkclaw.presentation.qt.spine38_renderer`.
 
 - [ ] **Step 3: Implement fixed transform and Qt renderer**
 
@@ -571,7 +571,7 @@ Expected: PASS; no second window or Agent import is introduced.
 - [ ] **Step 6: Commit the visible renderer**
 
 ```powershell
-git add src/sjtuclaw/application/spine38_runtime.py src/sjtuclaw/presentation/qt/spine38_renderer.py tests/unit/test_spine38_runtime.py tests/qt/test_spine38_renderer.py scripts/qt_spine38_vertical_slice.py
+git add src/arkclaw/application/spine38_runtime.py src/arkclaw/presentation/qt/spine38_renderer.py tests/unit/test_spine38_runtime.py tests/qt/test_spine38_renderer.py scripts/qt_spine38_vertical_slice.py
 git commit -m "feat: render original schwarz idle"
 ```
 
@@ -580,7 +580,7 @@ git commit -m "feat: render original schwarz idle"
 **Files:**
 - Modify: `scripts/qt_spine38_vertical_slice.py`
 - Create: `tests/qt/test_spine38_schwarz_smoke.py`
-- Create: `docs/spine38_local_vertical_slice.md`
+- Create: `docs/rendering/spine38_local_vertical_slice.md`
 
 **Interfaces:**
 - Consumes: exact `Relax` duration from the Runtime catalog, explicit DLL/asset arguments, and `--loops 3`.
@@ -617,7 +617,7 @@ Create a second descriptor in memory with one altered skeleton hash, assert the 
 - [ ] **Step 5: Run the visible Windows smoke**
 
 ```powershell
-.venv\Scripts\python.exe scripts\qt_spine38_vertical_slice.py --bridge-dll "build\spine38\Release\sjtuclaw_spine38_bridge.dll" --asset-root "D:\Spine\test\stage3_idle_rebuild_20260806_145235\runtime_input" --animation Relax --loops 3
+.venv\Scripts\python.exe scripts\qt_spine38_vertical_slice.py --bridge-dll "build\spine38\Release\arkclaw_spine38_bridge.dll" --asset-root "D:\Spine\test\stage3_idle_rebuild_20260806_145235\runtime_input" --animation Relax --loops 3
 ```
 
 Expected: exactly one transparent pet window displays Schwarz; `Relax` plays continuously for at least three reported durations; the process exits cleanly and prints fixed-schema success JSON. Manual visual acceptance checks weapon/attachments, missing regions, clipping, obvious mesh intersections, foot drift, and boundary jump. If any check is uncertain, record `visual_review_required` and stop without accepting the slice.
@@ -635,7 +635,7 @@ Expected: PASS.
 The document must state that only original `Relax` direct playback is proven; other logical actions, `breathing`, `blink`, Track 1/2, production callbacks, action sequencing, Runtime export, packaging, and publication remain incomplete.
 
 ```powershell
-git add scripts/qt_spine38_vertical_slice.py tests/qt/test_spine38_schwarz_smoke.py docs/spine38_local_vertical_slice.md
+git add scripts/qt_spine38_vertical_slice.py tests/qt/test_spine38_schwarz_smoke.py docs/rendering/spine38_local_vertical_slice.md
 git commit -m "test: verify schwarz idle vertical slice"
 ```
 
@@ -671,10 +671,10 @@ Expected: PASS; opt-in external-asset tests skip unless their two environment va
 - [ ] **Step 4: Re-run the action Runtime focused suite from its untouched worktree**
 
 ```powershell
-D:\SJTUClaw\.venv\Scripts\python.exe -m pytest tests\unit\test_pet_action_sequence_catalog.py tests\unit\test_pet_track0_controller.py tests\unit\test_pet_track0_watchdog.py tests\unit\test_pet_state_animation_compatibility.py tests\unit\test_pet_animation_transactions.py -q
+D:\ArkClaw\.venv\Scripts\python.exe -m pytest tests\unit\test_pet_action_sequence_catalog.py tests\unit\test_pet_track0_controller.py tests\unit\test_pet_track0_watchdog.py tests\unit\test_pet_state_animation_compatibility.py tests\unit\test_pet_animation_transactions.py -q
 ```
 
-Working directory: `D:\SJTUClaw\.worktrees\arkpets-action-runtime`
+Working directory: `D:\ArkClaw\.worktrees\arkpets-action-runtime`
 
 Expected: `1169 passed`; the pre-existing modified `docs/legal/gpl_migration_audit.md` remains untouched.
 
@@ -698,4 +698,4 @@ Keep `build/spine38/evidence/*.json` local and ignored. Do not push, open a PR, 
 1. **Catalog checkpoint after Task 5:** continue only if official Runtime enumeration confirms exact `Relax` and positive duration.
 2. **Renderer checkpoint after Task 8:** continue only if fake-runtime Qt tests and existing window tests pass.
 3. **Visual checkpoint after Task 9:** stop for user observation if boundary, attachment, clipping, or foot behavior is uncertain.
-4. **Completion checkpoint after Task 10:** report local evidence only; leave default SJTUClaw renderer and production action sequencing unchanged.
+4. **Completion checkpoint after Task 10:** report local evidence only; leave default ArkClaw renderer and production action sequencing unchanged.

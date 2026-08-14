@@ -468,7 +468,7 @@ wheels = [
 ]
 
 [[package]]
-name = "sjtuclaw"
+name = "arkclaw"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [

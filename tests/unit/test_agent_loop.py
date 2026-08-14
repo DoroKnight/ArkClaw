@@ -4,11 +4,11 @@ from collections.abc import AsyncIterator
 
 import pytest
 
-from sjtuclaw.application.agent_loop import AgentLoop, CancellationToken
-from sjtuclaw.application.context_manager import ContextManager
-from sjtuclaw.domain.events import AgentEvent, AgentEventType, LLMEvent, LLMEventType
-from sjtuclaw.domain.models import AgentState, LLMRequest, ToolCall, UserMessageCommand
-from sjtuclaw.infrastructure.llm.fake_provider import FakeProvider
+from arkclaw.application.agent_loop import AgentLoop, CancellationToken
+from arkclaw.application.context_manager import ContextManager
+from arkclaw.domain.events import AgentEvent, AgentEventType, LLMEvent, LLMEventType
+from arkclaw.domain.models import AgentState, LLMRequest, ToolCall, UserMessageCommand
+from arkclaw.infrastructure.llm.fake_provider import FakeProvider
 
 
 class _BlockingProvider(FakeProvider):
@@ -291,7 +291,7 @@ def test_unexpected_exception_is_logged_safely(
         session_id="session-observe",
         content=sensitive_body,
     )
-    caplog.set_level(logging.ERROR, logger="sjtuclaw.application.agent_loop")
+    caplog.set_level(logging.ERROR, logger="arkclaw.application.agent_loop")
 
     events = _collect(agent, command)
 

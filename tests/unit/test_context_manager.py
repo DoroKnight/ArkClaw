@@ -2,9 +2,9 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from sjtuclaw.application.context_manager import ContextConfig, ContextManager
-from sjtuclaw.domain.errors import ContextBudgetError
-from sjtuclaw.domain.models import (
+from arkclaw.application.context_manager import ContextConfig, ContextManager
+from arkclaw.domain.errors import ContextBudgetError
+from arkclaw.domain.models import (
     ChatMessage,
     ExecutionContext,
     MemoryKind,
@@ -17,7 +17,7 @@ from sjtuclaw.domain.models import (
     ToolSpec,
     UserMessageCommand,
 )
-from sjtuclaw.domain.policies import DefaultToolPolicy
+from arkclaw.domain.policies import DefaultToolPolicy
 
 
 def _memory(

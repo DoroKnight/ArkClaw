@@ -9,23 +9,23 @@ from pathlib import Path
 
 import pytest
 
-from sjtuclaw.application.pet_geometry import (
+from arkclaw.application.pet_geometry import (
     Point,
     Rect,
     Size,
     physical_to_logical_rect,
 )
-from sjtuclaw.application.pet_motion import PetMotionModel
-from sjtuclaw.application.pet_settings import (
+from arkclaw.application.pet_motion import PetMotionModel
+from arkclaw.application.pet_settings import (
     PET_SETTINGS_COORDINATE_LIMIT,
     PetSettings,
     PetSettingsLoadResult,
     PetSettingsWriteError,
 )
-from sjtuclaw.infrastructure.config.json_pet_settings_repository import (
+from arkclaw.infrastructure.config.json_pet_settings_repository import (
     JsonPetSettingsRepository,
 )
-from sjtuclaw.presentation.qt.pet_settings_controller import (
+from arkclaw.presentation.qt.pet_settings_controller import (
     PetSettingsController,
 )
 
@@ -491,8 +491,8 @@ def test_restored_position_selects_the_matching_monitor_and_recovers_when_remove
         (primary,),
     )
 
-    assert on_secondary.position == Point(2_500, 100)
-    assert after_removal.position == Point(1_760, 100)
+    assert on_secondary.position == Point(2_500, 1_060)
+    assert after_removal.position == Point(1_760, 900)
 
 
 @pytest.mark.parametrize("scale_factor", [1.5, 2.0])

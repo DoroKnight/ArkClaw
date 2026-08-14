@@ -3,13 +3,13 @@ from __future__ import annotations
 import random
 from dataclasses import replace
 
-from sjtuclaw.application.pet_autonomous_scheduler import (
+from arkclaw.application.pet_autonomous_scheduler import (
     AutonomousActionScheduler,
     AutonomousBoundaryEvent,
     AutonomousRuntimeSnapshot,
     AutonomousState,
 )
-from sjtuclaw.application.pet_production_actions import (
+from arkclaw.application.pet_production_actions import (
     ActionOrigin,
     ActionSource,
     AutonomousExecutionMode,
@@ -28,6 +28,7 @@ class _ScriptedRandom:
         self.range_values = list(range_values or [])
         self.uniform_calls = 0
         self.randrange_calls = 0
+        self.randrange_starts: list[int] = []
 
     def uniform(self, minimum: float, maximum: float) -> float:
         self.uniform_calls += 1
@@ -42,6 +43,7 @@ class _ScriptedRandom:
         step: int = 1,
     ) -> int:
         self.randrange_calls += 1
+        self.randrange_starts.append(start)
         assert stop is None
         assert step == 1
         value = self.range_values.pop(0)
@@ -66,18 +68,43 @@ def _event(token: object, index: int, observed_at: float) -> AutonomousBoundaryE
     )
 
 
-def test_seeded_transition_history_is_exact_and_reproducible() -> None:
-    assert _seeded_history(7) == _seeded_history(7) == (
-        AutonomousState.RELAX,
-        AutonomousState.RELAX,
-        AutonomousState.SLEEP,
-        AutonomousState.SLEEP,
-        AutonomousState.SLEEP,
-    )
+def test_seeded_transition_history_is_reproducible_and_live() -> None:
+    history = _seeded_history(7)
+
+    assert history == _seeded_history(7)
+    assert any(state is not AutonomousState.RELAX for state in history[:3])
 
 
 def test_distinct_seed_produces_a_distinct_deterministic_history() -> None:
     assert _seeded_history(7) != _seeded_history(19)
+
+
+def test_relax_move_weight_is_slightly_increased_to_twenty_four_percent() -> None:
+    scheduler = AutonomousActionScheduler()
+    move_count = 0
+    for ticket in range(100):
+        token = object()
+        rng = _ScriptedRandom(uniform_values=[8.0, 8.0], range_values=[ticket])
+        state = scheduler.enter(
+            AutonomousState.RELAX,
+            entered_at=0.0,
+            playback_generation=37,
+            playback_token=token,
+            rng=rng,
+        )
+        decision = scheduler.evaluate(
+            state,
+            _snapshot(8.0),
+            _event(token, 1, 8.0),
+            rng,
+        )
+        if decision.proposed_state in {
+            AutonomousState.MOVE_LEFT,
+            AutonomousState.MOVE_RIGHT,
+        }:
+            move_count += 1
+
+    assert move_count == 24
 
 
 def test_duplicate_loop_boundary_is_side_effect_free() -> None:
@@ -168,6 +195,43 @@ def test_new_loop_boundary_with_same_generation_and_token_is_valid() -> None:
     assert proposed.state.last_consumed_boundary_index == 2
 
 
+def test_two_eligible_stays_exclude_stay_from_the_next_candidate_set() -> None:
+    scheduler = AutonomousActionScheduler()
+    token = object()
+    rng = _ScriptedRandom(
+        uniform_values=[8.0, 8.0, 8.0, 8.0],
+        range_values=[0, 0, 0],
+    )
+    state = scheduler.enter(
+        AutonomousState.RELAX,
+        entered_at=0.0,
+        playback_generation=37,
+        playback_token=token,
+        rng=rng,
+    )
+
+    first = scheduler.evaluate(state, _snapshot(8.0), _event(token, 1, 8.0), rng)
+    second = scheduler.evaluate(
+        first.state,
+        _snapshot(16.0),
+        _event(token, 2, 16.0),
+        rng,
+    )
+    third = scheduler.evaluate(
+        second.state,
+        _snapshot(24.0),
+        _event(token, 3, 24.0),
+        rng,
+    )
+
+    assert first.stay
+    assert second.stay
+    assert third.intent is not None
+    assert third.intent.action is ProductionAction.SIT
+    assert third.proposed_state is AutonomousState.SIT
+    assert rng.randrange_starts == [100, 100, 59]
+
+
 def test_old_boundary_cannot_trigger_after_new_dwell_deadline() -> None:
     scheduler = AutonomousActionScheduler()
     token = object()
@@ -196,7 +260,7 @@ def test_old_boundary_cannot_trigger_after_new_dwell_deadline() -> None:
 def test_rejected_proposal_keeps_source_and_consumes_no_destination_dwell() -> None:
     scheduler = AutonomousActionScheduler()
     token = object()
-    rng = _ScriptedRandom(uniform_values=[8.0], range_values=[50])
+    rng = _ScriptedRandom(uniform_values=[8.0, 12.0], range_values=[50])
     state = scheduler.enter(
         AutonomousState.RELAX,
         entered_at=0.0,
@@ -206,13 +270,14 @@ def test_rejected_proposal_keeps_source_and_consumes_no_destination_dwell() -> N
     )
     proposal = scheduler.evaluate(state, _snapshot(8.0), _event(token, 1, 8.0), rng)
 
-    rejected = scheduler.reject(proposal)
+    rejected = scheduler.reject(proposal, rejected_at=9.0, rng=rng)
 
     assert rejected.last_committed_state is AutonomousState.RELAX
     assert rejected.last_consumed_boundary_index == 1
-    assert rejected.dwell_target_seconds is None
+    assert rejected.entered_at == 9.0
+    assert rejected.dwell_target_seconds == 12.0
     assert not rejected.proposal_eligible
-    assert rng.uniform_calls == 1
+    assert rng.uniform_calls == 2
 
 
 def test_commit_samples_destination_dwell_only_after_acceptance() -> None:

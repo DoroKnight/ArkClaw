@@ -27,22 +27,22 @@ def _forbidden_imports() -> list[str]:
 
 
 def _import_production_surface(root: Path) -> bool:
-    from sjtuclaw.application.provider_profile_service import (
+    from arkclaw.application.provider_profile_service import (
         ProviderProfileService,
     )
-    from sjtuclaw.infrastructure.llm.deepseek_provider import (
+    from arkclaw.infrastructure.llm.deepseek_provider import (
         DeepSeekProvider,
     )
-    from sjtuclaw.infrastructure.llm.fake_provider import FakeProvider
-    from sjtuclaw.infrastructure.llm.openai_provider import OpenAIProvider
-    from sjtuclaw.presentation.qt.pet_settings_controller import (
+    from arkclaw.infrastructure.llm.fake_provider import FakeProvider
+    from arkclaw.infrastructure.llm.openai_provider import OpenAIProvider
+    from arkclaw.presentation.qt.pet_settings_controller import (
         PetSettingsController,
     )
-    from sjtuclaw.presentation.qt.runtime_bridge import QtRuntimeBridge
-    from sjtuclaw.presentation.qt.single_instance import (
+    from arkclaw.presentation.qt.runtime_bridge import QtRuntimeBridge
+    from arkclaw.presentation.qt.single_instance import (
         SingleInstanceManager,
     )
-    from sjtuclaw.presentation.qt.system_tray import SystemTrayController
+    from arkclaw.presentation.qt.system_tray import SystemTrayController
 
     imported = (
         ProviderProfileService,
@@ -56,7 +56,7 @@ def _import_production_surface(root: Path) -> bool:
     )
     entry_path = root / "packaging/pet_entry.py"
     spec = importlib.util.spec_from_file_location(
-        "_sjtuclaw_production_import_probe",
+        "_arkclaw_production_import_probe",
         entry_path,
     )
     if spec is None or spec.loader is None:
@@ -67,12 +67,12 @@ def _import_production_surface(root: Path) -> bool:
 
 
 async def _run_fake_provider_smoke() -> bool:
-    from sjtuclaw.domain.models import (
+    from arkclaw.domain.models import (
         ChatMessage,
         LLMRequest,
         MessageRole,
     )
-    from sjtuclaw.infrastructure.llm.fake_provider import FakeProvider
+    from arkclaw.infrastructure.llm.fake_provider import FakeProvider
 
     provider = FakeProvider(response_text="offline-production-smoke")
     request = LLMRequest(

@@ -4,7 +4,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$RepositoryRoot = "D:\SJTUClaw"
+$RepositoryRoot = "D:\ArkClaw"
 $AllowedParent = Join-Path `
     $RepositoryRoot `
     "build\packaged-runtime-supervisor-recovery"
