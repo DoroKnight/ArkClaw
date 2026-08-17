@@ -33,13 +33,13 @@ from __future__ import annotations
 import contextlib
 from collections.abc import Callable
 from enum import StrEnum
-from functools import partial
 
 from PySide6.QtCore import QPoint, QRect, QSize, Qt, Signal
 from PySide6.QtGui import (
     QGuiApplication,
     QIcon,
     QKeyEvent,
+    QMoveEvent,
     QPainter,
     QPaintEvent,
 )
@@ -57,6 +57,7 @@ from arkclaw.presentation.command_descriptor_adapter import (
     CommandDispatcher,
     CommandGroup,
     CommandId,
+    CommandInvokeIntent,
     build_command_descriptors,
     dispatch_command_descriptor,
 )
@@ -83,6 +84,9 @@ from arkclaw.presentation.qt.theme.qt_theme import QtTheme, apply_theme
 _CHECK_MARK = "\u2713"
 
 _ICON_KIND_BY_COMMAND_ID: dict[CommandId, IconKind] = {
+    CommandId.OPEN_CHAT_WORK: IconKind.CHAT_WORK,
+    CommandId.OPEN_CHARACTER_ANIMATION: IconKind.CHARACTER_ANIMATION,
+    CommandId.OPEN_SETTINGS: IconKind.SETTINGS,
     CommandId.ASK_ARKCLAW: IconKind.CHAT_WORK,
     CommandId.PAUSE_CONTINUE: IconKind.ACTIVITY_CURRENT,
     CommandId.RESUME_AUTONOMOUS: IconKind.ACTIVITY_COMPLETED,
@@ -101,6 +105,7 @@ _ICON_KIND_BY_COMMAND_ID: dict[CommandId, IconKind] = {
 
 _ICON_KIND_BY_NAV_LAYER: dict[ActionPaletteLayer, IconKind] = {
     ActionPaletteLayer.CHARACTER: IconKind.CHARACTER_ANIMATION,
+    ActionPaletteLayer.ANIMATION: IconKind.ANIMATION,
     ActionPaletteLayer.SYSTEM: IconKind.SETTINGS,
     ActionPaletteLayer.ROOT: IconKind.OPEN,
 }
@@ -172,6 +177,43 @@ def compute_anchored_palette_position(
     )
 
 
+def compute_cascading_subpalette_position(
+    *,
+    main_palette_rect: QRect,
+    anim_button_rect: QRect,
+    subpalette_size: QSize,
+    work_area: QRect,
+    gap: int = 6,
+    margin: int = 12,
+) -> QPoint:
+    """Place the subpalette cascading beside the Animation row of the main palette."""
+    width = subpalette_size.width()
+    height = subpalette_size.height()
+    if width <= 0 or height <= 0 or work_area.width() <= 0:
+        return QPoint(main_palette_rect.x() + main_palette_rect.width() + gap, anim_button_rect.y())
+
+    min_x = work_area.x() + margin
+    max_x = work_area.x() + work_area.width() - margin - width
+    min_y = work_area.y() + margin
+    max_y = work_area.y() + work_area.height() - margin - height
+
+    # 1. Horizontal: default to right side, flip to left if exceeding boundary.
+    right_x = main_palette_rect.x() + main_palette_rect.width() + gap
+    left_x = main_palette_rect.x() - gap - width
+    if right_x <= max_x:
+        best_x = right_x
+    elif left_x >= min_x:
+        best_x = left_x
+    else:
+        best_x = max(min_x, min(right_x, max_x))
+
+    # 2. Vertical: align top with the Animation button in the main palette, clamp to work area.
+    ideal_y = anim_button_rect.y()
+    best_y = max(min_y, min(ideal_y, max_y))
+
+    return QPoint(best_x, best_y)
+
+
 class ActionPaletteWindowStrategy(StrEnum):
     """Native window strategy candidates for the one Palette host (Slice 6A).
 
@@ -186,8 +228,189 @@ class ActionPaletteWindowStrategy(StrEnum):
     POPUP = "popup"
 
 
-_TOOL_WINDOW_FLAGS = Qt.WindowType.Tool | Qt.WindowType.FramelessWindowHint
-_POPUP_WINDOW_FLAGS = Qt.WindowType.Popup | Qt.WindowType.FramelessWindowHint
+_TOOL_WINDOW_FLAGS = (
+    Qt.WindowType.Tool
+    | Qt.WindowType.FramelessWindowHint
+    | Qt.WindowType.WindowStaysOnTopHint
+)
+_POPUP_WINDOW_FLAGS = (
+    Qt.WindowType.Popup
+    | Qt.WindowType.FramelessWindowHint
+    | Qt.WindowType.WindowStaysOnTopHint
+)
+
+
+class ActionPaletteSubHost(QWidget):
+    """Cascading sub-palette surface displaying the character animation action set."""
+
+    command_selected = Signal(object)
+    back_requested = Signal()
+    dismiss_requested = Signal()
+
+    def __init__(
+        self,
+        parent: QWidget | None = None,
+        *,
+        strategy: ActionPaletteWindowStrategy = (
+            ActionPaletteWindowStrategy.TOOL
+        ),
+        theme: QtTheme = QtTheme.LIGHT,
+        tokens: DesignTokens | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self.setObjectName("ActionPaletteSubHost")
+        self._strategy = strategy
+        self._theme = theme
+        self._tokens = tokens if tokens is not None else load_design_tokens()
+        flags = (
+            _TOOL_WINDOW_FLAGS
+            if strategy is ActionPaletteWindowStrategy.TOOL
+            else _POPUP_WINDOW_FLAGS
+        )
+        self.setWindowFlags(flags)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        palette_tokens = self._tokens.component["desktop_companion"]["action_palette"]
+        self.setFixedWidth(int(palette_tokens["width"]))
+        self._layout = QVBoxLayout(self)
+        self._layout.setContentsMargins(
+            int(palette_tokens["outer_padding"]),
+            int(palette_tokens["outer_padding"]),
+            int(palette_tokens["outer_padding"]),
+            int(palette_tokens["outer_padding"]),
+        )
+        self._layout.setSpacing(4)
+        self._items: list[tuple[str, object]] = []
+        self._buttons: dict[CommandId, QPushButton] = {}
+        self._back_button: QPushButton | None = None
+        self._enabled: dict[CommandId, bool] = {}
+        self._checked: dict[CommandId, bool | None] = {}
+
+    @property
+    def items(self) -> tuple[tuple[str, object], ...]:
+        return tuple(self._items)
+
+    def paintEvent(self, event: QPaintEvent) -> None:
+        del event
+        option = QStyleOption()
+        option.initFrom(self)
+        painter = QPainter(self)
+        self.style().drawPrimitive(
+            QStyle.PrimitiveElement.PE_Widget,
+            option,
+            painter,
+            self,
+        )
+
+    def set_theme(self, theme: QtTheme) -> None:
+        self._theme = theme
+        apply_theme(self, theme, self._tokens)
+
+    def row_button(self, command_id: CommandId) -> QPushButton | None:
+        return self._buttons.get(command_id)
+
+    def navigation_button(
+        self,
+        target: ActionPaletteLayer,
+    ) -> QPushButton | None:
+        if target is ActionPaletteLayer.ROOT:
+            return self._back_button
+        return None
+
+    def checked(self, command_id: CommandId) -> bool | None:
+        return self._checked.get(command_id)
+
+    def render_actions(
+        self,
+        descriptors: tuple[CommandDescriptor, ...],
+    ) -> None:
+        while self._layout.count():
+            item = self._layout.takeAt(0)
+            if item is None:
+                continue
+            widget = item.widget()
+            if widget is not None:
+                widget.setParent(None)
+                widget.deleteLater()
+        self._items = []
+        self._buttons = {}
+        self._enabled = {}
+        self._checked = {}
+
+        # 1. Back button
+        back_btn = QPushButton("Back", self)
+        back_btn.setObjectName("paletteNav_root")
+        back_btn.setFixedHeight(44)
+        icon_color = icon_color_for_theme(self._tokens, self._theme)
+        pix = icon_pixmap(IconKind.OPEN, 20.0, icon_color)
+        back_btn.setIcon(QIcon(pix))
+        back_btn.setIconSize(QSize(20, 20))
+        back_btn.clicked.connect(lambda: self.back_requested.emit())
+        self._layout.addWidget(back_btn)
+        self._back_button = back_btn
+        self._items.append(("nav", ActionPaletteLayer.ROOT))
+
+        # 2. Action buttons
+        for descriptor in descriptors:
+            if descriptor.group is CommandGroup.CHARACTER and descriptor.command_id in {
+                CommandId.RELAX,
+                CommandId.MOVE_LEFT,
+                CommandId.MOVE_RIGHT,
+                CommandId.SIT,
+                CommandId.SLEEP,
+                CommandId.SPECIAL,
+                CommandId.INTERACT,
+                CommandId.RESUME_AUTONOMOUS,
+            }:
+                label = descriptor.label
+                if descriptor.checked is True:
+                    label = f"{descriptor.label}  \u2713"
+                button = QPushButton(label, self)
+                button.setObjectName(f"paletteRow_{descriptor.command_id.value}")
+                button.setFixedHeight(44)
+                button.setEnabled(descriptor.enabled)
+                if descriptor.disabled_reason:
+                    button.setToolTip(descriptor.disabled_reason)
+                elif descriptor.conditional:
+                    button.setToolTip("availability is conditional")
+                kind = _ICON_KIND_BY_COMMAND_ID.get(descriptor.command_id)
+                if kind is not None:
+                    pix = icon_pixmap(kind, 20.0, icon_color)
+                    button.setIcon(QIcon(pix))
+                    button.setIconSize(QSize(20, 20))
+                button.clicked.connect(
+                    lambda _, cid=descriptor.command_id: self._on_row_clicked(cid)
+                )
+                self._layout.addWidget(button)
+                self._buttons[descriptor.command_id] = button
+                self._enabled[descriptor.command_id] = descriptor.enabled
+                self._checked[descriptor.command_id] = descriptor.checked
+                self._items.append(("command", descriptor.command_id))
+
+    def _on_row_clicked(
+        self,
+        command_id: CommandId,
+        *args: object,
+    ) -> None:
+        if not self._enabled.get(command_id, False):
+            return
+        self.command_selected.emit(command_id)
+
+    def focus_first_enabled(self) -> None:
+        if self._back_button is not None and self._back_button.isEnabled():
+            self._back_button.setFocus()
+            return
+        for button in self._buttons.values():
+            if button.isEnabled():
+                button.setFocus()
+                return
+
+    def keyPressEvent(self, event: QKeyEvent) -> None:
+        if event.key() == Qt.Key.Key_Escape:
+            self.back_requested.emit()
+            event.accept()
+            return
+        super().keyPressEvent(event)
 
 
 class ActionPaletteHost(QWidget):
@@ -240,13 +463,21 @@ class ActionPaletteHost(QWidget):
         self._nav_buttons: dict[ActionPaletteLayer, QPushButton] = {}
         self._enabled: dict[CommandId, bool] = {}
         self._checked: dict[CommandId, bool | None] = {}
+        self._sub_host: ActionPaletteSubHost | None = None
+        self._last_descriptors: tuple[CommandDescriptor, ...] = ()
         # The rendered layer is cached for local key handling only; the
         # Qt-free FrontendPresentationModel owns the authoritative layer.
         self._layer = ActionPaletteLayer.ROOT
 
     @property
+    def sub_host(self) -> ActionPaletteSubHost | None:
+        return self._sub_host
+
+    @property
     def items(self) -> tuple[tuple[str, object], ...]:
         """Read-only projection of the rendered hierarchy, in render order."""
+        if self._layer is ActionPaletteLayer.ANIMATION and self._sub_host is not None:
+            return self._sub_host.items
         return tuple(self._items)
 
     @property
@@ -269,33 +500,138 @@ class ActionPaletteHost(QWidget):
     def set_theme(self, theme: QtTheme) -> None:
         self._theme = theme
         apply_theme(self, theme, self._tokens)
+        if self._sub_host is not None:
+            self._sub_host.set_theme(theme)
 
     def row_button(self, command_id: CommandId) -> QPushButton | None:
-        return self._buttons.get(command_id)
+        btn = self._buttons.get(command_id)
+        if btn is not None:
+            return btn
+        if self._sub_host is not None:
+            return self._sub_host.row_button(command_id)
+        return None
 
     def navigation_button(
         self,
         target: ActionPaletteLayer,
     ) -> QPushButton | None:
-        return self._nav_buttons.get(target)
+        btn = self._nav_buttons.get(target)
+        if btn is not None:
+            return btn
+        if self._sub_host is not None:
+            return self._sub_host.navigation_button(target)
+        return None
 
     def checked(self, command_id: CommandId) -> bool | None:
-        return self._checked.get(command_id)
+        val = self._checked.get(command_id)
+        if val is not None:
+            return val
+        if self._sub_host is not None:
+            return self._sub_host.checked(command_id)
+        return None
+
+    def moveEvent(self, event: QMoveEvent) -> None:
+        super().moveEvent(event)
+        if self._sub_host is not None and self._sub_host.isVisible():
+            self._reposition_sub_host()
+
+    def _reposition_sub_host(self) -> None:
+        if self._sub_host is None:
+            return
+        screen = self.screen() or QGuiApplication.primaryScreen()
+        work_area = (
+            screen.availableGeometry()
+            if screen is not None
+            else QRect(0, 0, 1920, 1080)
+        )
+        anim_btn = self._nav_buttons.get(ActionPaletteLayer.ANIMATION)
+        if anim_btn is not None and self.isVisible():
+            btn_top_left = anim_btn.mapToGlobal(QPoint(0, 0))
+            anim_btn_rect = QRect(
+                btn_top_left.x(),
+                btn_top_left.y(),
+                anim_btn.width(),
+                anim_btn.height(),
+            )
+        else:
+            anim_btn_rect = self.frameGeometry()
+
+        sub_size = self._sub_host.sizeHint()
+        if sub_size.height() < 200:
+            sub_size = QSize(220, 460)
+        self._sub_host.resize(sub_size)
+        pos = compute_cascading_subpalette_position(
+            main_palette_rect=self.frameGeometry(),
+            anim_button_rect=anim_btn_rect,
+            subpalette_size=sub_size,
+            work_area=work_area,
+        )
+        self._sub_host.move(pos)
+
+    def show_sub_palette(
+        self,
+        descriptors: tuple[CommandDescriptor, ...],
+    ) -> None:
+        self._layer = ActionPaletteLayer.ANIMATION
+        if self._sub_host is None:
+            self._sub_host = ActionPaletteSubHost(
+                parent=self,
+                strategy=self._strategy,
+                theme=self._theme,
+                tokens=self._tokens,
+            )
+            self._sub_host.command_selected.connect(self._on_sub_command_selected)
+            self._sub_host.back_requested.connect(self._on_sub_back_requested)
+            apply_theme(self._sub_host, self._theme, self._tokens)
+        self._sub_host.render_actions(descriptors)
+        self._sub_host.adjustSize()
+        self._reposition_sub_host()
+        self._sub_host.show()
+        self._sub_host.raise_()
+        self._sub_host.focus_first_enabled()
+
+    def hide_sub_palette(self) -> None:
+        self._layer = ActionPaletteLayer.ROOT
+        if self._sub_host is not None:
+            self._sub_host.hide()
+            self._sub_host.setVisible(False)
+
+    def _on_sub_command_selected(
+        self,
+        command_id: CommandId,
+        *args: object,
+    ) -> None:
+        self.hide_sub_palette()
+        self.command_selected.emit(command_id)
+
+    def _on_sub_back_requested(self, *args: object) -> None:
+        self.hide_sub_palette()
+        self.navigation_requested.emit(ActionPaletteLayer.ROOT)
+        anim_btn = self._nav_buttons.get(ActionPaletteLayer.ANIMATION)
+        if anim_btn is not None and anim_btn.isEnabled():
+            anim_btn.setFocus()
+
+    def hide(self) -> None:
+        self.hide_sub_palette()
+        super().hide()
+
+    def close(self) -> bool:
+        if self._sub_host is not None:
+            self._sub_host.close()
+        return super().close()
 
     def render_palette(
         self,
         layer: ActionPaletteLayer,
         descriptors: tuple[CommandDescriptor, ...],
     ) -> None:
-        """Render one same-shell Palette layer from one descriptor snapshot.
+        """Render one same-shell Palette layer from one descriptor snapshot."""
+        self._last_descriptors = descriptors
+        if layer is ActionPaletteLayer.ANIMATION:
+            self.show_sub_palette(descriptors)
+            return
 
-        ROOT renders the direct Ask command plus Character/System navigation
-        rows; CHARACTER and SYSTEM render their group's descriptors in tuple
-        order plus a Back row.  Navigation rows are Palette semantics, never
-        CommandIds.  Rerender rebuilds the rows (old widgets are detached
-        immediately) so repeated show/re-render cycles never accumulate
-        duplicate signal connections.
-        """
+        self.hide_sub_palette()
         self._clear()
         self._items = []
         self._buttons = {}
@@ -304,28 +640,64 @@ class ActionPaletteHost(QWidget):
         self._checked = {}
         self._layer = layer
         if layer is ActionPaletteLayer.ROOT:
-            for descriptor in descriptors:
-                if descriptor.group is CommandGroup.AGENT:
-                    self._add_command_row(descriptor)
-            self._add_navigation_row(
-                "Character",
-                ActionPaletteLayer.CHARACTER,
+            is_closing = any(
+                d.disabled_reason == "pet_closing" for d in descriptors
             )
-            self._add_navigation_row("System", ActionPaletteLayer.SYSTEM)
+            # 1. Ask ArkClaw
+            self._add_command_row(
+                CommandDescriptor(
+                    command_id=CommandId.OPEN_CHAT_WORK,
+                    label="Ask ArkClaw",
+                    group=CommandGroup.AGENT,
+                    enabled=not is_closing,
+                    invoke_intent=CommandInvokeIntent.OPEN_CHAT_WORK,
+                    disabled_reason="pet_closing" if is_closing else None,
+                )
+            )
+            # 2. Character
+            self._add_command_row(
+                CommandDescriptor(
+                    command_id=CommandId.OPEN_CHARACTER_ANIMATION,
+                    label="Character",
+                    group=CommandGroup.CHARACTER,
+                    enabled=not is_closing,
+                    invoke_intent=CommandInvokeIntent.OPEN_CHARACTER_ANIMATION,
+                    disabled_reason="pet_closing" if is_closing else None,
+                )
+            )
+            # 3. Animation >
+            self._add_navigation_row(
+                "Animation",
+                ActionPaletteLayer.ANIMATION,
+            )
+            # 4. System
+            self._add_command_row(
+                CommandDescriptor(
+                    command_id=CommandId.OPEN_SETTINGS,
+                    label="System",
+                    group=CommandGroup.SYSTEM,
+                    enabled=not is_closing,
+                    invoke_intent=CommandInvokeIntent.OPEN_SETTINGS,
+                    disabled_reason="pet_closing" if is_closing else None,
+                )
+            )
             return
         if layer is ActionPaletteLayer.CHARACTER:
+            self._add_navigation_row("Back", ActionPaletteLayer.ROOT)
             for descriptor in descriptors:
                 if descriptor.group is CommandGroup.CHARACTER:
                     self._add_command_row(descriptor)
-            self._add_navigation_row("Back", ActionPaletteLayer.ROOT)
             return
+        self._add_navigation_row("Back", ActionPaletteLayer.ROOT)
         for descriptor in descriptors:
             if descriptor.group is CommandGroup.SYSTEM:
                 self._add_command_row(descriptor)
-        self._add_navigation_row("Back", ActionPaletteLayer.ROOT)
 
     def _add_command_row(self, descriptor: CommandDescriptor) -> None:
-        button = QPushButton(descriptor.label, self)
+        label = descriptor.label
+        if descriptor.checked is True:
+            label = f"{descriptor.label}  \u2713"
+        button = QPushButton(label, self)
         button.setObjectName(f"paletteRow_{descriptor.command_id.value}")
         button.setFixedHeight(44)
         button.setEnabled(descriptor.enabled)
@@ -342,7 +714,7 @@ class ActionPaletteHost(QWidget):
             button.setIconSize(QSize(20, 20))
 
         button.clicked.connect(
-            partial(self._on_row_clicked, descriptor.command_id)
+            lambda _, cid=descriptor.command_id: self._on_row_clicked(cid)
         )
         self._layout.addWidget(button)
         self._buttons[descriptor.command_id] = button
@@ -359,14 +731,14 @@ class ActionPaletteHost(QWidget):
         button.setObjectName(f"paletteNav_{target.value}")
         button.setFixedHeight(44)
         kind = _ICON_KIND_BY_NAV_LAYER.get(target)
-        if kind is not None and target is not ActionPaletteLayer.ROOT:
+        if kind is not None:
             icon_color = icon_color_for_theme(self._tokens, self._theme)
             pix = icon_pixmap(kind, 20.0, icon_color)
             button.setIcon(QIcon(pix))
             button.setIconSize(QSize(20, 20))
 
         button.clicked.connect(
-            partial(self._on_navigation_clicked, target)
+            lambda _, tgt=target: self._on_navigation_clicked(tgt)
         )
         self._layout.addWidget(button)
         self._nav_buttons[target] = button
@@ -392,21 +764,38 @@ class ActionPaletteHost(QWidget):
                 widget.setParent(None)
                 widget.deleteLater()
 
-    def _on_row_clicked(self, command_id: CommandId) -> None:
+    def _on_row_clicked(
+        self,
+        command_id: CommandId,
+        *args: object,
+    ) -> None:
         # Defense-in-depth: disabled rows are non-activatable even if a stale
         # or artificial activation path reached this slot.
         if not self._enabled.get(command_id, False):
             return
         self.command_selected.emit(command_id)
 
-    def _on_navigation_clicked(self, target: ActionPaletteLayer) -> None:
+    def _on_navigation_clicked(
+        self,
+        target: ActionPaletteLayer,
+        *args: object,
+    ) -> None:
+        if target is ActionPaletteLayer.ANIMATION:
+            if self._sub_host is not None and self._sub_host.isVisible():
+                self.hide_sub_palette()
+                self.navigation_requested.emit(ActionPaletteLayer.ROOT)
+                return
+            self.show_sub_palette(self._last_descriptors)
+            self.navigation_requested.emit(ActionPaletteLayer.ANIMATION)
+            return
         self.navigation_requested.emit(target)
 
     def keyPressEvent(self, event: QKeyEvent) -> None:
         if event.key() == Qt.Key.Key_Escape:
-            # 06 7 / 9.4: Escape at a Character/System layer returns to ROOT;
-            # Escape at ROOT dismisses the Palette.
-            if self._layer is ActionPaletteLayer.ROOT:
+            if self._sub_host is not None and self._sub_host.isVisible():
+                self.hide_sub_palette()
+                self.navigation_requested.emit(ActionPaletteLayer.ROOT)
+            elif self._layer is ActionPaletteLayer.ROOT:
                 self.dismiss_requested.emit()
             else:
                 self.navigation_requested.emit(ActionPaletteLayer.ROOT)
@@ -581,6 +970,7 @@ class ActionPaletteEffectSink:
             self._layer,
             build_command_descriptors(self._source),
         )
+        host.adjustSize()
         host.focus_first_enabled()
 
     def _hide_palette(self) -> None:
@@ -623,6 +1013,7 @@ class ActionPaletteEffectSink:
         if handler is not None:
             handler(SetPaletteLayerIntent(layer))
 
+
     def _on_dismiss_requested(self) -> None:
         handler = self._intent_handler
         if handler is not None:
@@ -646,6 +1037,20 @@ class ActionPaletteEffectSink:
         that is no longer present or enabled produces zero execution and no
         fallback to another command.
         """
+        if self._source.pet_closing:
+            return None
+        if (
+            command_id is CommandId.OPEN_CHAT_WORK
+            or command_id is CommandId.ASK_ARKCLAW
+        ):
+            self._dispatcher.open_chat_work()
+            return None
+        if command_id is CommandId.OPEN_CHARACTER_ANIMATION:
+            self._dispatcher.open_character_animation()
+            return None
+        if command_id is CommandId.OPEN_SETTINGS:
+            self._dispatcher.open_settings()
+            return None
         descriptors = build_command_descriptors(self._source)
         current = next(
             (
@@ -663,6 +1068,8 @@ class ActionPaletteEffectSink:
 __all__ = [
     "ActionPaletteEffectSink",
     "ActionPaletteHost",
+    "ActionPaletteSubHost",
     "ActionPaletteWindowStrategy",
     "compute_anchored_palette_position",
+    "compute_cascading_subpalette_position",
 ]

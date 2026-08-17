@@ -1,8 +1,0 @@
-*** Begin Patch
-*** Add File: D:\ArkClaw\.worktrees\arkpets-spine-idle-vertical-slice\src\arkclaw\application\agent\__init__.py
-"""Agent runtime use cases: conversation, task loop, and session coordination."""
-*** Add File: D:\ArkClaw\.worktrees\arkpets-spine-idle-vertical-slice\src\arkclaw\application\pet\__init__.py
-"""Desktop pet use cases: animation, motion, role packs, and track 0 orchestration."""
-*** Add File: D:\ArkClaw\.worktrees\arkpets-spine-idle-vertical-slice\src\arkclaw\application\system\__init__.py
-"""System-level application services: autostart, provider profiles, and startup mode."""
-*** End Patch

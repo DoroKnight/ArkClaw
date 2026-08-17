@@ -34,7 +34,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtCore import QCoreApplication, QEvent, QPoint, QRect, QSize, Qt
 from PySide6.QtGui import QContextMenuEvent
 from PySide6.QtTest import QSignalSpy, QTest
-from PySide6.QtWidgets import QApplication, QMenu, QPushButton
+from PySide6.QtWidgets import QApplication, QMenu
 
 import arkclaw.presentation.qt.ui.action_palette as action_palette_module
 from arkclaw.application.pet.pet_production_actions import ProductionAction
@@ -51,7 +51,6 @@ from arkclaw.presentation.command_descriptor_adapter import (
 )
 from arkclaw.presentation.frontend_presentation import (
     ActionPaletteLayer,
-    ConversationOpenOrRestoreIntent,
     DismissForegroundOverlayIntent,
     ForegroundOverlay,
     FrontendPresentationIntent,
@@ -186,6 +185,15 @@ class _RecordingCommandDispatcher:
     def open_agent_window(self) -> None:
         self.calls.append(("open_agent_window", ()))
 
+    def open_chat_work(self) -> None:
+        self.calls.append(("open_chat_work", ()))
+
+    def open_character_animation(self) -> None:
+        self.calls.append(("open_character_animation", ()))
+
+    def open_settings(self) -> None:
+        self.calls.append(("open_settings", ()))
+
     def toggle_pet_visibility(self) -> None:
         self.calls.append(("toggle_pet_visibility", ()))
 
@@ -202,46 +210,11 @@ class _RecordingCommandDispatcher:
 
 
 def _renderable_descriptors() -> tuple[CommandDescriptor, ...]:
-    return (
-        CommandDescriptor(
-            command_id=CommandId.ASK_ARKCLAW,
-            label="Ask ArkClaw",
-            group=CommandGroup.AGENT,
-            enabled=True,
-            invoke_intent=CommandInvokeIntent.CONVERSATION_OPEN_OR_RESTORE,
-        ),
-        CommandDescriptor(
-            command_id=CommandId.INTERACT,
-            label="Interact",
-            group=CommandGroup.CHARACTER,
-            enabled=True,
-            invoke_intent=CommandInvokeIntent.PRODUCTION_ACTION,
-        ),
-        CommandDescriptor(
-            command_id=CommandId.RESUME_AUTONOMOUS,
-            label="Resume Autonomous",
-            group=CommandGroup.CHARACTER,
-            enabled=False,
-            invoke_intent=CommandInvokeIntent.RESUME_AUTONOMOUS,
-            disabled_reason="action_unavailable",
-            conditional=True,
-        ),
-        CommandDescriptor(
-            command_id=CommandId.ALWAYS_ON_TOP,
-            label="Always on Top",
-            group=CommandGroup.SYSTEM,
-            enabled=True,
-            invoke_intent=CommandInvokeIntent.SET_ALWAYS_ON_TOP,
-            checked=True,
-        ),
-        CommandDescriptor(
-            command_id=CommandId.QUIT,
-            label="Quit",
-            group=CommandGroup.SYSTEM,
-            enabled=True,
-            invoke_intent=CommandInvokeIntent.REQUEST_SAFE_EXIT,
-        ),
+    from arkclaw.presentation.command_descriptor_adapter import (
+        build_command_descriptors,
     )
+
+    return build_command_descriptors(_FakeCommandSource())
 
 
 def _dispatch_discarding(
@@ -274,13 +247,19 @@ def _open_palette(
     )
 
 
-def _dispose_host(sink: ActionPaletteEffectSink) -> None:
-    host = sink.host
+def _cleanup_host(host: ActionPaletteHost | None) -> None:
     if host is None:
         return
     host.close()
     host.deleteLater()
+    QApplication.processEvents()
     QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+
+
+def _dispose_host(sink: ActionPaletteEffectSink) -> None:
+    host = sink.host
+    sink.dispose()
+    _cleanup_host(host)
 
 
 # --- RED 1: lazy host lifecycle ---
@@ -335,7 +314,7 @@ def test_palette_host_is_lazy_created_hidden_and_reused(
 
 # --- RED 2: layered descriptor rendering (same shell) ---
 
-def test_palette_root_layer_renders_ask_character_system(
+def test_palette_root_layer_renders_fixed_order(
     qt_application: QApplication,
 ) -> None:
     del qt_application
@@ -344,151 +323,119 @@ def test_palette_root_layer_renders_ask_character_system(
 
     assert host.current_layer is ActionPaletteLayer.ROOT
     assert host.items == (
-        ("command", CommandId.ASK_ARKCLAW),
-        ("nav", ActionPaletteLayer.CHARACTER),
-        ("nav", ActionPaletteLayer.SYSTEM),
+        ("command", CommandId.OPEN_CHAT_WORK),
+        ("command", CommandId.OPEN_CHARACTER_ANIMATION),
+        ("nav", ActionPaletteLayer.ANIMATION),
+        ("command", CommandId.OPEN_SETTINGS),
     )
 
-    ask = host.row_button(CommandId.ASK_ARKCLAW)
+    ask = host.row_button(CommandId.OPEN_CHAT_WORK)
     assert ask is not None
     assert ask.text() == "Ask ArkClaw"
     assert ask.isEnabled()
-    assert host.navigation_button(ActionPaletteLayer.CHARACTER) is not None
-    assert host.navigation_button(ActionPaletteLayer.SYSTEM) is not None
-    # ROOT never shows Character/System command rows.
-    assert host.row_button(CommandId.INTERACT) is None
-    assert host.row_button(CommandId.ALWAYS_ON_TOP) is None
 
-    host.close()
-    host.deleteLater()
+    char_btn = host.row_button(CommandId.OPEN_CHARACTER_ANIMATION)
+    assert char_btn is not None
+    assert char_btn.text() == "Character"
+    assert char_btn.isEnabled()
+
+    anim_btn = host.navigation_button(ActionPaletteLayer.ANIMATION)
+    assert anim_btn is not None
+    assert anim_btn.text() == "Animation"
+
+    sys_btn = host.row_button(CommandId.OPEN_SETTINGS)
+    assert sys_btn is not None
+    assert sys_btn.text() == "System"
+    assert sys_btn.isEnabled()
+
+    _cleanup_host(host)
 
 
-def test_palette_character_layer_renders_character_descriptors_plus_back(
+def test_palette_animation_layer_renders_actions_plus_back(
     qt_application: QApplication,
 ) -> None:
     del qt_application
     host = ActionPaletteHost()
-    host.render_palette(ActionPaletteLayer.CHARACTER, _renderable_descriptors())
+    host.render_palette(ActionPaletteLayer.ANIMATION, _renderable_descriptors())
 
-    assert host.current_layer is ActionPaletteLayer.CHARACTER
-    assert host.items == (
-        ("command", CommandId.INTERACT),
-        ("command", CommandId.RESUME_AUTONOMOUS),
-        ("nav", ActionPaletteLayer.ROOT),
-    )
-
-    interact = host.row_button(CommandId.INTERACT)
-    assert interact is not None
-    assert interact.text() == "Interact"
-    assert interact.isEnabled()
-
-    resume = host.row_button(CommandId.RESUME_AUTONOMOUS)
-    assert resume is not None
-    assert resume.text() == "Resume Autonomous"
-    assert not resume.isEnabled()
-    assert resume.toolTip() == "action_unavailable"
-
+    assert host.current_layer is ActionPaletteLayer.ANIMATION
     back = host.navigation_button(ActionPaletteLayer.ROOT)
     assert back is not None
     assert back.text() == "Back"
-    # System commands are not on the Character layer.
-    assert host.row_button(CommandId.ALWAYS_ON_TOP) is None
 
-    host.close()
-    host.deleteLater()
+    for action_id in (
+        CommandId.RELAX,
+        CommandId.MOVE_LEFT,
+        CommandId.MOVE_RIGHT,
+        CommandId.SIT,
+        CommandId.SLEEP,
+        CommandId.SPECIAL,
+        CommandId.INTERACT,
+    ):
+        btn = host.row_button(action_id)
+        assert btn is not None
+        assert btn.isEnabled()
 
+    _cleanup_host(host)
 
-def test_palette_system_layer_renders_system_descriptors_plus_back(
-    qt_application: QApplication,
-) -> None:
-    del qt_application
-    host = ActionPaletteHost()
-    host.render_palette(ActionPaletteLayer.SYSTEM, _renderable_descriptors())
-
-    assert host.current_layer is ActionPaletteLayer.SYSTEM
-    assert host.items == (
-        ("command", CommandId.ALWAYS_ON_TOP),
-        ("command", CommandId.QUIT),
-        ("nav", ActionPaletteLayer.ROOT),
-    )
-
-    top = host.row_button(CommandId.ALWAYS_ON_TOP)
-    assert top is not None
-    assert "\u2713" in top.text()
-    assert host.checked(CommandId.ALWAYS_ON_TOP) is True
-    assert host.checked(CommandId.QUIT) is None
-
-    quit_button = host.row_button(CommandId.QUIT)
-    assert quit_button is not None
-    assert quit_button.text() == "Quit"
-    assert quit_button.isEnabled()
-
-    back = host.navigation_button(ActionPaletteLayer.ROOT)
-    assert back is not None
-    assert back.text() == "Back"
-    # Character commands are not on the System layer.
-    assert host.row_button(CommandId.INTERACT) is None
-
-    host.close()
-    host.deleteLater()
-
-
-# --- RED 3: exactly-one selection across rerender ---
 
 def test_palette_selection_emits_exactly_one_command_id_across_rerender(
     qt_application: QApplication,
 ) -> None:
     del qt_application
     host = ActionPaletteHost()
-    host.render_palette(ActionPaletteLayer.CHARACTER, _renderable_descriptors())
+    host.render_palette(ActionPaletteLayer.ANIMATION, _renderable_descriptors())
     spy = QSignalSpy(host.command_selected)
 
-    interact = host.row_button(CommandId.INTERACT)
-    assert interact is not None
-    QTest.mouseClick(interact, Qt.MouseButton.LeftButton)
+    sit = host.row_button(CommandId.SIT)
+    assert sit is not None
+    QTest.mouseClick(sit, Qt.MouseButton.LeftButton)
     assert spy.count() == 1
-    assert spy.at(0)[0] == CommandId.INTERACT
+    assert spy.at(0)[0] == CommandId.SIT
 
     # Rerender must not duplicate signal wiring.
-    host.render_palette(ActionPaletteLayer.CHARACTER, _renderable_descriptors())
-    assert len(host.findChildren(QPushButton)) == 3
-    interact_again = host.row_button(CommandId.INTERACT)
-    assert interact_again is not None
-    QTest.mouseClick(interact_again, Qt.MouseButton.LeftButton)
+    host.render_palette(ActionPaletteLayer.ANIMATION, _renderable_descriptors())
+    sit_again = host.row_button(CommandId.SIT)
+    assert sit_again is not None
+    QTest.mouseClick(sit_again, Qt.MouseButton.LeftButton)
     assert spy.count() == 2
-    assert spy.at(1)[0] == CommandId.INTERACT
+    assert spy.at(1)[0] == CommandId.SIT
 
-    host.close()
-    host.deleteLater()
+    _cleanup_host(host)
 
-
-# --- RED 4: disabled command ---
 
 def test_disabled_palette_command_emits_zero_selection(
     qt_application: QApplication,
 ) -> None:
     del qt_application
     host = ActionPaletteHost()
-    host.render_palette(ActionPaletteLayer.CHARACTER, _renderable_descriptors())
+    descriptors = (
+        CommandDescriptor(
+            command_id=CommandId.SIT,
+            label="Sit",
+            group=CommandGroup.CHARACTER,
+            enabled=False,
+            invoke_intent=CommandInvokeIntent.PRODUCTION_ACTION,
+        ),
+    )
+    host.render_palette(ActionPaletteLayer.ANIMATION, descriptors)
     spy = QSignalSpy(host.command_selected)
 
-    resume = host.row_button(CommandId.RESUME_AUTONOMOUS)
-    assert resume is not None
-    assert not resume.isEnabled()
-    QTest.mouseClick(resume, Qt.MouseButton.LeftButton)
+    sit = host.row_button(CommandId.SIT)
+    assert sit is not None
+    assert not sit.isEnabled()
+    QTest.mouseClick(sit, Qt.MouseButton.LeftButton)
     assert spy.count() == 0
 
-    host.close()
-    host.deleteLater()
+    _cleanup_host(host)
 
 
 def test_disabled_current_descriptor_dispatch_is_zero(
     qt_application: QApplication,
 ) -> None:
     del qt_application
-    # Rendered while INTERACT is available...
     source = _FakeCommandSource(
-        available_actions=frozenset({ProductionAction.INTERACT})
+        available_actions=frozenset({ProductionAction.SIT})
     )
     dispatcher = _RecordingCommandDispatcher()
     sink, coordinator = _make_harness(source, dispatcher)
@@ -496,19 +443,17 @@ def test_disabled_current_descriptor_dispatch_is_zero(
     QApplication.processEvents()
     host = sink.host
     assert host is not None
-    character = host.navigation_button(ActionPaletteLayer.CHARACTER)
-    assert character is not None
-    character.click()
+    anim = host.navigation_button(ActionPaletteLayer.ANIMATION)
+    assert anim is not None
+    anim.click()
     QApplication.processEvents()
-    interact = host.row_button(CommandId.INTERACT)
-    assert interact is not None
-    assert interact.isEnabled()
+    sit = host.row_button(CommandId.SIT)
+    assert sit is not None
+    assert sit.isEnabled()
 
-    # ...but the authoritative source drifts before dispatch: the CURRENT
-    # descriptor is resolved at dispatch time and a now-disabled command
-    # must produce zero execution.
+    # Dynamic drift to disabled before click
     source._available_actions = frozenset()
-    interact.click()
+    sit.click()
     QApplication.processEvents()
 
     assert dispatcher.calls == []
@@ -517,76 +462,7 @@ def test_disabled_current_descriptor_dispatch_is_zero(
     _dispose_host(sink)
 
 
-# --- RED 5: stale render protection ---
-
-def test_stale_checked_render_cannot_own_always_on_top_mutation_target(
-    qt_application: QApplication,
-) -> None:
-    del qt_application
-    source = _FakeCommandSource(pet_always_on_top=False)
-    dispatcher = _RecordingCommandDispatcher(pet_always_on_top=False)
-    sink, coordinator = _make_harness(source, dispatcher)
-    _open_palette(coordinator)
-    QApplication.processEvents()
-    host = sink.host
-    assert host is not None
-    system = host.navigation_button(ActionPaletteLayer.SYSTEM)
-    assert system is not None
-    system.click()
-    QApplication.processEvents()
-    assert host.checked(CommandId.ALWAYS_ON_TOP) is False
-
-    # Authoritative current state drifts to True after the stale render.
-    dispatcher._pet_always_on_top = True
-
-    top = host.row_button(CommandId.ALWAYS_ON_TOP)
-    assert top is not None
-    top.click()
-    QApplication.processEvents()
-
-    # Target is SET(not current authoritative True) -> False; the stale
-    # rendered checked=False snapshot must not become the mutation target.
-    assert dispatcher.calls == [("set_always_on_top", (False,))]
-    assert sink.host is host
-    assert not host.isVisible()
-    _dispose_host(sink)
-
-
-def test_stale_checked_render_cannot_own_autostart_mutation_target(
-    qt_application: QApplication,
-) -> None:
-    del qt_application
-    source = _FakeCommandSource(
-        autostart_snapshot=AutostartSnapshot.for_status(
-            AutostartStatus.DISABLED
-        )
-    )
-    dispatcher = _RecordingCommandDispatcher(autostart_enabled=False)
-    sink, coordinator = _make_harness(source, dispatcher)
-    _open_palette(coordinator)
-    QApplication.processEvents()
-    host = sink.host
-    assert host is not None
-    system = host.navigation_button(ActionPaletteLayer.SYSTEM)
-    assert system is not None
-    system.click()
-    QApplication.processEvents()
-    assert host.checked(CommandId.START_WITH_WINDOWS) is False
-
-    dispatcher._autostart_enabled = True
-
-    start = host.row_button(CommandId.START_WITH_WINDOWS)
-    assert start is not None
-    start.click()
-    QApplication.processEvents()
-
-    assert dispatcher.calls == [("set_autostart_enabled", (False,))]
-    _dispose_host(sink)
-
-
-# --- RED 6: Ask semantic ---
-
-def test_palette_ask_dispatches_exactly_one_conversation_open_or_restore(
+def test_palette_ask_dispatches_open_chat_work(
     qt_application: QApplication,
 ) -> None:
     del qt_application
@@ -598,27 +474,18 @@ def test_palette_ask_dispatches_exactly_one_conversation_open_or_restore(
     host = sink.host
     assert host is not None
 
-    ask = host.row_button(CommandId.ASK_ARKCLAW)
+    ask = host.row_button(CommandId.OPEN_CHAT_WORK)
     assert ask is not None
     ask.click()
     QApplication.processEvents()
 
-    assert dispatcher.presentation_intents == [
-        ConversationOpenOrRestoreIntent()
-    ]
-    assert dispatcher.requested_actions == []
-    assert dispatcher.calls == [
-        ("dispatch_presentation_intent", (ConversationOpenOrRestoreIntent(),))
-    ]
-    # Select dismisses the Palette.
+    assert ("open_chat_work", ()) in dispatcher.calls
     assert sink.host is host
     assert not host.isVisible()
     _dispose_host(sink)
 
 
-# --- RED 7: Interact semantic ---
-
-def test_palette_interact_dispatches_existing_interact_exactly_once(
+def test_palette_character_dispatches_open_character_animation(
     qt_application: QApplication,
 ) -> None:
     del qt_application
@@ -630,27 +497,64 @@ def test_palette_interact_dispatches_existing_interact_exactly_once(
     host = sink.host
     assert host is not None
 
-    # ROOT -> Character -> Interact (same host, one layer transition).
-    character = host.navigation_button(ActionPaletteLayer.CHARACTER)
-    assert character is not None
-    character.click()
+    char_btn = host.row_button(CommandId.OPEN_CHARACTER_ANIMATION)
+    assert char_btn is not None
+    char_btn.click()
     QApplication.processEvents()
-    assert sink.host is host
-    assert host.current_layer is ActionPaletteLayer.CHARACTER
+
+    assert ("open_character_animation", ()) in dispatcher.calls
+    assert not host.isVisible()
+    _dispose_host(sink)
+
+
+def test_palette_system_dispatches_open_settings(
+    qt_application: QApplication,
+) -> None:
+    del qt_application
+    source = _FakeCommandSource()
+    dispatcher = _RecordingCommandDispatcher()
+    sink, coordinator = _make_harness(source, dispatcher)
+    _open_palette(coordinator)
+    QApplication.processEvents()
+    host = sink.host
+    assert host is not None
+
+    sys_btn = host.row_button(CommandId.OPEN_SETTINGS)
+    assert sys_btn is not None
+    sys_btn.click()
+    QApplication.processEvents()
+
+    assert ("open_settings", ()) in dispatcher.calls
+    assert not host.isVisible()
+    _dispose_host(sink)
+
+
+def test_palette_animation_action_dispatches_action(
+    qt_application: QApplication,
+) -> None:
+    del qt_application
+    source = _FakeCommandSource()
+    dispatcher = _RecordingCommandDispatcher()
+    sink, coordinator = _make_harness(source, dispatcher)
+    _open_palette(coordinator)
+    QApplication.processEvents()
+    host = sink.host
+    assert host is not None
+
+    anim_nav = host.navigation_button(ActionPaletteLayer.ANIMATION)
+    assert anim_nav is not None
+    anim_nav.click()
+    QApplication.processEvents()
+    assert host.current_layer is ActionPaletteLayer.ANIMATION
     assert dispatcher.calls == []
 
-    interact = host.row_button(CommandId.INTERACT)
-    assert interact is not None
-    interact.click()
+    sit = host.row_button(CommandId.SIT)
+    assert sit is not None
+    sit.click()
     QApplication.processEvents()
 
-    assert dispatcher.requested_actions == [ProductionAction.INTERACT]
-    assert dispatcher.presentation_intents == []
-    assert dispatcher.calls == [
-        ("request_pet_action", (ProductionAction.INTERACT,))
-    ]
-    # Select dismisses the Palette.
-    assert sink.host is host
+    assert dispatcher.requested_actions == [ProductionAction.SIT]
+    assert ("request_pet_action", (ProductionAction.SIT,)) in dispatcher.calls
     assert not host.isVisible()
     _dispose_host(sink)
 
@@ -732,7 +636,7 @@ def test_palette_host_presence_does_not_change_production_right_click(
 
 # --- RED A: Palette opens to ROOT with exactly Ask + Character + System ---
 
-def test_palette_opens_to_root_layer_with_ask_character_system(
+def test_palette_opens_to_root_layer_with_fixed_order(
     qt_application: QApplication,
 ) -> None:
     del qt_application
@@ -747,18 +651,18 @@ def test_palette_opens_to_root_layer_with_ask_character_system(
     assert coordinator.snapshot.palette_layer is ActionPaletteLayer.ROOT
     assert host.current_layer is ActionPaletteLayer.ROOT
     assert host.items == (
-        ("command", CommandId.ASK_ARKCLAW),
-        ("nav", ActionPaletteLayer.CHARACTER),
-        ("nav", ActionPaletteLayer.SYSTEM),
+        ("command", CommandId.OPEN_CHAT_WORK),
+        ("command", CommandId.OPEN_CHARACTER_ANIMATION),
+        ("nav", ActionPaletteLayer.ANIMATION),
+        ("command", CommandId.OPEN_SETTINGS),
     )
     assert dispatcher.calls == []
-    assert dispatcher.presentation_intents == []
     _dispose_host(sink)
 
 
 # --- RED B: Character navigation, same host, zero dispatch ---
 
-def test_palette_character_navigation_same_host_zero_dispatch(
+def test_palette_animation_navigation_same_host_zero_dispatch(
     qt_application: QApplication,
 ) -> None:
     del qt_application
@@ -770,63 +674,25 @@ def test_palette_character_navigation_same_host_zero_dispatch(
     host = sink.host
     assert host is not None
 
-    character = host.navigation_button(ActionPaletteLayer.CHARACTER)
-    assert character is not None
-    character.click()
+    anim = host.navigation_button(ActionPaletteLayer.ANIMATION)
+    assert anim is not None
+    anim.click()
     QApplication.processEvents()
 
     assert sink.host is host
-    assert coordinator.snapshot.palette_layer is ActionPaletteLayer.CHARACTER
-    assert host.current_layer is ActionPaletteLayer.CHARACTER
+    assert coordinator.snapshot.palette_layer is ActionPaletteLayer.ANIMATION
+    assert host.current_layer is ActionPaletteLayer.ANIMATION
     assert host.isVisible()
-    assert host.row_button(CommandId.INTERACT) is not None
+    assert host.row_button(CommandId.SIT) is not None
     assert host.navigation_button(ActionPaletteLayer.ROOT) is not None
-    assert host.navigation_button(ActionPaletteLayer.SYSTEM) is None
     assert dispatcher.calls == []
-    assert dispatcher.presentation_intents == []
-    _dispose_host(sink)
-
-
-# --- RED C: System navigation, same host, zero dispatch ---
-
-def test_palette_system_navigation_same_host_zero_dispatch(
-    qt_application: QApplication,
-) -> None:
-    del qt_application
-    source = _FakeCommandSource()
-    dispatcher = _RecordingCommandDispatcher()
-    sink, coordinator = _make_harness(source, dispatcher)
-    _open_palette(coordinator)
-    QApplication.processEvents()
-    host = sink.host
-    assert host is not None
-
-    system = host.navigation_button(ActionPaletteLayer.SYSTEM)
-    assert system is not None
-    system.click()
-    QApplication.processEvents()
-
-    assert sink.host is host
-    assert coordinator.snapshot.palette_layer is ActionPaletteLayer.SYSTEM
-    assert host.current_layer is ActionPaletteLayer.SYSTEM
-    assert host.isVisible()
-    assert host.row_button(CommandId.ALWAYS_ON_TOP) is not None
-    assert host.navigation_button(ActionPaletteLayer.ROOT) is not None
-    assert host.navigation_button(ActionPaletteLayer.CHARACTER) is None
-    assert dispatcher.calls == []
-    assert dispatcher.presentation_intents == []
     _dispose_host(sink)
 
 
 # --- RED D: Back returns to ROOT in the same host, zero dispatch ---
 
-@pytest.mark.parametrize(
-    "layer",
-    [ActionPaletteLayer.CHARACTER, ActionPaletteLayer.SYSTEM],
-)
 def test_palette_back_returns_to_root_same_host_zero_dispatch(
     qt_application: QApplication,
-    layer: ActionPaletteLayer,
 ) -> None:
     del qt_application
     source = _FakeCommandSource()
@@ -837,12 +703,12 @@ def test_palette_back_returns_to_root_same_host_zero_dispatch(
     host = sink.host
     assert host is not None
 
-    nav = host.navigation_button(layer)
-    assert nav is not None
-    nav.click()
+    anim = host.navigation_button(ActionPaletteLayer.ANIMATION)
+    assert anim is not None
+    anim.click()
     QApplication.processEvents()
-    assert coordinator.snapshot.palette_layer is layer
-    assert host.current_layer == layer
+    assert coordinator.snapshot.palette_layer is ActionPaletteLayer.ANIMATION
+    assert host.current_layer == ActionPaletteLayer.ANIMATION
 
     back = host.navigation_button(ActionPaletteLayer.ROOT)
     assert back is not None
@@ -855,18 +721,18 @@ def test_palette_back_returns_to_root_same_host_zero_dispatch(
     assert host.current_layer is ActionPaletteLayer.ROOT
     assert host.isVisible()
     assert host.items == (
-        ("command", CommandId.ASK_ARKCLAW),
-        ("nav", ActionPaletteLayer.CHARACTER),
-        ("nav", ActionPaletteLayer.SYSTEM),
+        ("command", CommandId.OPEN_CHAT_WORK),
+        ("command", CommandId.OPEN_CHARACTER_ANIMATION),
+        ("nav", ActionPaletteLayer.ANIMATION),
+        ("command", CommandId.OPEN_SETTINGS),
     )
     assert dispatcher.calls == []
-    assert dispatcher.presentation_intents == []
     _dispose_host(sink)
 
 
 # --- RED H: Escape follows 06 7 (sublayer -> root; root -> dismiss) ---
 
-def test_palette_escape_on_character_layer_returns_to_root(
+def test_palette_escape_on_animation_layer_returns_to_root(
     qt_application: QApplication,
 ) -> None:
     del qt_application
@@ -877,11 +743,11 @@ def test_palette_escape_on_character_layer_returns_to_root(
     QApplication.processEvents()
     host = sink.host
     assert host is not None
-    nav = host.navigation_button(ActionPaletteLayer.CHARACTER)
+    nav = host.navigation_button(ActionPaletteLayer.ANIMATION)
     assert nav is not None
     nav.click()
     QApplication.processEvents()
-    assert host.current_layer is ActionPaletteLayer.CHARACTER
+    assert host.current_layer is ActionPaletteLayer.ANIMATION
 
     QTest.keyClick(host, Qt.Key.Key_Escape)
     QApplication.processEvents()
@@ -895,37 +761,6 @@ def test_palette_escape_on_character_layer_returns_to_root(
         coordinator.snapshot.foreground_overlay is ForegroundOverlay.PALETTE
     )
     assert dispatcher.calls == []
-    assert dispatcher.presentation_intents == []
-    _dispose_host(sink)
-
-
-def test_palette_escape_on_system_layer_returns_to_root(
-    qt_application: QApplication,
-) -> None:
-    del qt_application
-    source = _FakeCommandSource()
-    dispatcher = _RecordingCommandDispatcher()
-    sink, coordinator = _make_harness(source, dispatcher)
-    _open_palette(coordinator)
-    QApplication.processEvents()
-    host = sink.host
-    assert host is not None
-    nav = host.navigation_button(ActionPaletteLayer.SYSTEM)
-    assert nav is not None
-    nav.click()
-    QApplication.processEvents()
-    assert host.current_layer is ActionPaletteLayer.SYSTEM
-
-    QTest.keyClick(host, Qt.Key.Key_Escape)
-    QApplication.processEvents()
-
-    model_layer: ActionPaletteLayer = coordinator.snapshot.palette_layer
-    rendered_layer: ActionPaletteLayer = host.current_layer
-    assert model_layer is ActionPaletteLayer.ROOT
-    assert rendered_layer is ActionPaletteLayer.ROOT
-    assert host.isVisible()
-    assert dispatcher.calls == []
-    assert dispatcher.presentation_intents == []
     _dispose_host(sink)
 
 
@@ -943,11 +778,11 @@ def test_palette_reopen_always_returns_to_root_layer(
     host = sink.host
     assert host is not None
 
-    nav = host.navigation_button(ActionPaletteLayer.SYSTEM)
+    nav = host.navigation_button(ActionPaletteLayer.ANIMATION)
     assert nav is not None
     nav.click()
     QApplication.processEvents()
-    assert coordinator.snapshot.palette_layer is ActionPaletteLayer.SYSTEM
+    assert coordinator.snapshot.palette_layer is ActionPaletteLayer.ANIMATION
 
     coordinator.dispatch(DismissForegroundOverlayIntent())
     QApplication.processEvents()
@@ -962,9 +797,10 @@ def test_palette_reopen_always_returns_to_root_layer(
     assert model_layer is ActionPaletteLayer.ROOT
     assert rendered_layer is ActionPaletteLayer.ROOT
     assert host.items == (
-        ("command", CommandId.ASK_ARKCLAW),
-        ("nav", ActionPaletteLayer.CHARACTER),
-        ("nav", ActionPaletteLayer.SYSTEM),
+        ("command", CommandId.OPEN_CHAT_WORK),
+        ("command", CommandId.OPEN_CHARACTER_ANIMATION),
+        ("nav", ActionPaletteLayer.ANIMATION),
+        ("command", CommandId.OPEN_SETTINGS),
     )
     _dispose_host(sink)
 
@@ -980,20 +816,18 @@ def test_palette_navigation_rows_are_not_command_ids(
     command_spy = QSignalSpy(host.command_selected)
     navigation_spy = QSignalSpy(host.navigation_requested)
 
-    character = host.navigation_button(ActionPaletteLayer.CHARACTER)
-    assert character is not None
-    QTest.mouseClick(character, Qt.MouseButton.LeftButton)
+    anim = host.navigation_button(ActionPaletteLayer.ANIMATION)
+    assert anim is not None
+    QTest.mouseClick(anim, Qt.MouseButton.LeftButton)
 
     assert navigation_spy.count() == 1
-    assert navigation_spy.at(0)[0] == ActionPaletteLayer.CHARACTER
+    assert navigation_spy.at(0)[0] == ActionPaletteLayer.ANIMATION
     assert command_spy.count() == 0
-    # The frozen Slice 5A command inventory gained no Palette-navigation ids.
     assert not hasattr(CommandId, "CHARACTER_MENU")
     assert not hasattr(CommandId, "SYSTEM_MENU")
     assert not hasattr(CommandId, "BACK")
 
-    host.close()
-    host.deleteLater()
+    _cleanup_host(host)
 
 
 # --- Anchored positioning and frozen-tokens theming (Visual Freeze v1) ---
@@ -1121,3 +955,96 @@ def test_palette_host_applies_frozen_tokens_theme_when_configured(
     assert light.surface.surface in host.styleSheet()
     assert light.accent.default in host.styleSheet()
     _dispose_host(sink)
+
+
+def test_compute_cascading_subpalette_position_right_side_and_left_flip() -> None:
+    work_area = QRect(0, 0, 1920, 1080)
+    sub_size = QSize(220, 420)
+    gap = 6
+    margin = 12
+
+    # Normal placement: right of main palette
+    main_rect = QRect(100, 200, 220, 200)
+    anim_button_rect = QRect(100, 280, 220, 44)
+    pos = action_palette_module.compute_cascading_subpalette_position(
+        main_palette_rect=main_rect,
+        anim_button_rect=anim_button_rect,
+        subpalette_size=sub_size,
+        work_area=work_area,
+        gap=gap,
+        margin=margin,
+    )
+    assert pos.x() == 100 + 220 + gap
+    assert pos.y() == 280
+
+    # Near right edge: flips to left of main palette
+    main_near_right = QRect(1750, 200, 220, 200)
+    anim_btn_near_right = QRect(1750, 280, 220, 44)
+    pos_flipped = action_palette_module.compute_cascading_subpalette_position(
+        main_palette_rect=main_near_right,
+        anim_button_rect=anim_btn_near_right,
+        subpalette_size=sub_size,
+        work_area=work_area,
+        gap=gap,
+        margin=margin,
+    )
+    assert pos_flipped.x() == 1750 - gap - 220
+    assert pos_flipped.y() == 280
+
+    # Near bottom edge: vertically clamped
+    anim_btn_near_bottom = QRect(100, 900, 220, 44)
+    pos_bottom = action_palette_module.compute_cascading_subpalette_position(
+        main_palette_rect=main_rect,
+        anim_button_rect=anim_btn_near_bottom,
+        subpalette_size=sub_size,
+        work_area=work_area,
+        gap=gap,
+        margin=margin,
+    )
+    assert pos_bottom.y() == 1080 - margin - 420
+
+
+def test_cascading_sub_palette_selection_and_back(
+    qt_application: QApplication,
+) -> None:
+    del qt_application
+    source = _FakeCommandSource()
+    dispatcher = _RecordingCommandDispatcher()
+    sink = ActionPaletteEffectSink(
+        source=source,
+        dispatcher=dispatcher,
+    )
+    coordinator = FrontendPresentationCoordinator(effect_sink=sink)
+    sink.attach_intent_handler(_dispatch_discarding(coordinator))
+    _open_palette(coordinator)
+    QApplication.processEvents()
+    host = sink.host
+    assert host is not None
+
+    # Click Animation to open sub-palette
+    anim_nav = host.navigation_button(ActionPaletteLayer.ANIMATION)
+    assert anim_nav is not None
+    QTest.mouseClick(anim_nav, Qt.MouseButton.LeftButton)
+    QApplication.processEvents()
+
+    sub_host = host.sub_host
+    assert sub_host is not None
+    assert sub_host.isVisible()
+    assert host.isVisible()  # Main palette stays open!
+
+    # Sub-palette contains Back + actions
+    back_btn = sub_host.navigation_button(ActionPaletteLayer.ROOT)
+    assert back_btn is not None
+    sit_btn = sub_host.row_button(CommandId.SIT)
+    assert sit_btn is not None
+
+    # Click Sit in sub-palette
+    QTest.mouseClick(sit_btn, Qt.MouseButton.LeftButton)
+    QApplication.processEvents()
+
+    assert not sub_host.isVisible()
+    assert not host.isVisible()
+    assert dispatcher.requested_actions == [ProductionAction.SIT]
+
+    _dispose_host(sink)
+

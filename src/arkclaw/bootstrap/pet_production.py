@@ -75,11 +75,35 @@ class ProductionPetComposition:
     root_motion: RootMotionClassification
 
 
+@dataclass(frozen=True, slots=True)
+class _RolePackCalibrationData:
+    durations: dict[ProductionAction, float]
+    root_motion: RootMotionClassification
+    session_bounds: Spine38Bounds
+    render_profile: RolePackRenderProfile
+
+
+_CALIBRATION_CACHE: dict[tuple[Any, ...], _RolePackCalibrationData] = {}
+
+
 def create_optional_production_pet_composition() -> ProductionPetComposition | None:
     """Return a complete pack or ``None`` without weakening placeholder startup."""
 
     manifest_value = os.environ.get(_MANIFEST_ENV)
     bridge_value = os.environ.get(_BRIDGE_ENV)
+    if manifest_value is None or bridge_value is None:
+        project_root = Path(__file__).resolve().parents[3]
+        if manifest_value is None:
+            candidate_manifest = project_root / "build" / "schwarz-production.local.json"
+            if candidate_manifest.is_file():
+                manifest_value = str(candidate_manifest)
+        if bridge_value is None:
+            candidate_bridge = (
+                project_root / "build" / "spine38" / "Release" / "arkclaw_spine38_bridge.dll"
+            )
+            if candidate_bridge.is_file():
+                bridge_value = str(candidate_bridge)
+
     if manifest_value is None or bridge_value is None:
         return None
     bundle = None
@@ -109,34 +133,56 @@ def create_optional_production_pet_composition() -> ProductionPetComposition | N
             ),
         )
         native = None
-        durations = {
-            action: runtime.catalog.require_animation(
-                roles.resolve(action).physical_name
-            ).duration_seconds
-            for action in roles.capabilities
-        }
+
+        cache_key = (
+            manifest.pack_id,
+            manifest.expected_sha256.skeleton,
+            manifest.expected_sha256.atlas,
+            manifest.framing,
+        )
+        cached_calibration = _CALIBRATION_CACHE.get(cache_key)
+        if cached_calibration is None:
+            durations = {
+                action: runtime.catalog.require_animation(
+                    roles.resolve(action).physical_name
+                ).duration_seconds
+                for action in roles.capabilities
+            }
+            root_motion = _classify_root_motion(
+                runtime,
+                roles,
+                durations,
+            )
+            session_bounds = _sample_session_bounds(
+                runtime,
+                roles,
+                durations,
+                manifest.framing,
+            )
+            render_profile = _sample_action_profile(
+                runtime,
+                roles,
+                durations,
+                session_bounds,
+            )
+            _preflight_render_profile(render_profile, manifest.framing)
+            cached_calibration = _RolePackCalibrationData(
+                durations=durations,
+                root_motion=root_motion,
+                session_bounds=session_bounds,
+                render_profile=render_profile,
+            )
+            _CALIBRATION_CACHE[cache_key] = cached_calibration
+
+        durations = cached_calibration.durations
+        root_motion = cached_calibration.root_motion
+        session_bounds = cached_calibration.session_bounds
+        render_profile = cached_calibration.render_profile
+
         registry = build_track0_animation_registry(
             roles,
             source_durations=durations,
         )
-        root_motion = _classify_root_motion(
-            runtime,
-            roles,
-            durations,
-        )
-        session_bounds = _sample_session_bounds(
-            runtime,
-            roles,
-            durations,
-            manifest.framing,
-        )
-        render_profile = _sample_action_profile(
-            runtime,
-            roles,
-            durations,
-            session_bounds,
-        )
-        _preflight_render_profile(render_profile, manifest.framing)
         player = Spine38AnimationPlayer(runtime)
         track0 = PetTrack0Controller(player=player, registry=registry)
         renderer = Spine38PetRenderer(

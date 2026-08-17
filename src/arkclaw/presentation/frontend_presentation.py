@@ -34,17 +34,15 @@ class ForegroundOverlay(Enum):
 
 
 class ActionPaletteLayer(Enum):
-    """Qt-free same-shell layer of the one Action Palette (06 9.2/9.4).
+    """Qt-free same-shell layer of the one Action Palette (06 9.2/9.4, Visual Amendment v1.1).
 
-    ROOT is the only entry layer: 06 9.4 "Right Click -> Root".  Character
-    and System are same-shell secondary layers (07 21); Back/Escape from a
-    secondary layer returns to ROOT (06 9.4 "Secondary layer + Back/Escape
-    -> Root"; 06 7 "Character/System Palette layer | Return to Palette
-    root").
+    ROOT is the entry layer. Character, Animation, and System are same-shell
+    secondary layers; Back/Escape from a secondary layer returns to ROOT.
     """
 
     ROOT = auto()
     CHARACTER = auto()
+    ANIMATION = auto()
     SYSTEM = auto()
 
 

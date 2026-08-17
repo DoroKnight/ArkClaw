@@ -87,6 +87,17 @@ class DashboardWindow(QMainWindow):
         title.setObjectName("topShellTitle")
         top_layout.addWidget(title)
         top_layout.addStretch(1)
+        theme_btn = QPushButton(self._top_shell)
+        theme_btn.setObjectName("secondaryButton")
+        theme_btn.setFixedSize(
+            int(self._tokens.icon["default_hit_target"]),
+            int(self._tokens.icon["default_hit_target"]),
+        )
+        theme_btn.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        theme_btn.clicked.connect(self._toggle_theme)
+        top_layout.addWidget(theme_btn)
+        self._theme_button = theme_btn
+
         settings = QPushButton(self._top_shell)
         settings.setObjectName("secondaryButton")
         settings.setFixedSize(
@@ -100,7 +111,7 @@ class DashboardWindow(QMainWindow):
         self._settings_button = settings
         self._settings_button.clicked.connect(self.open_settings_dialog)
         self._theme = QtTheme.LIGHT
-        self._render_settings_icon()
+        self._render_top_shell_icons()
         body = QWidget(root)
         body_layout = QHBoxLayout(body)
         body_layout.setContentsMargins(0, 0, 0, 0)
@@ -168,25 +179,45 @@ class DashboardWindow(QMainWindow):
         self._theme = theme
         apply_theme(self, theme, self._tokens)
         self._navigation.set_theme(theme)
-        self._render_settings_icon()
+        self._render_top_shell_icons()
         for page_widget in self._page_widgets.values():
             set_theme = getattr(page_widget, "set_theme", None)
             if callable(set_theme):
                 set_theme(theme)
 
-    def _render_settings_icon(self) -> None:
+    def _toggle_theme(self) -> None:
+        new_theme = QtTheme.DARK if self._theme is QtTheme.LIGHT else QtTheme.LIGHT
+        self.set_theme(new_theme)
+        handler = getattr(self, "_theme_change_handler", None)
+        if callable(handler):
+            handler(new_theme)
+
+    def _render_top_shell_icons(self) -> None:
         size = int(self._tokens.icon["action"])
-        self._settings_button.setIcon(
-            QIcon(
-                icon_pixmap(
-                    IconKind.SETTINGS,
-                    size,
-                    icon_color_for_theme(self._tokens, self._theme),
-                    dpr=self.devicePixelRatioF(),
-                )
+        color = icon_color_for_theme(self._tokens, self._theme)
+        dpr = self.devicePixelRatioF()
+
+        if hasattr(self, "_theme_button"):
+            theme_kind = (
+                IconKind.MOON if self._theme is QtTheme.LIGHT else IconKind.SUN
             )
-        )
-        self._settings_button.setIconSize(QSize(size, size))
+            theme_tip = (
+                "Switch to Dark theme"
+                if self._theme is QtTheme.LIGHT
+                else "Switch to Light theme"
+            )
+            self._theme_button.setToolTip(theme_tip)
+            self._theme_button.setAccessibleName(theme_tip)
+            self._theme_button.setIcon(
+                QIcon(icon_pixmap(theme_kind, size, color, dpr=dpr))
+            )
+            self._theme_button.setIconSize(QSize(size, size))
+
+        if hasattr(self, "_settings_button"):
+            self._settings_button.setIcon(
+                QIcon(icon_pixmap(IconKind.SETTINGS, size, color, dpr=dpr))
+            )
+            self._settings_button.setIconSize(QSize(size, size))
 
     def _on_navigation_page_selected(self, page: object) -> None:
         if isinstance(page, DashboardPage):

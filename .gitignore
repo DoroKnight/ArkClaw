@@ -25,5 +25,7 @@ packaging/deployment/
 *.log
 *.tmp
 # Local pytest basetemp evidence (Slice 0-10 test runs)
+.pytest_tmp
+.pytest_tmp/
 .pytest_tmp_*
 dev_evidence/

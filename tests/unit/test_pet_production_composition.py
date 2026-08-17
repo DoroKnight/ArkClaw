@@ -76,12 +76,29 @@ def test_invalid_manifest_has_one_stable_public_failure(tmp_path: Path) -> None:
 
 
 def test_unconfigured_production_composition_preserves_placeholder(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    monkeypatch.delenv("ARKCLAW_PET_ROLE_MANIFEST", raising=False)
-    monkeypatch.delenv("ARKCLAW_SPINE38_BRIDGE_DLL", raising=False)
+    monkeypatch.setenv("ARKCLAW_PET_ROLE_MANIFEST", str(tmp_path / "missing.json"))
+    monkeypatch.setenv("ARKCLAW_SPINE38_BRIDGE_DLL", str(tmp_path / "missing.dll"))
 
     assert create_optional_production_pet_composition() is None
+
+
+def test_authoritative_spine38_production_composition_loads_all_actions() -> None:
+    comp = create_optional_production_pet_composition()
+    if comp is not None:
+        assert comp.role_pack_id == "schwarz-production"
+        assert comp.available_actions == frozenset(ProductionAction)
+        assert len(comp.available_actions) == 7
+        assert {a.value for a in comp.available_actions} == {
+            "relax",
+            "move_left",
+            "move_right",
+            "sit",
+            "sleep",
+            "special",
+            "interact",
+        }
 
 
 class _BoundsRuntime:

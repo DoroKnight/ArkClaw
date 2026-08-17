@@ -17,6 +17,7 @@ from arkclaw.domain.errors import ArkClawError
 from arkclaw.domain.models import (
     DEEPSEEK_PROVIDER_ID,
     FAKE_PROVIDER_ID,
+    OLLAMA_PROVIDER_ID,
     OPENAI_PROVIDER_ID,
     ApiProtocol,
     ProviderProfile,
@@ -28,6 +29,7 @@ from arkclaw.infrastructure.llm.deepseek_provider import (
 )
 from arkclaw.infrastructure.llm.deepseek_sdk import DeepSeekClientFactory
 from arkclaw.infrastructure.llm.fake_provider import FakeProvider
+from arkclaw.infrastructure.llm.ollama_provider import OllamaProvider
 from arkclaw.infrastructure.llm.openai_provider import (
     OPENAI_MAXIMUM_CAPABILITIES,
     OpenAIProvider,
@@ -139,6 +141,20 @@ class _DeepSeekBuilder:
         )
 
 
+class _OllamaBuilder:
+    def build(
+        self,
+        profile: ProviderProfile,
+        options: ProviderBuildOptions,
+    ) -> LLMProvider:
+        return OllamaProvider(
+            profile=profile,
+            timeout_seconds=options.timeout_seconds,
+            max_retries=options.max_retries,
+            stream=options.stream,
+        )
+
+
 class ProviderFactory:
     """Compatibility facade that delegates profile creation to a registry."""
 
@@ -173,6 +189,11 @@ class ProviderFactory:
                 ApiProtocol.CHAT_COMPLETIONS,
                 _DeepSeekBuilder(deepseek_client_factory),
             )
+            registry.register(
+                OLLAMA_PROVIDER_ID,
+                ApiProtocol.OLLAMA_CHAT,
+                _OllamaBuilder(),
+            )
         self._registry = registry
 
     @property
@@ -191,11 +212,13 @@ class ProviderFactory:
         elif config.provider is ProviderName.DEEPSEEK:
             profile = deepseek_profile(config.deepseek_model)
             max_retries = config.deepseek_max_retries
-        else:
-            ollama_profile(
+        elif config.provider is ProviderName.OLLAMA:
+            profile = ollama_profile(
                 config.ollama_model,
                 config.ollama_base_url,
             )
+            max_retries = getattr(config, "ollama_max_retries", 2)
+        else:
             raise ProviderNotImplementedError(config.provider)
         return self.create_profile(
             profile,

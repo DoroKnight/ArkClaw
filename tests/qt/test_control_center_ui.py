@@ -18,6 +18,7 @@ from arkclaw.presentation.qt.theme.design_tokens import (
     ThemeVariant,
     load_design_tokens,
 )
+from arkclaw.presentation.qt.theme.theme_controller import QtTheme
 from arkclaw.presentation.qt.ui.control_center import (
     SCHWARZ_ACTIONS,
     ControlCenterView,
@@ -169,7 +170,7 @@ def test_context_menu_uses_arkclaw_action_deck_style(
     del qt_application
     menu = QMenu()
     requested: list[ProductionAction] = []
-    prepare_arkclaw_menu(menu, object_name="arkclawPetContextMenu")
+    prepare_arkclaw_menu(menu, object_name="arkclawPetContextMenu", theme=QtTheme.DARK)
     section = ProductionActionMenuSection(
         menu,
         request_action=requested.append,

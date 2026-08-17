@@ -332,3 +332,63 @@ def test_chat_work_theme_application(
     assert "composerCard" in page.styleSheet()
     page.dispose()
     _flush(QApplication.instance())
+
+
+def test_chat_work_mode_switch_and_capability_gating(
+    qt_application: QApplication, tokens
+) -> None:
+    from arkclaw.presentation.qt.dashboard.pages.chat_work_page import (
+        ChatWorkMode,
+    )
+
+    del qt_application
+    page = ChatWorkPage()
+    _show(page, QApplication.instance())
+    assert page.mode() is ChatWorkMode.CHAT
+    assert page.chat_mode_button().isChecked()
+    assert not page.work_mode_button().isChecked()
+    assert not page.work_gated_banner().isVisible()
+
+    spy = QSignalSpy(page.mode_changed)
+    page.work_mode_button().click()
+    assert spy.count() == 1
+    assert page.mode() is ChatWorkMode.WORK
+    assert page.work_mode_button().isChecked()
+    assert not page.chat_mode_button().isChecked()
+    assert page.work_gated_banner().isVisible()
+
+    page.chat_mode_button().click()
+    assert spy.count() == 2
+    assert page.mode() is ChatWorkMode.CHAT
+    assert not page.work_gated_banner().isVisible()
+
+    page.dispose()
+    _flush(QApplication.instance())
+
+
+def test_chat_work_tools_availability_and_banner_update(
+    qt_application: QApplication, tokens
+) -> None:
+    from arkclaw.application.tools.builtins import DateTimeTool
+    from arkclaw.presentation.qt.dashboard.pages.chat_work_page import (
+        ChatWorkMode,
+    )
+
+    del qt_application
+    page = ChatWorkPage()
+    _show(page, QApplication.instance())
+
+    page.set_mode(ChatWorkMode.WORK)
+    assert page.work_gated_banner().isVisible()
+    assert "Structured Workflows" in page._work_gated_title.text()
+
+    # Provide registered tools
+    tool = DateTimeTool()
+    page.set_available_tools([tool.spec()])
+    assert page.available_tools() == (tool.spec(),)
+    assert "Active" in page._work_gated_title.text()
+    assert "get_current_time" in page._work_gated_desc.text()
+
+    page.dispose()
+    _flush(QApplication.instance())
+

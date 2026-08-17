@@ -1345,8 +1345,8 @@ def test_startup_owner_keeps_agent_hidden_and_starts_pet_and_tray(
             events.append("lock_close")
 
     class FakePet:
-        def __init__(self, *, autostart_controller: object) -> None:
-            del autostart_controller
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            pass
 
         def show(self) -> None:
             events.append("pet")
@@ -1358,7 +1358,8 @@ def test_startup_owner_keeps_agent_hidden_and_starts_pet_and_tray(
             main_window: object,
             pet_window: object,
             *,
-            settings_controller: object,
+            settings_controller: object = None,
+            **kwargs: object,
         ) -> None:
             del bridge, main_window, pet_window
             events.append(

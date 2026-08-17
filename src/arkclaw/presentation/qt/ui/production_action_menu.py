@@ -16,19 +16,29 @@ from arkclaw.presentation.qt.theme.qt_theme import (
     build_menu_stylesheet,
 )
 
+__all__ = [
+    "ARKCLAW_MENU_STYLE",
+    "ProductionActionMenuSection",
+    "build_menu_stylesheet",
+    "prepare_arkclaw_menu",
+]
+
 # One token-generated menu language shared by the tray and pet context menus.
-# The dark surface language is preserved; the accent follows Visual Freeze
-# v1 so the desktop menu reflects the frozen identity (07 15, Slice 6B).
-ARKCLAW_MENU_STYLE = build_menu_stylesheet(QtTheme.DARK)
+ARKCLAW_MENU_STYLE = build_menu_stylesheet(QtTheme.LIGHT)
 
 
-def prepare_arkclaw_menu(menu: QMenu, *, object_name: str) -> None:
+def prepare_arkclaw_menu(
+    menu: QMenu,
+    *,
+    object_name: str,
+    theme: QtTheme | None = None,
+) -> None:
     """Apply one compact native-desktop visual language to an ArkClaw menu."""
 
     menu.setObjectName(object_name)
     menu.setMinimumWidth(244)
     menu.setToolTipsVisible(True)
-    menu.setStyleSheet(ARKCLAW_MENU_STYLE)
+    menu.setStyleSheet(build_menu_stylesheet(theme or QtTheme.LIGHT))
 
 
 class ProductionActionMenuSection:

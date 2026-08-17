@@ -115,6 +115,36 @@ class AgentEvent:
         return cls(type=AgentEventType.TURN_CANCELLED, turn_id=turn_id)
 
     @classmethod
+    def tool_started(cls, turn_id: str, tool_call: ToolCall) -> AgentEvent:
+        return cls(
+            type=AgentEventType.TOOL_STARTED,
+            turn_id=turn_id,
+            tool_call=tool_call,
+        )
+
+    @classmethod
+    def tool_finished(
+        cls,
+        turn_id: str,
+        tool_call: ToolCall,
+        text: str = "",
+    ) -> AgentEvent:
+        return cls(
+            type=AgentEventType.TOOL_FINISHED,
+            turn_id=turn_id,
+            tool_call=tool_call,
+            text=text,
+        )
+
+    @classmethod
+    def approval_required(cls, turn_id: str, tool_call: ToolCall) -> AgentEvent:
+        return cls(
+            type=AgentEventType.APPROVAL_REQUIRED,
+            turn_id=turn_id,
+            tool_call=tool_call,
+        )
+
+    @classmethod
     def failed(cls, turn_id: str, code: str, message: str) -> AgentEvent:
         return cls(
             type=AgentEventType.TURN_FAILED,

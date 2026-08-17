@@ -35,7 +35,6 @@ arkclaw-agent-demo = "arkclaw.__main__:main"
 [project.gui-scripts]
 arkclaw-gui = "arkclaw.presentation.qt.application:run"
 arkclaw-pet = "arkclaw.presentation.qt.pet_application:run"
-arkclaw-pet-placeholder = "arkclaw.presentation.qt.pet_application:run"
 
 [tool.setuptools]
 package-dir = { "" = "src" }
@@ -44,7 +43,7 @@ package-dir = { "" = "src" }
 where = ["src"]
 
 [tool.pytest.ini_options]
-addopts = "-ra"
+addopts = "-ra --basetemp=.pytest_tmp"
 pythonpath = ["src"]
 testpaths = ["tests"]
 

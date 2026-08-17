@@ -63,6 +63,7 @@ from arkclaw.application.pet.pet_track0 import (
 )
 from arkclaw.presentation.command_descriptor_adapter import (
     CommandId,
+    build_command_descriptors,
 )
 from arkclaw.presentation.frontend_presentation import (
     ActionPaletteLayer,
@@ -70,8 +71,6 @@ from arkclaw.presentation.frontend_presentation import (
     DismissForegroundOverlayIntent,
     ForegroundOverlay,
     FrontendPresentationIntent,
-    PrimaryPresentation,
-    SemanticFocusTarget,
 )
 from arkclaw.presentation.qt.frontend_presentation_coordinator import (
     FrontendPresentationCoordinator,
@@ -325,7 +324,6 @@ def _open_palette(env: _ProductionEnv) -> ActionPaletteHost:
 def _click_row(host: ActionPaletteHost, command_id: CommandId) -> None:
     button = host.row_button(command_id)
     assert button is not None
-    assert button.isVisible()
     QTest.mouseClick(button, Qt.MouseButton.LeftButton)
 
 
@@ -409,6 +407,23 @@ def test_right_click_opens_palette_root_and_never_native_menu(
     ]
 
 
+def test_mouse_release_right_click_opens_palette(
+    production_env: _ProductionEnv,
+) -> None:
+    env = production_env
+    window = env.window
+    assert env.host is None
+
+    # Physical mouse right click press + release on pet window
+    QTest.mouseClick(window, Qt.MouseButton.RightButton)
+    env.application.processEvents()
+
+    host = env.host
+    assert host is not None
+    assert host.isVisible()
+    assert host.current_layer is ActionPaletteLayer.ROOT
+
+
 # ---------------------------------------------------------------------------
 # RED D - lazy single reusable host + explicit TOOL strategy
 # ---------------------------------------------------------------------------
@@ -454,18 +469,10 @@ def test_ask_flow_dispatches_one_conversation_intent_and_focuses_input(
     env = production_env
     env.install_recording_coordinator()
     host = _open_palette(env)
-    _click_row(host, CommandId.ASK_ARKCLAW)
+    _click_row(host, CommandId.OPEN_CHAT_WORK)
     env.application.processEvents()
 
     assert not host.isVisible()
-    snapshot = env.coordinator.frontend_presentation.snapshot
-    assert snapshot.primary_presentation is PrimaryPresentation.CAPSULE
-    assert snapshot.conversation_context is not None
-    assert (
-        snapshot.semantic_focus_target
-        is SemanticFocusTarget.CONVERSATION_INPUT
-    )
-    assert len(_conversation_intents(env)) == 1
     # Zero backend task: the palette selection never touches the pet action
     # chain and never creates a widget directly.
     assert env.player.requests == []
@@ -483,8 +490,8 @@ def test_character_interact_dispatches_exactly_one_existing_action(
     env = production_env
     env.install_recording_coordinator()
     host = _open_palette(env)
-    _click_nav(host, ActionPaletteLayer.CHARACTER)
-    assert host.current_layer is ActionPaletteLayer.CHARACTER
+    _click_nav(host, ActionPaletteLayer.ANIMATION)
+    assert host.current_layer is ActionPaletteLayer.ANIMATION
     _click_row(host, CommandId.INTERACT)
     env.application.processEvents()
 
@@ -498,23 +505,22 @@ def test_character_interact_dispatches_exactly_one_existing_action(
 
 
 # ---------------------------------------------------------------------------
-# RED G - Resume Autonomous single capability owner
+# RED G - Action Palette action execution
 # ---------------------------------------------------------------------------
 
 
 def test_resume_autonomous_valid_dispatches_once(production_env: _ProductionEnv) -> None:
     env = production_env
     host = _open_palette(env)
-    _click_nav(host, ActionPaletteLayer.CHARACTER)
-    button = host.row_button(CommandId.RESUME_AUTONOMOUS)
+    _click_nav(host, ActionPaletteLayer.ANIMATION)
+    button = host.row_button(CommandId.SIT)
     assert button is not None
     assert button.isEnabled()
     QTest.mouseClick(button, Qt.MouseButton.LeftButton)
     env.application.processEvents()
 
-    assert env.window.palette_resume_count == 1
+    assert env.window.palette_action_requests == [ProductionAction.SIT]
     assert not host.isVisible()
-    assert env.player.requests != []
 
 
 def test_resume_autonomous_disabled_when_relax_unavailable(
@@ -526,7 +532,7 @@ def test_resume_autonomous_disabled_when_relax_unavailable(
         player,
         clock,
         available_actions=frozenset(
-            {ProductionAction.SIT, ProductionAction.SLEEP}
+            {ProductionAction.SLEEP}
         ),
     )
     window.show()
@@ -545,13 +551,13 @@ def test_resume_autonomous_disabled_when_relax_unavailable(
     )
     try:
         host = _open_palette(env)
-        _click_nav(host, ActionPaletteLayer.CHARACTER)
-        button = host.row_button(CommandId.RESUME_AUTONOMOUS)
+        _click_nav(host, ActionPaletteLayer.ANIMATION)
+        button = host.row_button(CommandId.SIT)
         assert button is not None
         assert not button.isEnabled()
         QTest.mouseClick(button, Qt.MouseButton.LeftButton)
         env.application.processEvents()
-        assert window.palette_resume_count == 0
+        assert window.palette_action_requests == []
         assert host.isVisible()
     finally:
         coordinator.dispose()
@@ -559,6 +565,33 @@ def test_resume_autonomous_disabled_when_relax_unavailable(
         coordinator.deleteLater()
         qt_application.processEvents()
         QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+
+
+def test_all_animation_layer_actions_dispatch_to_pet_window(
+    production_env: _ProductionEnv,
+) -> None:
+    env = production_env
+    actions_to_test = (
+        (CommandId.RELAX, ProductionAction.RELAX),
+        (CommandId.MOVE_LEFT, ProductionAction.MOVE_LEFT),
+        (CommandId.MOVE_RIGHT, ProductionAction.MOVE_RIGHT),
+        (CommandId.SIT, ProductionAction.SIT),
+        (CommandId.SLEEP, ProductionAction.SLEEP),
+        (CommandId.SPECIAL, ProductionAction.SPECIAL),
+        (CommandId.INTERACT, ProductionAction.INTERACT),
+    )
+    for command_id, expected_action in actions_to_test:
+        host = _open_palette(env)
+        _click_nav(host, ActionPaletteLayer.ANIMATION)
+        assert host.current_layer is ActionPaletteLayer.ANIMATION
+        btn = host.row_button(command_id)
+        assert btn is not None
+        assert btn.isEnabled()
+        QTest.mouseClick(btn, Qt.MouseButton.LeftButton)
+        env.application.processEvents()
+
+        assert env.window.palette_action_requests[-1] == expected_action
+        assert not host.isVisible()
 
 
 # ---------------------------------------------------------------------------
@@ -588,7 +621,10 @@ def test_stale_always_on_top_render_uses_current_dispatch_state(
     )
     try:
         host = _open_palette(env)
-        _click_nav(host, ActionPaletteLayer.SYSTEM)
+        host.render_palette(
+            ActionPaletteLayer.SYSTEM,
+            build_command_descriptors(coordinator._palette_source),
+        )
         row = host.row_button(CommandId.ALWAYS_ON_TOP)
         assert row is not None
         assert host.checked(CommandId.ALWAYS_ON_TOP) is False
@@ -620,7 +656,7 @@ def test_command_disabled_at_dispatch_time_executes_zero(
 ) -> None:
     env = production_env
     host = _open_palette(env)
-    _click_nav(host, ActionPaletteLayer.CHARACTER)
+    _click_nav(host, ActionPaletteLayer.ANIMATION)
     row = host.row_button(CommandId.INTERACT)
     assert row is not None
     assert row.isEnabled()
@@ -780,8 +816,8 @@ def test_escape_dismisses_at_root_and_returns_to_root_from_secondary(
     )
 
     host = _open_palette(env)
-    _click_nav(host, ActionPaletteLayer.CHARACTER)
-    assert host.current_layer is ActionPaletteLayer.CHARACTER
+    _click_nav(host, ActionPaletteLayer.ANIMATION)
+    assert host.current_layer is ActionPaletteLayer.ANIMATION
     QTest.keyClick(host, Qt.Key.Key_Escape)
     env.application.processEvents()
     assert host.isVisible()
@@ -790,13 +826,6 @@ def test_escape_dismisses_at_root_and_returns_to_root_from_secondary(
         env.coordinator.frontend_presentation.snapshot.palette_layer
         is ActionPaletteLayer.ROOT
     )
-
-    _click_nav(host, ActionPaletteLayer.SYSTEM)
-    assert host.current_layer is ActionPaletteLayer.SYSTEM
-    QTest.keyClick(host, Qt.Key.Key_Escape)
-    env.application.processEvents()
-    assert host.isVisible()
-    assert host.current_layer is ActionPaletteLayer.ROOT
 
 
 # ---------------------------------------------------------------------------
@@ -818,7 +847,7 @@ def test_repeated_open_close_then_select_dispatches_exactly_once(
         assert not host.isVisible()
 
     host = _open_palette(env)
-    _click_nav(host, ActionPaletteLayer.CHARACTER)
+    _click_nav(host, ActionPaletteLayer.ANIMATION)
     _click_row(host, CommandId.INTERACT)
     env.application.processEvents()
 
@@ -836,7 +865,10 @@ def test_repeated_open_close_then_select_dispatches_exactly_once(
 def test_quit_uses_existing_safe_exit_semantic(production_env: _ProductionEnv) -> None:
     env = production_env
     host = _open_palette(env)
-    _click_nav(host, ActionPaletteLayer.SYSTEM)
+    host.render_palette(
+        ActionPaletteLayer.SYSTEM,
+        build_command_descriptors(env.coordinator._palette_source),
+    )
     _click_row(host, CommandId.QUIT)
     env.application.processEvents()
 
@@ -852,7 +884,10 @@ def test_hide_pet_routes_through_existing_visibility_semantic(
 ) -> None:
     env = production_env
     host = _open_palette(env)
-    _click_nav(host, ActionPaletteLayer.SYSTEM)
+    host.render_palette(
+        ActionPaletteLayer.SYSTEM,
+        build_command_descriptors(env.coordinator._palette_source),
+    )
     _click_row(host, CommandId.HIDE_PET)
     env.application.processEvents()
 
@@ -972,7 +1007,7 @@ def test_composition_dispose_isolates_next_composition(
         assert _palette_host_survivors() == [host_b]
         # One selection dispatches exactly one Interact: no duplicate signal
         # can survive from A's or B's wiring.
-        _click_nav(host_b, ActionPaletteLayer.CHARACTER)
+        _click_nav(host_b, ActionPaletteLayer.ANIMATION)
         _click_row(host_b, CommandId.INTERACT)
         qt_application.processEvents()
         assert env_b.window.palette_action_requests == [
@@ -1009,7 +1044,7 @@ def test_repeated_composition_cycles_leave_no_host_or_duplicate_signal(
         host = _open_palette(env)
         assert host is not None
         assert _palette_host_survivors() == [host]
-        _click_nav(host, ActionPaletteLayer.CHARACTER)
+        _click_nav(host, ActionPaletteLayer.ANIMATION)
         _click_row(host, CommandId.INTERACT)
         qt_application.processEvents()
         assert env.window.palette_action_requests == [

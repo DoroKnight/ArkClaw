@@ -150,13 +150,48 @@ def test_sit_fails_closed_when_full_surface_does_not_fit_display() -> None:
         _envelope(Rect(-15.0, 68.0, 161.0, 143.0)),
         policy=RenderContainmentPolicy.SIT_FULL_SAMPLED_BOUNDS,
         body=Rect(500.0, 839.0, 160.0, 180.0),
-        workspace=Rect(0.0, 0.0, 1707.0, 1019.0),
-        display=Rect(0.0, 0.0, 1707.0, 1051.0),
+        workspace=Rect(0.0, 0.0, 1707.0, 800.0),
+        display=Rect(0.0, 0.0, 1707.0, 800.0),
     )
 
     assert result == PetRenderLayoutFailure(
         PetRenderLayoutFailureReason.SIT_DISPLAY_FIT_INFEASIBLE
     )
+
+
+@pytest.mark.parametrize(
+    ("placement_name", "body"),
+    [
+        ("center", Rect(500.0, 839.0, 160.0, 180.0)),
+        ("left_edge", Rect(0.0, 839.0, 160.0, 180.0)),
+        ("right_edge", Rect(1547.0, 839.0, 160.0, 180.0)),
+        ("bottom_edge", Rect(500.0, 887.0, 160.0, 180.0)),
+    ],
+)
+def test_sit_succeeds_at_all_four_boundary_placements(
+    placement_name: str, body: Rect
+) -> None:
+    del placement_name
+    display = Rect(0.0, 0.0, 1707.0, 1067.0)
+    workspace = Rect(0.0, 0.0, 1707.0, 1019.0)
+    result = _plan(
+        _envelope(Rect(-15.0, 68.0, 161.0, 143.0)),
+        policy=RenderContainmentPolicy.SIT_FULL_SAMPLED_BOUNDS,
+        body=body,
+        workspace=workspace,
+        display=display,
+    )
+
+    assert isinstance(result, PetRenderLayout)
+    assert result.scale_multiplier == 1.0
+    # Invariant: zero semantic displacement of the character body
+    assert result.resolved_body_position == Point(body.x, body.y)
+    # Invariant: overlay surface is completely contained in display
+    assert result.surface_rect.x >= display.x
+    assert result.surface_rect.y >= display.y
+    assert result.surface_rect.right <= display.right
+    assert result.surface_rect.bottom <= display.bottom
+
 
 
 @pytest.mark.parametrize("dpr", [1.0, 1.25, 1.5, 2.0])

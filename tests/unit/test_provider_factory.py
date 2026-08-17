@@ -1,6 +1,5 @@
 import asyncio
 
-import pytest
 from tests.fakes.openai_sdk import (
     FakeOpenAIClientFactory,
     FakeOpenAIScenario,
@@ -19,7 +18,6 @@ from arkclaw.infrastructure.llm.openai_sdk import (
 )
 from arkclaw.infrastructure.llm.provider_factory import (
     ProviderFactory,
-    ProviderNotImplementedError,
 )
 
 
@@ -160,9 +158,16 @@ def test_factory_fake_provider_never_reads_injected_secret_store() -> None:
     asyncio.run(provider.aclose())
 
 
-def test_ollama_provider_remains_explicitly_unimplemented() -> None:
-    with pytest.raises(
-        ProviderNotImplementedError,
-        match=r"Provider 'ollama'.*not implemented",
-    ):
-        ProviderFactory().create(RuntimeConfig(provider=ProviderName.OLLAMA))
+def test_ollama_provider_is_created_by_factory() -> None:
+    from arkclaw.infrastructure.llm.ollama_provider import OllamaProvider
+
+    provider = ProviderFactory().create(
+        RuntimeConfig(
+            provider=ProviderName.OLLAMA,
+            ollama_model="llama3",
+            ollama_base_url="http://localhost:11434",
+        )
+    )
+    assert isinstance(provider, OllamaProvider)
+    assert provider.name == "ollama-llama3"
+    asyncio.run(provider.aclose())

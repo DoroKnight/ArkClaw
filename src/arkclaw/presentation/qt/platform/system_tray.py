@@ -19,11 +19,13 @@ from arkclaw.application.system.autostart_service import (
     AutostartSnapshot,
     AutostartStatus,
 )
+from arkclaw.presentation.qt.theme.qt_theme import QtTheme
 from arkclaw.presentation.qt.ui.autostart_controller import (
     AutostartUiController,
 )
 from arkclaw.presentation.qt.ui.production_action_menu import (
     ProductionActionMenuSection,
+    build_menu_stylesheet,
     prepare_arkclaw_menu,
 )
 
@@ -251,6 +253,13 @@ class _QtSystemTrayView:
                 closing=state.closing,
             )
 
+    def set_theme(self, theme: QtTheme) -> None:
+        if self._closed:
+            return
+        self._menu.setStyleSheet(build_menu_stylesheet(theme))
+        if self._move_menu is not None:
+            self._move_menu.setStyleSheet(build_menu_stylesheet(theme))
+
     def close(self) -> None:
         if self._closed:
             return
@@ -368,6 +377,13 @@ class SystemTrayController(QObject):
     @property
     def cleanup_pending(self) -> bool:
         return self._cleanup_pending_view is not None
+
+    def set_theme(self, theme: QtTheme) -> None:
+        if self._closed or self._view is None:
+            return
+        set_view_theme = getattr(self._view, "set_theme", None)
+        if callable(set_view_theme):
+            set_view_theme(theme)
 
     def refresh(self) -> None:
         if (

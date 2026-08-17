@@ -63,11 +63,13 @@ _OPTIONS = ProviderActivationOptions(
 
 @pytest.fixture(scope="module")
 def qcore_application() -> Iterator[QCoreApplication]:
+    from PySide6.QtWidgets import QApplication
+
     existing = QCoreApplication.instance()
     app = (
         existing
         if isinstance(existing, QCoreApplication)
-        else QCoreApplication([])
+        else (QApplication.instance() or QApplication([]))
     )
     yield app
 

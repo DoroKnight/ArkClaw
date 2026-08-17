@@ -224,6 +224,7 @@ class PetWindow(QWidget):
         self._allow_final_close = False
         self._exit_emitted = False
         self._drag_offset: Point | None = None
+        self._right_press_pos: Point | None = None
         self._pointer_gesture = PetPointerGesture()
         self._context_menu: QMenu | None = None
         self._production_action_section: ProductionActionMenuSection | None = None
@@ -586,6 +587,17 @@ class PetWindow(QWidget):
             )
             event.accept()
             return
+        if (
+            event.button() is Qt.MouseButton.RightButton
+            and self._animation.motion.accepts_interaction
+        ):
+            global_position = event.globalPosition()
+            self._right_press_pos = Point(
+                global_position.x(),
+                global_position.y(),
+            )
+            event.accept()
+            return
         event.ignore()
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
@@ -650,9 +662,27 @@ class PetWindow(QWidget):
                 self.request_user_pet_action(ProductionAction.INTERACT)
                 event.accept()
                 return
+        if event.button() is Qt.MouseButton.RightButton:
+            press_pos = self._right_press_pos
+            self._right_press_pos = None
+            if (
+                press_pos is not None
+                and self._animation.motion.accepts_interaction
+            ):
+                global_position = event.globalPosition()
+                distance = abs(global_position.x() - press_pos.x) + abs(
+                    global_position.y() - press_pos.y
+                )
+                if distance <= float(QApplication.startDragDistance()):
+                    event.accept()
+                    self.action_palette_requested.emit()
+                    return
+            event.ignore()
+            return
         event.ignore()
 
     def _cancel_pointer_gesture(self, reason: GestureCancelReason) -> None:
+        self._right_press_pos = None
         decision = self._pointer_gesture.cancel(reason)
         self._drag_offset = None
         if decision is GestureDecision.RELEASE_ACTIVE_DRAG:
@@ -674,6 +704,7 @@ class PetWindow(QWidget):
         if self.lifecycle_state is PetLifecycleState.CLOSING:
             event.ignore()
             return
+        self._right_press_pos = None
         event.accept()
         self.action_palette_requested.emit()
 

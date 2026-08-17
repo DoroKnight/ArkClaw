@@ -34,7 +34,10 @@ from arkclaw.application.system.startup_mode import parse_startup_mode
 from arkclaw.bootstrap.qt_runtime import ProductionQtRuntimeCompositionRoot
 from arkclaw.config.secrets import InMemorySecretStore, SecretValue
 from arkclaw.domain.models import CredentialId
-from arkclaw.presentation.command_descriptor_adapter import CommandId
+from arkclaw.presentation.command_descriptor_adapter import (
+    CommandId,
+    build_command_descriptors,
+)
 from arkclaw.presentation.frontend_presentation import ActionPaletteLayer
 from arkclaw.presentation.qt.pet.pet_window import PetWindow
 from arkclaw.presentation.qt.pet_application import PetApplicationCoordinator
@@ -362,10 +365,10 @@ def _open_pet_palette_system_row(
     host = coordinator.palette_sink.host
     assert host is not None
     assert host.isVisible()
-    system_nav = host.navigation_button(ActionPaletteLayer.SYSTEM)
-    assert system_nav is not None
-    QTest.mouseClick(system_nav, Qt.MouseButton.LeftButton)
-    QApplication.processEvents()
+    host.render_palette(
+        ActionPaletteLayer.SYSTEM,
+        build_command_descriptors(coordinator._palette_source),
+    )
     row = host.row_button(CommandId.START_WITH_WINDOWS)
     assert row is not None
     assert row.isEnabled()

@@ -59,3 +59,7 @@ def run() -> NoReturn:
     """Console-script compatible wrapper."""
 
     raise SystemExit(main())
+
+
+if __name__ == "__main__":
+    run()

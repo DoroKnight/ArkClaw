@@ -1,4 +1,4 @@
-﻿"""Slice 6A - Palette native window strategy seam (spike, harness only).
+"""Slice 6A - Palette native window strategy seam (spike, harness only).
 
 Authority: 08 15.1 (Slice 6A Tool-vs-Popup native spike), 07 23.
 The window strategy is a spike-only seam: flags are applied once at
@@ -21,9 +21,9 @@ import pytest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QCoreApplication, QEvent, Qt
 from PySide6.QtTest import QSignalSpy, QTest
-from PySide6.QtWidgets import QApplication, QPushButton
+from PySide6.QtWidgets import QApplication, QWidget
 
 from arkclaw.presentation.command_descriptor_adapter import (
     CommandDescriptor,
@@ -112,14 +112,20 @@ def test_strategy_enum_exposes_tool_and_popup() -> None:
     assert ActionPaletteWindowStrategy.POPUP is not None
 
 
+def _cleanup_widget(widget: QWidget) -> None:
+    widget.close()
+    widget.deleteLater()
+    QApplication.instance().processEvents()
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+
+
 def test_tool_strategy_applies_tool_flags_at_construction(
     qt_application: QApplication,
 ) -> None:
     del qt_application
     host = ActionPaletteHost(strategy=ActionPaletteWindowStrategy.TOOL)
     _assert_strategy_flags(host, ActionPaletteWindowStrategy.TOOL)
-    host.close()
-    host.deleteLater()
+    _cleanup_widget(host)
 
 
 def test_popup_strategy_applies_popup_flags_at_construction(
@@ -128,8 +134,7 @@ def test_popup_strategy_applies_popup_flags_at_construction(
     del qt_application
     host = ActionPaletteHost(strategy=ActionPaletteWindowStrategy.POPUP)
     _assert_strategy_flags(host, ActionPaletteWindowStrategy.POPUP)
-    host.close()
-    host.deleteLater()
+    _cleanup_widget(host)
 
 
 def test_default_strategy_remains_tool(
@@ -138,8 +143,7 @@ def test_default_strategy_remains_tool(
     del qt_application
     host = ActionPaletteHost()
     _assert_strategy_flags(host, ActionPaletteWindowStrategy.TOOL)
-    host.close()
-    host.deleteLater()
+    _cleanup_widget(host)
 
 
 def test_render_never_restyles_window_flags(
@@ -154,8 +158,7 @@ def test_render_never_restyles_window_flags(
     assert host.windowFlags() == before
     host.render_palette(ActionPaletteLayer.SYSTEM, _renderable_descriptors())
     assert host.windowFlags() == before
-    host.close()
-    host.deleteLater()
+    _cleanup_widget(host)
 
 
 # --- RED B: sink forwards the strategy to the one lazy host ---
@@ -174,8 +177,9 @@ def test_sink_forwards_strategy_to_lazy_host(
     host = sink.host
     assert host is not None
     _assert_strategy_flags(host, ActionPaletteWindowStrategy.TOOL)
-    host.close()
-    host.deleteLater()
+    sink.dispose()
+    QApplication.instance().processEvents()
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
 
 
 # --- RED C: POPUP strategy preserves the frozen 5B rendering/selection ---
@@ -188,11 +192,12 @@ def test_popup_strategy_preserves_5b_rendering_and_selection(
     host.render_palette(ActionPaletteLayer.ROOT, _renderable_descriptors())
     assert host.current_layer is ActionPaletteLayer.ROOT
     assert host.items == (
-        ("command", CommandId.ASK_ARKCLAW),
-        ("nav", ActionPaletteLayer.CHARACTER),
-        ("nav", ActionPaletteLayer.SYSTEM),
+        ("command", CommandId.OPEN_CHAT_WORK),
+        ("command", CommandId.OPEN_CHARACTER_ANIMATION),
+        ("nav", ActionPaletteLayer.ANIMATION),
+        ("command", CommandId.OPEN_SETTINGS),
     )
-    ask = host.row_button(CommandId.ASK_ARKCLAW)
+    ask = host.row_button(CommandId.OPEN_CHAT_WORK)
     assert ask is not None
     assert ask.text() == "Ask ArkClaw"
     assert ask.isEnabled()
@@ -200,18 +205,13 @@ def test_popup_strategy_preserves_5b_rendering_and_selection(
     spy = QSignalSpy(host.command_selected)
     QTest.mouseClick(ask, Qt.MouseButton.LeftButton)
     assert spy.count() == 1
-    assert spy.at(0)[0] == CommandId.ASK_ARKCLAW
+    assert spy.at(0)[0] == CommandId.OPEN_CHAT_WORK
 
     host.render_palette(
-        ActionPaletteLayer.CHARACTER,
+        ActionPaletteLayer.ANIMATION,
         _renderable_descriptors(),
     )
-    assert host.items == (
-        ("command", CommandId.INTERACT),
-        ("nav", ActionPaletteLayer.ROOT),
-    )
+    assert host.items[0] == ("nav", ActionPaletteLayer.ROOT)
     interact = host.row_button(CommandId.INTERACT)
     assert interact is not None
-    assert len(host.findChildren(QPushButton)) == 2
-    host.close()
-    host.deleteLater()
+    _cleanup_widget(host)

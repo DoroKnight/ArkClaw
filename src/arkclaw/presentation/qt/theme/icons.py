@@ -61,6 +61,9 @@ class IconKind(StrEnum):
     ACTIVITY_FUTURE = "activity_future"
     ACTIVITY_ERROR = "activity_error"
     ACTIVITY_WARNING = "activity_warning"
+    ANIMATION = "animation"
+    SUN = "sun"
+    MOON = "moon"
 
 
 _INVENTORY_KINDS = (
@@ -204,9 +207,42 @@ def _build_icon(kind: IconKind) -> tuple[QPainterPath, bool]:
         IconKind.ACTIVITY_FUTURE: _path_activity_future,
         IconKind.ACTIVITY_ERROR: _path_activity_error,
         IconKind.ACTIVITY_WARNING: _path_activity_warning,
+        IconKind.ANIMATION: _path_animation,
+        IconKind.SUN: _path_sun,
+        IconKind.MOON: _path_moon,
     }
     builder = builders[kind]
     return builder(), kind in _FILLED_KINDS
+
+
+def _path_animation() -> QPainterPath:
+    path = QPainterPath()
+    path.addRoundedRect(QRectF(3.0, 4.0, 14.0, 12.0), 2.0, 2.0)
+    path.moveTo(8.0, 7.5)
+    path.lineTo(13.5, 10.0)
+    path.lineTo(8.0, 12.5)
+    path.closeSubpath()
+    return path
+
+
+def _path_sun() -> QPainterPath:
+    path = QPainterPath()
+    path.addEllipse(QRectF(6.5, 6.5, 7.0, 7.0))
+    for index in range(8):
+        angle = math.radians(index * 45.0)
+        cos, sin = math.cos(angle), math.sin(angle)
+        path.moveTo(10.0 + 5.0 * cos, 10.0 + 5.0 * sin)
+        path.lineTo(10.0 + 7.5 * cos, 10.0 + 7.5 * sin)
+    return path
+
+
+def _path_moon() -> QPainterPath:
+    path = QPainterPath()
+    path.moveTo(15.5, 12.0)
+    path.arcTo(QRectF(4.0, 4.0, 12.0, 12.0), 300.0, 260.0)
+    path.arcTo(QRectF(7.0, 5.0, 9.0, 9.0), 180.0, -140.0)
+    path.closeSubpath()
+    return path
 
 
 def _path_home() -> QPainterPath:

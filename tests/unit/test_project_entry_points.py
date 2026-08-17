@@ -18,7 +18,4 @@ def test_console_and_gui_entry_points_keep_reviewed_names_and_roles() -> None:
     assert project["gui-scripts"] == {
         "arkclaw-gui": "arkclaw.presentation.qt.application:run",
         "arkclaw-pet": "arkclaw.presentation.qt.pet_application:run",
-        "arkclaw-pet-placeholder": (
-            "arkclaw.presentation.qt.pet_application:run"
-        ),
     }

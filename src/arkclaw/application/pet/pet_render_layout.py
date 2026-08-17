@@ -271,8 +271,37 @@ def plan_pet_render_layout(
         if isinstance(result, PetRenderLayoutFailure):
             return result
         if not _contains(display, result.surface_rect):
-            return PetRenderLayoutFailure(
-                PetRenderLayoutFailureReason.SIT_DISPLAY_FIT_INFEASIBLE
+            if not _contains(display, body_rect):
+                return PetRenderLayoutFailure(
+                    PetRenderLayoutFailureReason.SIT_DISPLAY_FIT_INFEASIBLE
+                )
+            contained_left = max(display.x, result.surface_rect.x)
+            contained_top = max(display.y, result.surface_rect.y)
+            contained_right = min(display.right, result.surface_rect.right)
+            contained_bottom = min(display.bottom, result.surface_rect.bottom)
+            if contained_left >= contained_right or contained_top >= contained_bottom:
+                return PetRenderLayoutFailure(
+                    PetRenderLayoutFailureReason.SIT_DISPLAY_FIT_INFEASIBLE
+                )
+            contained_surface = Rect(
+                contained_left,
+                contained_top,
+                contained_right - contained_left,
+                contained_bottom - contained_top,
+            )
+            offset = Point(
+                body_rect.x - contained_surface.x,
+                body_rect.y - contained_surface.y,
+            )
+            return PetRenderLayout(
+                PetRenderSurfaceMode.OVERFLOW,
+                contained_surface,
+                offset,
+                Point(body_rect.x, body_rect.y),
+                corrected.correction,
+                preferred_facing,
+                1.0,
+                PetRenderLayoutQuality.FULL_SCALE,
             )
         return result
     if policy is RenderContainmentPolicy.BODY_PRIORITY:

@@ -72,8 +72,6 @@ def build_menu_stylesheet(
     """
     source = tokens if tokens is not None else load_design_tokens()
     colors = source.theme(ThemeVariant(theme.value))
-    navigation = source.typography["navigation"]
-    body = source.typography["body"]
     font_family = ", ".join(f'"{family}"' for family in source.font_family)
     rules: list[str] = []
     rule = _add_rule(rules)
@@ -89,20 +87,21 @@ def build_menu_stylesheet(
             "color": colors.text.primary,
             "border": f"1px solid {colors.border.default}",
             "border-radius": f"{source.radius['button']}px",
-            "padding": "8px",
+            "padding": "4px",
             "font-family": font_family,
-            "font-size": f"{navigation[0]}px",
+            "font-size": "12px",
         },
     )
     rule(
         "QMenu::item",
         {
-            "min-width": "210px",
-            "min-height": f"{int(body[0]) + 12}px",
-            "padding": "4px 30px 4px 12px",
+            "min-width": "180px",
+            "min-height": "24px",
+            "padding": "3px 20px 3px 10px",
             "margin": "1px 0",
             "border-radius": f"{source.radius['navigation_row'] // 2}px",
             "color": colors.text.primary,
+            "font-size": "12px",
         },
     )
     rule(
@@ -121,23 +120,35 @@ def build_menu_stylesheet(
         {
             "height": "1px",
             "background": colors.border.divider,
-            "margin": "6px 8px",
+            "margin": "4px 6px",
         },
     )
     rule(
         "QMenu::indicator",
         {
-            "width": "14px",
-            "height": "14px",
-            "left": "10px",
+            "width": "8px",
+            "height": "8px",
+            "margin-left": "6px",
+            "background": "transparent",
         },
     )
     rule(
         "QMenu::indicator:checked",
         {
             "background": colors.accent.default,
-            "border": f"2px solid {colors.text.primary}",
-            "border-radius": "3px",
+            "border": "none",
+            "border-radius": "4px",
+            "width": "8px",
+            "height": "8px",
+        },
+    )
+    rule(
+        "QMenu::indicator:unchecked",
+        {
+            "background": "transparent",
+            "border": "none",
+            "width": "8px",
+            "height": "8px",
         },
     )
     rule(
@@ -145,7 +156,7 @@ def build_menu_stylesheet(
         {
             "width": "6px",
             "height": "10px",
-            "margin-right": "8px",
+            "margin-right": "6px",
         },
     )
     return "\n".join(rules)
@@ -364,7 +375,7 @@ def _compose(
         },
     )
     rule(
-        "QFrame#previewFrame",
+        "QFrame#previewFrame, QFrame#stageFrame, QWidget#stageBackgroundWidget",
         {
             "background": colors.surface.surface_card,
             "border": f"1px solid {colors.border.default}",
@@ -372,11 +383,18 @@ def _compose(
         },
     )
     rule(
+        "QScrollArea#animationScrollArea, QScrollArea#animationScrollArea > QWidget > QWidget",
+        {
+            "background": "transparent",
+            "border": "none",
+        },
+    )
+    rule(
         "QWidget#characterCard, QWidget#animationCard",
         {
             "background": colors.surface.surface_card,
             "border": f"1px solid {colors.border.default}",
-            "border-radius": f"{radius['card']}px",
+            "border-radius": "8px",
         },
     )
     rule(
@@ -391,8 +409,69 @@ def _compose(
         'QWidget#characterCard[selected="true"], '
         'QWidget#animationCard[selected="true"]',
         {
-            "border": f"2px solid {colors.accent.default}",
+            "border": f"1px solid {colors.accent.default}",
+            "background": colors.accent.soft,
+        },
+    )
+    rule(
+        'QWidget#animationCard[selected="true"] QLabel#textPrimary',
+        {
+            "color": colors.accent.default,
+            "font-weight": "700",
+        },
+    )
+    rule(
+        'QWidget#animationCard[selected="true"] QLabel#animIndicator',
+        {
+            "color": colors.accent.default,
+            "font-weight": "700",
+        },
+    )
+    rule(
+        'QWidget#animationCard[selected="true"] QLabel#animSubtitle',
+        {
+            "color": colors.text.secondary,
+        },
+    )
+    rule(
+        "QFrame#animIconBadge",
+        {
             "background": colors.surface.surface_hover,
+            "border": f"1px solid {colors.border.default}",
+            "border-radius": "6px",
+        },
+    )
+    rule(
+        'QWidget#animationCard[selected="true"] QFrame#animIconBadge',
+        {
+            "background": colors.surface.surface_card,
+            "border": f"1px solid {colors.accent.default}",
+        },
+    )
+    rule(
+        "QLabel#animSubtitle",
+        {
+            "color": colors.text.secondary,
+            "font-size": "11px",
+            "background": "transparent",
+            "border": "none",
+        },
+    )
+    rule(
+        "QLabel#animIndicator",
+        {
+            "color": colors.text.tertiary,
+            "font-size": "11px",
+            "background": "transparent",
+            "border": "none",
+        },
+    )
+    rule(
+        "QLabel#animIconLabel",
+        {
+            "font-size": "15px",
+            "background": "transparent",
+            "border": "none",
         },
     )
     rule(
@@ -618,7 +697,7 @@ def _compose(
         },
     )
     rule(
-        "QComboBox#themeCombo",
+        "QComboBox#themeCombo, QComboBox#providerCombo",
         {
             "background": colors.surface.surface_input,
             "border": f"1px solid {colors.border.default}",
@@ -627,6 +706,17 @@ def _compose(
             "color": colors.text.primary,
             "font-size": f"{body[0]}px",
             "min-width": "100px",
+        },
+    )
+    rule(
+        "QLineEdit#baseUrlEdit, QLineEdit#modelEdit, QLineEdit#apiKeyEdit",
+        {
+            "background": colors.surface.surface_input,
+            "border": f"1px solid {colors.border.default}",
+            "border-radius": f"{radius['button']}px",
+            "padding": "4px 10px",
+            "color": colors.text.primary,
+            "font-size": f"{body[0]}px",
         },
     )
     rule(
@@ -643,7 +733,7 @@ def _compose(
     palette_border_width = int(palette["border_width"])
     palette_focus_width = int(palette["focus_width"])
     rule(
-        "QWidget#ActionPaletteHost",
+        "QWidget#ActionPaletteHost, QWidget#ActionPaletteSubHost",
         {
             "background": colors.surface.surface,
             "color": colors.text.primary,
@@ -656,7 +746,7 @@ def _compose(
         },
     )
     rule(
-        "QWidget#ActionPaletteHost QPushButton",
+        "QWidget#ActionPaletteHost QPushButton, QWidget#ActionPaletteSubHost QPushButton",
         {
             "background": "transparent",
             "border": "1px solid transparent",
@@ -670,22 +760,34 @@ def _compose(
         },
     )
     rule(
-        "QWidget#ActionPaletteHost QPushButton:hover",
+        (
+            "QWidget#ActionPaletteHost QPushButton:hover,\n"
+            "QWidget#ActionPaletteSubHost QPushButton:hover"
+        ),
         {
             "background": colors.surface.surface_hover,
             "color": colors.text.primary,
         },
     )
     rule(
-        "QWidget#ActionPaletteHost QPushButton:pressed",
+        (
+            "QWidget#ActionPaletteHost QPushButton:pressed,\n"
+            "QWidget#ActionPaletteSubHost QPushButton:pressed"
+        ),
         {"background": colors.surface.surface_active},
     )
     rule(
-        "QWidget#ActionPaletteHost QPushButton:focus",
+        (
+            "QWidget#ActionPaletteHost QPushButton:focus,\n"
+            "QWidget#ActionPaletteSubHost QPushButton:focus"
+        ),
         {"border": f"{palette_focus_width}px solid {colors.focus}"},
     )
     rule(
-        "QWidget#ActionPaletteHost QPushButton:disabled",
+        (
+            "QWidget#ActionPaletteHost QPushButton:disabled,\n"
+            "QWidget#ActionPaletteSubHost QPushButton:disabled"
+        ),
         {"color": colors.text.disabled},
     )
     return "\n".join(rules)

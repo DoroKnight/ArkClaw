@@ -53,6 +53,9 @@ class CommandId(StrEnum):
     """Stable semantic identity of each frozen Palette command."""
 
     ASK_ARKCLAW = "ask_arkclaw"
+    OPEN_CHAT_WORK = "open_chat_work"
+    OPEN_CHARACTER_ANIMATION = "open_character_animation"
+    OPEN_SETTINGS = "open_settings"
     PAUSE_CONTINUE = "pause_continue"
     RESUME_AUTONOMOUS = "resume_autonomous"
     RELAX = "relax"
@@ -76,6 +79,9 @@ class CommandInvokeIntent(StrEnum):
     """
 
     CONVERSATION_OPEN_OR_RESTORE = "conversation_open_or_restore"
+    OPEN_CHAT_WORK = "open_chat_work"
+    OPEN_CHARACTER_ANIMATION = "open_character_animation"
+    OPEN_SETTINGS = "open_settings"
     PRODUCTION_ACTION = "production_action"
     RESUME_AUTONOMOUS = "resume_autonomous"
     TOGGLE_PAUSED = "toggle_paused"
@@ -90,6 +96,9 @@ class CommandInvokeIntent(StrEnum):
 # no second, drifting command_id -> invoke_intent claim can exist.
 _COMMAND_INVOKE_INTENT_BY_COMMAND_ID: dict[CommandId, CommandInvokeIntent] = {
     CommandId.ASK_ARKCLAW: CommandInvokeIntent.CONVERSATION_OPEN_OR_RESTORE,
+    CommandId.OPEN_CHAT_WORK: CommandInvokeIntent.OPEN_CHAT_WORK,
+    CommandId.OPEN_CHARACTER_ANIMATION: CommandInvokeIntent.OPEN_CHARACTER_ANIMATION,
+    CommandId.OPEN_SETTINGS: CommandInvokeIntent.OPEN_SETTINGS,
     CommandId.PAUSE_CONTINUE: CommandInvokeIntent.TOGGLE_PAUSED,
     CommandId.RESUME_AUTONOMOUS: CommandInvokeIntent.RESUME_AUTONOMOUS,
     CommandId.RELAX: CommandInvokeIntent.PRODUCTION_ACTION,
@@ -196,6 +205,12 @@ class CommandDispatcher(Protocol):
 
     def open_agent_window(self) -> None: ...
 
+    def open_chat_work(self) -> None: ...
+
+    def open_character_animation(self) -> None: ...
+
+    def open_settings(self) -> None: ...
+
     def toggle_pet_visibility(self) -> None: ...
 
     def request_safe_exit(self) -> None: ...
@@ -283,7 +298,7 @@ def build_command_descriptors(
                 CommandId.ASK_ARKCLAW
             ],
             disabled_reason=_REASON_PET_CLOSING if closing else None,
-        )
+        ),
     ]
     descriptors.append(
         CommandDescriptor(
@@ -417,6 +432,15 @@ def dispatch_command_descriptor(
             f"{descriptor.command_id!r} -> invoke_intent "
             f"{descriptor.invoke_intent!r} (expected {intent!r})"
         )
+    if intent is CommandInvokeIntent.OPEN_CHAT_WORK:
+        dispatcher.open_chat_work()
+        return None
+    if intent is CommandInvokeIntent.OPEN_CHARACTER_ANIMATION:
+        dispatcher.open_character_animation()
+        return None
+    if intent is CommandInvokeIntent.OPEN_SETTINGS:
+        dispatcher.open_settings()
+        return None
     if intent is CommandInvokeIntent.CONVERSATION_OPEN_OR_RESTORE:
         return dispatcher.dispatch_presentation_intent(
             ConversationOpenOrRestoreIntent()

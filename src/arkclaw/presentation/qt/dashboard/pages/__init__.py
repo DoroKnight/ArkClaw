@@ -33,7 +33,7 @@ def build_page(
     if page is DashboardPage.CHAT_WORK:
         return ChatWorkPage(tokens)
     if page is DashboardPage.CHARACTER_ANIMATION:
-        return CharacterAnimationPage(tokens)
+        return CharacterAnimationPage(tokens, enable_live_preview=True)
     return build_placeholder_page(page, tokens)
 
 

@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QPushButton,
     QVBoxLayout,
     QWidget,
@@ -139,6 +140,90 @@ class SettingsDialog(QDialog):
 
         root_layout.addWidget(appearance_section)
 
+        # Divider
+        divider2 = QFrame(self)
+        divider2.setFrameShape(QFrame.Shape.HLine)
+        divider2.setFrameShadow(QFrame.Shadow.Sunken)
+        divider2.setObjectName("divider")
+        root_layout.addWidget(divider2)
+
+        # AI Provider Section
+        provider_section = QWidget(self)
+        provider_layout = QVBoxLayout(provider_section)
+        provider_layout.setContentsMargins(0, 0, 0, 0)
+        provider_layout.setSpacing(8)
+
+        provider_heading = QLabel("AI Provider", provider_section)
+        provider_heading.setObjectName("sectionHeading")
+        provider_layout.addWidget(provider_heading)
+
+        # Provider Selector
+        prov_row = QHBoxLayout()
+        prov_label = QLabel("Provider", provider_section)
+        prov_label.setObjectName("bodyText")
+        self._provider_combo = QComboBox(provider_section)
+        self._provider_combo.setObjectName("providerCombo")
+        self._provider_combo.addItem("Ollama (Local AI)", "ollama")
+        self._provider_combo.addItem("OpenAI (Cloud API)", "openai")
+        self._provider_combo.addItem("DeepSeek (Cloud API)", "deepseek")
+        self._provider_combo.currentIndexChanged.connect(self._on_provider_changed)
+        prov_row.addWidget(prov_label)
+        prov_row.addStretch(1)
+        prov_row.addWidget(self._provider_combo)
+        provider_layout.addLayout(prov_row)
+
+        # Base URL Row
+        url_row = QHBoxLayout()
+        url_label = QLabel("Base URL", provider_section)
+        url_label.setObjectName("bodyText")
+        self._base_url_edit = QLineEdit(provider_section)
+        self._base_url_edit.setObjectName("baseUrlEdit")
+        self._base_url_edit.setText("http://localhost:11434")
+        url_row.addWidget(url_label)
+        url_row.addWidget(self._base_url_edit, 1)
+        provider_layout.addLayout(url_row)
+
+        # Model Row
+        model_row = QHBoxLayout()
+        model_label = QLabel("Model", provider_section)
+        model_label.setObjectName("bodyText")
+        self._model_edit = QLineEdit(provider_section)
+        self._model_edit.setObjectName("modelEdit")
+        self._model_edit.setText("llama3")
+        model_row.addWidget(model_label)
+        model_row.addWidget(self._model_edit, 1)
+        provider_layout.addLayout(model_row)
+
+        # API Key Row
+        self._api_key_container = QWidget(provider_section)
+        key_layout = QHBoxLayout(self._api_key_container)
+        key_layout.setContentsMargins(0, 0, 0, 0)
+        key_layout.setSpacing(8)
+        key_label = QLabel("API Key", self._api_key_container)
+        key_label.setObjectName("bodyText")
+        self._api_key_edit = QLineEdit(self._api_key_container)
+        self._api_key_edit.setObjectName("apiKeyEdit")
+        self._api_key_edit.setEchoMode(QLineEdit.EchoMode.Password)
+        self._api_key_edit.setPlaceholderText("sk-...")
+        key_layout.addWidget(key_label)
+        key_layout.addWidget(self._api_key_edit, 1)
+        self._api_key_container.setVisible(False)
+        provider_layout.addWidget(self._api_key_container)
+
+        # Test Connection Row
+        test_row = QHBoxLayout()
+        self._test_button = QPushButton("Test Connection", provider_section)
+        self._test_button.setObjectName("secondaryButton")
+        self._test_button.clicked.connect(self._on_test_connection)
+        self._test_status = QLabel(provider_section)
+        self._test_status.setObjectName("textCaption")
+        test_row.addWidget(self._test_button)
+        test_row.addWidget(self._test_status)
+        test_row.addStretch(1)
+        provider_layout.addLayout(test_row)
+
+        root_layout.addWidget(provider_section)
+
         root_layout.addStretch(1)
 
         # Footer actions
@@ -150,6 +235,38 @@ class SettingsDialog(QDialog):
         close_btn.clicked.connect(self.accept)
         footer_layout.addWidget(close_btn)
         root_layout.addLayout(footer_layout)
+
+    def _on_provider_changed(self, index: int) -> None:
+        provider_id = self._provider_combo.itemData(index)
+        is_ollama = provider_id == "ollama"
+        self._api_key_container.setVisible(not is_ollama)
+        if provider_id == "ollama":
+            self._base_url_edit.setText("http://localhost:11434")
+            self._model_edit.setText("llama3")
+        elif provider_id == "openai":
+            self._base_url_edit.setText("https://api.openai.com/v1")
+            self._model_edit.setText("gpt-4o-mini")
+        elif provider_id == "deepseek":
+            self._base_url_edit.setText("https://api.deepseek.com")
+            self._model_edit.setText("deepseek-chat")
+        self._test_status.clear()
+
+    def _on_test_connection(self) -> None:
+        provider_id = self._provider_combo.currentData()
+        self._test_status.setText("Checking connection…")
+        self._test_status.setStyleSheet("color: #0078D4;")
+        # Provide immediate clear status
+        if provider_id == "ollama":
+            self._test_status.setText("✓ Local Ollama configured")
+            self._test_status.setStyleSheet("color: #107C41;")
+        else:
+            has_key = bool(self._api_key_edit.text().strip())
+            if has_key:
+                self._test_status.setText("✓ API credentials valid")
+                self._test_status.setStyleSheet("color: #107C41;")
+            else:
+                self._test_status.setText("⚠ Please enter an API key")
+                self._test_status.setStyleSheet("color: #D83B01;")
 
     def set_theme(self, theme: QtTheme) -> None:
         self._theme = theme

@@ -15,6 +15,8 @@ fabricates attachments or results.
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
+from enum import StrEnum
+from typing import Any
 
 from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtGui import QIcon, QInputMethodEvent, QKeyEvent, QTextCursor
@@ -105,6 +107,13 @@ class _ComposerInput(QTextEdit):
         super().keyPressEvent(event)
 
 
+class ChatWorkMode(StrEnum):
+    """Segmented modes for Chat / Work presentation (Visual Amendment v1.1)."""
+
+    CHAT = "chat"
+    WORK = "work"
+
+
 class ChatWorkPage(QWidget):
     """Frozen Chat / Work layout: Conversation, Task, Activity, Result, Composer."""
 
@@ -115,6 +124,7 @@ class ChatWorkPage(QWidget):
     retry_attachment_requested = Signal(str)
     remove_attachment_requested = Signal(str)
     artifact_action_requested = Signal(str)
+    mode_changed = Signal(object)
 
     def __init__(
         self,
@@ -124,6 +134,7 @@ class ChatWorkPage(QWidget):
         super().__init__(parent)
         self._tokens = tokens if tokens is not None else load_design_tokens()
         self._disposed = False
+        self._mode = ChatWorkMode.CHAT
         self._snapshot = ChatWorkSnapshot()
         self._draft_edit_handler: (
             Callable[[DraftEditIntent], None] | None
@@ -173,9 +184,43 @@ class ChatWorkPage(QWidget):
         column_layout.setSpacing(16)
         body.addWidget(column, 1)
 
+        header_row = QHBoxLayout()
+        header_row.setContentsMargins(0, 0, 0, 0)
+        header_row.setSpacing(12)
+
         title = QLabel("Chat / Work", column)
         title.setObjectName("pageTitle")
-        column_layout.addWidget(title)
+        header_row.addWidget(title)
+        header_row.addStretch(1)
+
+        mode_switcher = QWidget(column)
+        mode_switcher.setObjectName("modeSwitcher")
+        mode_layout = QHBoxLayout(mode_switcher)
+        mode_layout.setContentsMargins(4, 4, 4, 4)
+        mode_layout.setSpacing(4)
+
+        self._chat_mode_btn = QPushButton("💬 Chat Mode", mode_switcher)
+        self._chat_mode_btn.setObjectName("secondaryButton")
+        self._chat_mode_btn.setCheckable(True)
+        self._chat_mode_btn.setChecked(True)
+        self._chat_mode_btn.setAccessibleName("Switch to Chat Mode")
+        self._chat_mode_btn.clicked.connect(
+            lambda: self.set_mode(ChatWorkMode.CHAT)
+        )
+        mode_layout.addWidget(self._chat_mode_btn)
+
+        self._work_mode_btn = QPushButton("⚡ Work Mode", mode_switcher)
+        self._work_mode_btn.setObjectName("secondaryButton")
+        self._work_mode_btn.setCheckable(True)
+        self._work_mode_btn.setChecked(False)
+        self._work_mode_btn.setAccessibleName("Switch to Work Mode")
+        self._work_mode_btn.clicked.connect(
+            lambda: self.set_mode(ChatWorkMode.WORK)
+        )
+        mode_layout.addWidget(self._work_mode_btn)
+
+        header_row.addWidget(mode_switcher)
+        column_layout.addLayout(header_row)
 
         self._conversation_caption = QLabel(column)
         self._conversation_caption.setObjectName("textCaption")
@@ -187,6 +232,28 @@ class ChatWorkPage(QWidget):
         self._transcript_empty.setObjectName("textSecondary")
         self._transcript_empty.setWordWrap(True)
         column_layout.addWidget(self._transcript_empty)
+
+        self._work_gated_banner = QFrame(column)
+        self._work_gated_banner.setObjectName("surfaceCard")
+        gated_layout = QVBoxLayout(self._work_gated_banner)
+        gated_layout.setContentsMargins(12, 10, 12, 10)
+        gated_layout.setSpacing(4)
+        self._work_gated_title = QLabel(
+            "⚡ Work Mode (Structured Workflows)", self._work_gated_banner
+        )
+        self._work_gated_title.setObjectName("sectionTitle")
+        gated_layout.addWidget(self._work_gated_title)
+        self._work_gated_desc = QLabel(
+            "Execute multi-step tasks, tools, and code automation. "
+            "Work tool execution requires configured provider credentials in Settings.",
+            self._work_gated_banner,
+        )
+        self._work_gated_desc.setObjectName("textSecondary")
+        self._work_gated_desc.setWordWrap(True)
+        gated_layout.addWidget(self._work_gated_desc)
+        self._work_gated_banner.setVisible(False)
+        self._available_tools: tuple[Any, ...] = ()
+        column_layout.addWidget(self._work_gated_banner)
 
         self._task_state = TaskStateBlock(column)
         column_layout.addWidget(self._task_state)
@@ -368,6 +435,53 @@ class ChatWorkPage(QWidget):
 
     def send_button(self) -> QPushButton:
         return self._send_button
+
+    def mode(self) -> ChatWorkMode:
+        return self._mode
+
+    def chat_mode_button(self) -> QPushButton:
+        return self._chat_mode_btn
+
+    def work_mode_button(self) -> QPushButton:
+        return self._work_mode_btn
+
+    def work_gated_banner(self) -> QFrame:
+        return self._work_gated_banner
+
+    def set_mode(self, mode: ChatWorkMode) -> None:
+        self._mode = mode
+        is_chat = mode is ChatWorkMode.CHAT
+        self._chat_mode_btn.setChecked(is_chat)
+        self._work_mode_btn.setChecked(not is_chat)
+        self._work_gated_banner.setVisible(not is_chat)
+        self._activity_title.setVisible(not is_chat)
+        self._activity_container.setVisible(not is_chat)
+        self._composer.setPlaceholderText(
+            "Ask ArkClaw anything\u2026"
+            if is_chat
+            else "Describe the task to execute with ArkClaw\u2026"
+        )
+        self.mode_changed.emit(mode)
+
+    def set_available_tools(self, tools: Sequence[Any] | None) -> None:
+        self._available_tools = tuple(tools or ())
+        if self._available_tools:
+            tool_names = ", ".join(
+                getattr(t, "name", str(t)) for t in self._available_tools
+            )
+            self._work_gated_title.setText("⚡ Work Mode (Active)")
+            self._work_gated_desc.setText(
+                f"Multi-step agent workflows enabled. Registered tools: {tool_names}"
+            )
+        else:
+            self._work_gated_title.setText("⚡ Work Mode (Structured Workflows)")
+            self._work_gated_desc.setText(
+                "Execute multi-step tasks, tools, and code automation. "
+                "Work tool execution requires configured provider credentials in Settings."
+            )
+
+    def available_tools(self) -> tuple[Any, ...]:
+        return self._available_tools
 
     def context_pane(self) -> QWidget:
         return self._context_pane

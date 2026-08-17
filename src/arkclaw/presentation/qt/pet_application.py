@@ -12,13 +12,16 @@ from contextlib import suppress
 from functools import partial
 from typing import NoReturn
 
-from PySide6.QtCore import QEvent, QObject, QRect, Qt, QTimer, Signal, Slot
-from PySide6.QtGui import QMouseEvent
+from PySide6.QtCore import QEvent, QObject, QPoint, QRect, Qt, QTimer, Signal, Slot
+from PySide6.QtGui import QCursor, QMouseEvent
 from PySide6.QtWidgets import QApplication, QWidget
 
 from arkclaw.application.pet.pet_production_actions import ProductionAction
 from arkclaw.application.pet.pet_settings import PetSettings
-from arkclaw.application.pet.pet_state import PetLifecycleState
+from arkclaw.application.pet.pet_state import (
+    PetActivityState,
+    PetLifecycleState,
+)
 from arkclaw.application.pet.pet_track0 import ActionOutcome
 from arkclaw.application.system.autostart_operation_journal import (
     AutostartOperationContext,
@@ -47,6 +50,15 @@ from arkclaw.bootstrap.pet_production import (
 from arkclaw.bootstrap.qt_runtime import (
     ProductionQtRuntimeCompositionRoot,
 )
+from arkclaw.presentation.dashboard_presentation import (
+    ActiveCharacterSummary,
+    AnimationItem,
+    AnimationState,
+    CharacterAnimationSnapshot,
+    DashboardPresentationModel,
+    HomeSnapshot,
+    RecentWorkItem,
+)
 from arkclaw.presentation.frontend_presentation import (
     DismissForegroundOverlayIntent,
     ForegroundOverlay,
@@ -71,6 +83,7 @@ from arkclaw.presentation.qt.platform.single_instance import (
 )
 from arkclaw.presentation.qt.platform.system_tray import SystemTrayController
 from arkclaw.presentation.qt.theme.qt_theme import QtTheme
+from arkclaw.presentation.qt.theme.theme_controller import ThemeController
 from arkclaw.presentation.qt.ui.action_palette import (
     ActionPaletteEffectSink,
     ActionPaletteWindowStrategy,
@@ -226,6 +239,23 @@ class _ProductionCommandDispatcher:
     def open_agent_window(self) -> None:
         self._coordinator.open_agent_window()
 
+    def open_chat_work(self) -> None:
+        from arkclaw.presentation.qt.dashboard.dashboard_page import (
+            DashboardPage,
+        )
+
+        self._coordinator.open_dashboard(DashboardPage.CHAT_WORK)
+
+    def open_character_animation(self) -> None:
+        from arkclaw.presentation.qt.dashboard.dashboard_page import (
+            DashboardPage,
+        )
+
+        self._coordinator.open_dashboard(DashboardPage.CHARACTER_ANIMATION)
+
+    def open_settings(self) -> None:
+        self._coordinator.open_dashboard_settings()
+
     def toggle_pet_visibility(self) -> None:
         self._coordinator.toggle_pet_visibility()
 
@@ -253,12 +283,18 @@ class PetApplicationCoordinator(QObject):
         *,
         settings_controller: PetSettingsController | None = None,
         autostart_controller: AutostartUiController | None = None,
+        theme_controller: ThemeController | None = None,
     ) -> None:
         super().__init__()
         self._bridge = bridge
         self._main_window = main_window
         self._pet_window = pet_window
         self._autostart_controller = autostart_controller
+        self._theme_controller = (
+            theme_controller
+            if theme_controller is not None
+            else ThemeController()
+        )
         self._palette_source = _ProductionCommandDescriptorSource(
             self,
             autostart_controller,
@@ -272,8 +308,9 @@ class PetApplicationCoordinator(QObject):
             dispatcher=self._palette_dispatcher,
             strategy=ActionPaletteWindowStrategy.TOOL,
             anchor_source=self._palette_anchor_geometry,
-            theme=QtTheme.LIGHT,
+            theme=self._theme_controller.effective_theme,
         )
+        self._theme_controller.theme_changed.connect(self._on_theme_changed)
         self.frontend_presentation = _HookSyncingPresentationCoordinator(
             effect_sink=self._palette_sink,
             sync_hook=self._sync_palette_outside_hook,
@@ -338,9 +375,15 @@ class PetApplicationCoordinator(QObject):
 
     def _palette_anchor_geometry(self) -> QRect:
         """Current Schwarz frame that the Palette anchors beside (06 9.2)."""
-        return self._pet_window.frameGeometry()
+        geom = self._pet_window.frameGeometry()
+        with suppress(Exception):
+            anim = getattr(self._pet_window, "_animation", None)
+            if anim is not None and anim.frame.state.activity is PetActivityState.SITTING:
+                # When sitting, the character's head drops ~40px. Align anchor with sitting head.
+                return QRect(geom.x(), geom.y() + 40, geom.width(), max(1, geom.height() - 40))
+        return geom
 
-    def open_dashboard(self) -> None:
+    def open_dashboard(self, page: object | None = None) -> None:
         """Open the Full Dashboard (lazy, one window per product, 07 11).
 
         Opening is a pure presentation transition: zero Conversation, zero
@@ -350,14 +393,80 @@ class PetApplicationCoordinator(QObject):
         """
         integration = self._dashboard_integration
         if integration is None:
+            character_summary = ActiveCharacterSummary(
+                available=True,
+                display_name="Schwarz / 黑",
+                is_reference=True,
+                reference_name="Schwarz",
+            )
+            home_snapshot = HomeSnapshot(
+                greeting="Welcome to ArkClaw",
+                intro="Desktop Companion & Intelligent Agent",
+                active_character=character_summary,
+                recent_work=(
+                    RecentWorkItem(
+                        title="Chat Mode",
+                        subtitle="Casual conversation, character companion & Q&A",
+                    ),
+                    RecentWorkItem(
+                        title="Work Mode",
+                        subtitle="Structured tasks, workflows & artifact generation",
+                    ),
+                ),
+            )
+            animation_items = (
+                AnimationItem(action_id="relax", name="Relax", state=AnimationState.IDLE),
+                AnimationItem(action_id="move_left", name="Move Left", state=AnimationState.IDLE),
+                AnimationItem(action_id="move_right", name="Move Right", state=AnimationState.IDLE),
+                AnimationItem(action_id="sit", name="Sit", state=AnimationState.IDLE),
+                AnimationItem(action_id="sleep", name="Sleep", state=AnimationState.IDLE),
+                AnimationItem(action_id="special", name="Special", state=AnimationState.IDLE),
+                AnimationItem(action_id="interact", name="Interact", state=AnimationState.IDLE),
+            )
+            character_snapshot = CharacterAnimationSnapshot(
+                active_character=character_summary,
+                available_characters=("Schwarz / 黑",),
+                animations=animation_items,
+            )
+            model = DashboardPresentationModel(
+                home=home_snapshot,
+                character=character_snapshot,
+            )
             integration = DashboardIntegration(
                 self.frontend_presentation,
+                model=model,
                 autostart_controller=self._autostart_controller,
                 animation_trigger_handler=self.request_pet_action_by_name,
                 restore_character_handler=self.show_pet,
             )
             self._dashboard_integration = integration
-        integration.open()
+        from arkclaw.presentation.qt.dashboard.dashboard_page import (
+            DashboardPage,
+        )
+
+        target_page = page if isinstance(page, DashboardPage) else None
+        integration.open(target_page)
+
+    def open_dashboard_settings(self) -> None:
+        """Open the Full Dashboard and present the Settings dialog."""
+        if self.pet_closing:
+            return
+        self.open_dashboard()
+        if (
+            self._dashboard_integration is not None
+            and self._dashboard_integration.window is not None
+        ):
+            self._dashboard_integration.window.open_settings_dialog()
+
+    def _on_theme_changed(self, theme: QtTheme) -> None:
+        self._palette_sink.set_theme(theme)
+        if self._system_tray is not None:
+            self._system_tray.set_theme(theme)
+        if (
+            self._dashboard_integration is not None
+            and self._dashboard_integration.window is not None
+        ):
+            self._dashboard_integration.window.set_theme(theme)
 
     def dispose(self) -> None:
         """Dispose owned presentation surfaces (idempotent, 6B lifecycle).
@@ -461,7 +570,10 @@ class PetApplicationCoordinator(QObject):
         if self._system_tray is not None:
             raise RuntimeError("System tray is already configured.")
         self._system_tray = system_tray
-        system_tray.refresh()
+        if self._theme_controller is not None and hasattr(system_tray, "set_theme"):
+            system_tray.set_theme(self._theme_controller.effective_theme)
+        if hasattr(system_tray, "refresh"):
+            system_tray.refresh()
 
     def attach_autostart_controller(
         self,
@@ -537,6 +649,13 @@ class PetApplicationCoordinator(QObject):
             "Sleep": ProductionAction.SLEEP,
             "Special": ProductionAction.SPECIAL,
             "Interact": ProductionAction.INTERACT,
+            "relax": ProductionAction.RELAX,
+            "move_left": ProductionAction.MOVE_LEFT,
+            "move_right": ProductionAction.MOVE_RIGHT,
+            "sit": ProductionAction.SIT,
+            "sleep": ProductionAction.SLEEP,
+            "special": ProductionAction.SPECIAL,
+            "interact": ProductionAction.INTERACT,
         }
         action = action_by_label.get(name)
         if action is None:
@@ -673,12 +792,24 @@ class PetApplicationCoordinator(QObject):
 
         if (
             event.type() == QEvent.Type.WindowDeactivate
-            and watched is self._palette_sink.host
+            and self._is_palette_surface(watched)
             and self.frontend_presentation.snapshot.foreground_overlay
             is ForegroundOverlay.PALETTE
             and time.monotonic() - self._palette_overlay_since
             >= _PALETTE_DEACTIVATE_GRACE_SECONDS
         ):
+            host = self._palette_sink.host
+            if host is not None and host.isVisible():
+                cursor_pos = QCursor.pos()
+                if self._widget_global_contains(host, cursor_pos):
+                    return False
+                sub_host = getattr(host, "sub_host", None)
+                if (
+                    sub_host is not None
+                    and sub_host.isVisible()
+                    and self._widget_global_contains(sub_host, cursor_pos)
+                ):
+                    return False
             self.frontend_presentation.dispatch(
                 DismissForegroundOverlayIntent()
             )
@@ -697,12 +828,7 @@ class PetApplicationCoordinator(QObject):
             return False
         if event.button() is Qt.MouseButton.RightButton:
             return False
-        host = self._palette_sink.host
-        if host is None or not host.isVisible():
-            return False
-        if watched is host or (
-            isinstance(watched, QWidget) and host.isAncestorOf(watched)
-        ):
+        if self._is_palette_surface(watched):
             return False
         if self._is_schwarz_surface(watched):
             # Contract K / Drag: a Schwarz press dismisses the Palette but is
@@ -716,6 +842,38 @@ class PetApplicationCoordinator(QObject):
             DismissForegroundOverlayIntent()
         )
         return True
+
+    def _is_palette_surface(self, watched: object) -> bool:
+        """True when the pressed target is a Palette surface (host/sub_host/children/handle)."""
+        host = self._palette_sink.host
+        if host is None or not host.isVisible():
+            return False
+        cursor_pos = QCursor.pos()
+        if self._widget_global_contains(host, cursor_pos):
+            return True
+        sub_host = getattr(host, "sub_host", None)
+        if (
+            sub_host is not None
+            and sub_host.isVisible()
+            and self._widget_global_contains(sub_host, cursor_pos)
+        ):
+            return True
+        if watched is host:
+            return True
+        if isinstance(watched, QWidget) and host.isAncestorOf(watched):
+            return True
+        host_handle = host.windowHandle()
+        if host_handle is not None and watched is host_handle:
+            return True
+        if sub_host is not None and sub_host.isVisible():
+            if watched is sub_host:
+                return True
+            if isinstance(watched, QWidget) and sub_host.isAncestorOf(watched):
+                return True
+            sub_handle = sub_host.windowHandle()
+            if sub_handle is not None and watched is sub_handle:
+                return True
+        return False
 
     def _is_schwarz_surface(self, watched: object) -> bool:
         """True when the pressed target is a Schwarz surface (pet/overlay).
@@ -795,6 +953,9 @@ class PetApplicationCoordinator(QObject):
         host = self._palette_sink.host
         if host is not None:
             widgets.append(host)
+            sub_host = getattr(host, "sub_host", None)
+            if sub_host is not None:
+                widgets.append(sub_host)
         overlay = getattr(self._pet_window, "_effect_overlay", None)
         if overlay is not None:
             widgets.append(overlay)
@@ -804,11 +965,38 @@ class PetApplicationCoordinator(QObject):
                 targets.append(int(handle.winId()))
         return targets
 
+    @staticmethod
+    def _widget_global_contains(widget: QWidget, point: QPoint) -> bool:
+        if not widget.isVisible():
+            return False
+        top_left = widget.mapToGlobal(QPoint(0, 0))
+        rect = QRect(top_left, widget.size())
+        return rect.contains(point) or widget.frameGeometry().contains(point)
+
     def _cursor_outside_targets(self) -> bool:
+        host = self._palette_sink.host
+        if host is not None and host.isVisible():
+            cursor_pos = QCursor.pos()
+            if self._widget_global_contains(host, cursor_pos):
+                return False
+            sub_host = getattr(host, "sub_host", None)
+            if (
+                sub_host is not None
+                and self._widget_global_contains(sub_host, cursor_pos)
+            ):
+                return False
+            if self._widget_global_contains(self._pet_window, cursor_pos):
+                return False
+            overlay = getattr(self._pet_window, "_effect_overlay", None)
+            return not (
+                overlay is not None
+                and self._widget_global_contains(overlay, cursor_pos)
+            )
+
         point = ctypes.wintypes.POINT()
         if not ctypes.windll.user32.GetCursorPos(ctypes.byref(point)):
             return False
-        targets = self._hook_target_hwnds
+        targets = self._capture_outside_targets()
         return not any(
             self._native_point_in_hwnd(point.x, point.y, hwnd)
             for hwnd in targets
@@ -1044,33 +1232,46 @@ def main(argv: list[str] | None = None) -> int:
         recorder.record(OwnerStartupStage.RUNTIME_STARTING)
     production_pet = create_optional_production_pet_composition()
     if production_pet is None:
+        sys.stderr.write(
+            "[ArkClaw] FATAL: Spine 3.8 production pet composition could not be loaded.\n"
+        )
+        if recorder is not None:
+            recorder.record(
+                OwnerStartupStage.FAILED_SAFE,
+                OwnerStartupFailure.PET_WINDOW_NOT_CREATED,
+            )
+        return 2
+    try:
         pet_window = PetWindow(
             autostart_controller=autostart_controller,
+            renderer=production_pet.renderer,
+            track0=production_pet.track0,
+            active_role_pack_id=production_pet.role_pack_id,
+            available_production_actions=production_pet.available_actions,
+            autonomous_scheduler=production_pet.autonomous_scheduler,
+            playback_event_source=production_pet.playback_event_source,
         )
-    else:
-        try:
-            pet_window = PetWindow(
-                autostart_controller=autostart_controller,
-                renderer=production_pet.renderer,
-                track0=production_pet.track0,
-                active_role_pack_id=production_pet.role_pack_id,
-                available_production_actions=production_pet.available_actions,
-                autonomous_scheduler=production_pet.autonomous_scheduler,
-                playback_event_source=production_pet.playback_event_source,
+    except Exception as exc:
+        sys.stderr.write(
+            f"[ArkClaw] FATAL: Failed to instantiate Spine 3.8 PetWindow: {exc}\n"
+        )
+        with suppress(Exception):
+            production_pet.renderer.close()
+        if recorder is not None:
+            recorder.record(
+                OwnerStartupStage.FAILED_SAFE,
+                OwnerStartupFailure.PET_WINDOW_NOT_CREATED,
             )
-        except Exception:
-            with suppress(Exception):
-                production_pet.renderer.close()
-            pet_window = PetWindow(
-                autostart_controller=autostart_controller,
-            )
+        return 2
     if recorder is not None:
         recorder.record(OwnerStartupStage.PET_WINDOW_CREATED)
+    theme_controller = ThemeController()
     coordinator = PetApplicationCoordinator(
         bridge,
         None,
         pet_window,
         settings_controller=settings_controller,
+        theme_controller=theme_controller,
     )
     if hasattr(coordinator, "attach_autostart_controller"):
         coordinator.attach_autostart_controller(autostart_controller)
@@ -1125,3 +1326,8 @@ def run() -> NoReturn:
     """Console-script compatible wrapper."""
 
     raise SystemExit(main())
+
+
+if __name__ == "__main__":
+    run()
+

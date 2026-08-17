@@ -134,6 +134,15 @@ class RecordingCommandDispatcher:
     def open_agent_window(self) -> None:
         self.calls.append(("open_agent_window", ()))
 
+    def open_chat_work(self) -> None:
+        self.calls.append(("open_chat_work", ()))
+
+    def open_character_animation(self) -> None:
+        self.calls.append(("open_character_animation", ()))
+
+    def open_settings(self) -> None:
+        self.calls.append(("open_settings", ()))
+
     def toggle_pet_visibility(self) -> None:
         self.calls.append(("toggle_pet_visibility", ()))
 
@@ -534,7 +543,12 @@ def test_capability_inventory_matches_frozen_baseline() -> None:
     descriptor_ids = {
         d.command_id for d in build_command_descriptors(_default_source())
     }
-    frozen_command_ids = set(CommandId)
+    palette_only = {
+        CommandId.OPEN_CHAT_WORK,
+        CommandId.OPEN_CHARACTER_ANIMATION,
+        CommandId.OPEN_SETTINGS,
+    }
+    frozen_command_ids = set(CommandId) - palette_only
 
     assert descriptor_ids == frozen_command_ids
     assert "settings" not in {str(command_id) for command_id in descriptor_ids}

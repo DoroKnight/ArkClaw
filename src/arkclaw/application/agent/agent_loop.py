@@ -7,6 +7,7 @@ import logging
 import math
 import traceback
 from collections.abc import AsyncIterator, Sequence
+from typing import Any
 
 from arkclaw.application.agent.context_manager import ContextManager
 from arkclaw.domain.errors import (
@@ -18,12 +19,19 @@ from arkclaw.domain.events import AgentEvent, LLMEvent, LLMEventType
 from arkclaw.domain.models import (
     AgentState,
     ChatMessage,
+    ExecutionContext,
     MemoryRecord,
+    PolicyOutcome,
     ProviderContinuation,
     ToolSpec,
     UserMessageCommand,
 )
-from arkclaw.domain.ports import LLMProvider
+from arkclaw.domain.policies import DefaultToolPolicy
+from arkclaw.domain.ports import LLMProvider, ToolPolicy
+
+if False:  # TYPE_CHECKING
+    pass
+
 
 logger = logging.getLogger(__name__)
 
@@ -80,7 +88,7 @@ def _invalid_provider_stream() -> InvalidProviderEventError:
 
 
 class AgentLoop:
-    """Stream normalized Agent events while failing closed on tool calls."""
+    """Stream normalized Agent events while executing safe tools through ToolPolicy."""
 
     def __init__(
         self,
@@ -88,6 +96,8 @@ class AgentLoop:
         context_manager: ContextManager,
         *,
         max_turn_seconds: float = 90.0,
+        tool_registry: Any = None,
+        tool_policy: ToolPolicy | None = None,
     ) -> None:
         if (
             isinstance(max_turn_seconds, bool)
@@ -99,6 +109,8 @@ class AgentLoop:
         self._provider = provider
         self._context_manager = context_manager
         self._max_turn_seconds = max_turn_seconds
+        self._tool_registry = tool_registry
+        self._tool_policy = tool_policy or DefaultToolPolicy()
 
     async def run(
         self,
@@ -131,17 +143,22 @@ class AgentLoop:
                     "The continuation does not belong to the selected provider.",
                 )
 
+            effective_tools = tools
+            if not effective_tools and self._tool_registry is not None:
+                effective_tools = self._tool_registry.list_specs()
+
             request = self._context_manager.build_request(
                 command,
                 history=history,
                 memories=memories,
-                tools=tools,
+                tools=effective_tools,
                 continuation=continuation,
             )
             yield AgentEvent.state_changed(turn_id, AgentState.THINKING)
 
             text_parts: list[str] = []
             speaking = False
+            tool_executed = False
             terminal_type: LLMEventType | None = None
             provider_failure: tuple[str, str] | None = None
             completed_continuation: ProviderContinuation | None = None
@@ -190,6 +207,50 @@ class AgentLoop:
                         if event.type is LLMEventType.TOOL_CALL:
                             if event.tool_call is None:
                                 raise _invalid_provider_stream()
+                            tool_name = event.tool_call.name
+                            if self._tool_registry is not None and tool_name in self._tool_registry:
+                                tool = self._tool_registry.get(tool_name)
+                                if tool is not None:
+                                    spec = tool.spec()
+                                    exec_context = ExecutionContext(
+                                        turn_id=turn_id,
+                                        session_id=turn_id,
+                                        approved=True,
+                                    )
+                                    decision = self._tool_policy.evaluate(
+                                        spec, event.tool_call, exec_context
+                                    )
+                                    yield AgentEvent.tool_started(turn_id, event.tool_call)
+                                    if decision.outcome is PolicyOutcome.ALLOW:
+                                        tool_result = await tool.execute(
+                                            event.tool_call.arguments, exec_context
+                                        )
+                                        yield AgentEvent.tool_finished(
+                                            turn_id, event.tool_call, tool_result.content
+                                        )
+                                        delta_text = f"\n[Result: {tool_result.content}]\n"
+                                        text_parts.append(delta_text)
+                                        yield AgentEvent.delta(turn_id, delta_text)
+                                        tool_executed = True
+                                        continue
+                                    elif decision.outcome is PolicyOutcome.REQUIRE_APPROVAL:
+                                        yield AgentEvent.approval_required(turn_id, event.tool_call)
+                                        yield AgentEvent.completed(
+                                            turn_id,
+                                            f"Action paused: '{tool_name}' requires approval.",
+                                        )
+                                        yield AgentEvent.state_changed(turn_id, AgentState.IDLE)
+                                        return
+                                    else:
+                                        yield AgentEvent.tool_finished(
+                                            turn_id, event.tool_call, f"Denied: {decision.reason}"
+                                        )
+                                        yield AgentEvent.failed(
+                                            turn_id, "tool_denied", decision.reason
+                                        )
+                                        yield AgentEvent.state_changed(turn_id, AgentState.IDLE)
+                                        return
+
                             yield AgentEvent.state_changed(turn_id, AgentState.ERROR)
                             yield AgentEvent.failed(
                                 turn_id,
@@ -235,6 +296,9 @@ class AgentLoop:
                 yield AgentEvent.cancelled(turn_id)
                 yield AgentEvent.state_changed(turn_id, AgentState.IDLE)
                 return
+
+            if terminal_type is None and tool_executed:
+                terminal_type = LLMEventType.COMPLETED
 
             if terminal_type is None:
                 raise _invalid_provider_stream()

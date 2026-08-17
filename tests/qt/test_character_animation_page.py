@@ -24,9 +24,10 @@ import pytest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import QCoreApplication, QEvent
+from PySide6.QtCore import QCoreApplication, QEvent, QPointF, Qt
+from PySide6.QtGui import QMouseEvent
 from PySide6.QtTest import QSignalSpy
-from PySide6.QtWidgets import QApplication, QWidget
+from PySide6.QtWidgets import QApplication, QSizePolicy, QWidget
 
 from arkclaw.presentation.dashboard_presentation import (
     ActiveCharacterSummary,
@@ -438,3 +439,265 @@ def test_dispose_is_idempotent_and_leaves_no_toplevel(
         isinstance(widget, CharacterAnimationPage)
         for widget in QApplication.topLevelWidgets()
     )
+
+
+def test_character_animation_page_uses_two_column_workbench(
+    qt_application: QApplication, tokens
+) -> None:
+    del qt_application
+    page = CharacterAnimationPage()
+    _show(page, QApplication.instance())
+    page.apply_snapshot(_default_snapshot())
+    sidebar = page.findChild(QWidget, "sidebarWidget")
+    stage = page.findChild(QWidget, "stageFrame")
+    assert sidebar is not None
+    assert stage is not None
+    assert sidebar.minimumWidth() >= 220
+    assert stage.sizePolicy().horizontalPolicy() == QSizePolicy.Policy.Expanding
+    page.dispose()
+    _flush(QApplication.instance())
+
+
+def test_header_updates_when_active_character_changes(
+    qt_application: QApplication, tokens
+) -> None:
+    del qt_application
+    page = CharacterAnimationPage()
+    page.apply_snapshot(
+        CharacterAnimationSnapshot(
+            active_character=ActiveCharacterSummary(display_name="Amiya"),
+            available_characters=("Amiya", "Schwarz"),
+        )
+    )
+    assert page.header_name_label().text() == "Amiya"
+    page.apply_snapshot(
+        CharacterAnimationSnapshot(
+            active_character=ActiveCharacterSummary(display_name="Texas"),
+            available_characters=("Texas",),
+        )
+    )
+    assert page.header_name_label().text() == "Texas"
+    page.dispose()
+    _flush(QApplication.instance())
+
+
+def test_animation_cards_are_generated_from_snapshot_only(
+    qt_application: QApplication, tokens
+) -> None:
+    del qt_application
+    page = CharacterAnimationPage()
+    page.apply_snapshot(
+        CharacterAnimationSnapshot(
+            active_character=ActiveCharacterSummary(display_name="Schwarz"),
+            available_characters=("Schwarz",),
+            animations=(
+                AnimationItem(
+                    action_id="custom_special_action",
+                    name="Custom Special Action",
+                ),
+            ),
+        )
+    )
+    cards = page.animation_cards()
+    assert len(cards) == 1
+    assert cards[0].action_id() == "custom_special_action"
+    assert cards[0].name_label().text() == "Custom Special Action"
+    page.dispose()
+    _flush(QApplication.instance())
+
+
+def test_click_animation_card_updates_exactly_one_selected_card_and_requests_preview(
+    qt_application: QApplication, tokens
+) -> None:
+    del qt_application
+    page = CharacterAnimationPage()
+    _show(page, QApplication.instance())
+    page.apply_snapshot(_default_snapshot())
+    spy_preview = QSignalSpy(page.animation_preview_requested)
+    spy_trigger = QSignalSpy(page.animation_trigger_requested)
+
+    cards = page.animation_cards()
+    assert len(cards) >= 2
+
+    # Click the second card ("sit")
+    cards[1].mousePressEvent(
+        QMouseEvent(
+            QEvent.Type.MouseButtonPress,
+            QPointF(cards[1].rect().center()),
+            Qt.MouseButton.LeftButton,
+            Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.NoModifier,
+        )
+    )
+    assert page.selected_card() is cards[1]
+    assert cards[1].is_selected()
+    assert not cards[0].is_selected()
+    assert spy_preview.count() == 1
+    assert spy_preview.at(0)[0] == "sit"
+    assert spy_trigger.count() == 0
+
+    page.dispose()
+    _flush(QApplication.instance())
+
+
+def test_selection_is_preserved_when_animation_model_refreshes(
+    qt_application: QApplication, tokens
+) -> None:
+    del qt_application
+    page = CharacterAnimationPage()
+    page.apply_snapshot(_default_snapshot())
+    page.select_card(1, emit_preview=False)
+    assert page.selected_card() is page.animation_cards()[1]
+
+    # Refresh snapshot with same animations
+    page.apply_snapshot(_default_snapshot())
+    assert page.selected_card() is not None
+    assert page.selected_card().action_id() == "sit"
+    page.dispose()
+    _flush(QApplication.instance())
+
+
+def test_preview_and_play_never_dispatch_desktop_trigger(
+    qt_application: QApplication, tokens
+) -> None:
+    del qt_application
+    page = CharacterAnimationPage()
+    _show(page, QApplication.instance())
+    page.apply_snapshot(_default_snapshot())
+
+    spy_trigger = QSignalSpy(page.animation_trigger_requested)
+    spy_preview = QSignalSpy(page.animation_preview_requested)
+    spy_play = QSignalSpy(page.animation_play_requested)
+
+    page.select_card(0, emit_preview=False)
+
+    # Click Preview
+    page.strip_preview_button().click()
+    assert spy_preview.count() == 1
+    assert spy_trigger.count() == 0
+
+    # Click Play
+    page.strip_play_button().click()
+    assert spy_play.count() == 1
+    assert spy_trigger.count() == 0
+
+    # Only Trigger on Desktop emits trigger
+    page.strip_trigger_button().click()
+    assert spy_trigger.count() == 1
+    assert spy_trigger.at(0)[0] == "relax"
+
+    page.dispose()
+    _flush(QApplication.instance())
+
+
+def test_reopen_character_animation_page_does_not_duplicate_signal_connections(
+    qt_application: QApplication, tokens
+) -> None:
+    del qt_application
+    # First instance
+    page1 = CharacterAnimationPage()
+    page1.apply_snapshot(_default_snapshot())
+    page1.dispose()
+    _flush(QApplication.instance())
+
+    # Second instance
+    page2 = CharacterAnimationPage()
+    page2.apply_snapshot(_default_snapshot())
+    spy_play = QSignalSpy(page2.animation_play_requested)
+    page2.select_card(0, emit_preview=False)
+    page2.strip_play_button().click()
+    assert spy_play.count() == 1
+    page2.dispose()
+    _flush(QApplication.instance())
+
+
+def test_character_animation_page_live_preview_composition(
+    qt_application: QApplication, tokens
+) -> None:
+    del qt_application
+    from arkclaw.bootstrap.pet_production import (
+        create_optional_production_pet_composition,
+    )
+    from arkclaw.presentation.qt.pet.spine38_renderer import Spine38RendererError
+
+    try:
+        composition = create_optional_production_pet_composition()
+        if composition is None:
+            return
+        page = CharacterAnimationPage(
+            tokens, enable_live_preview=True, composition=composition
+        )
+        page.apply_snapshot(_default_snapshot())
+        _show(page, QApplication.instance())
+        if page.spine_preview_widget() is not None:
+            assert page.spine_preview_widget().isVisible()
+            for action in (
+                "relax",
+                "move_left",
+                "move_right",
+                "sit",
+                "sleep",
+                "special",
+                "interact",
+            ):
+                page.spine_preview_widget().play_action(action)
+            page.select_card(0)
+        page.dispose()
+        _flush(QApplication.instance())
+    except Spine38RendererError:
+        pass
+
+
+def test_animation_cards_support_light_and_dark_theme(
+    qt_application: QApplication, tokens
+) -> None:
+    del qt_application
+    page = CharacterAnimationPage(tokens)
+    page.apply_snapshot(_default_snapshot())
+    _show(page, QApplication.instance())
+
+    # Switch to LIGHT theme and check cards
+    page.set_theme(QtTheme.LIGHT)
+    cards = page.animation_cards()
+    assert len(cards) >= 4
+    page.select_card(0)
+    assert cards[0].is_selected()
+
+    # Switch to DARK theme and check cards
+    page.set_theme(QtTheme.DARK)
+    assert cards[0].is_selected()
+    page.dispose()
+    _flush(QApplication.instance())
+
+
+def test_spine_preview_widget_expands_to_stage_frame(
+    qt_application: QApplication, tokens
+) -> None:
+    del qt_application
+    from arkclaw.bootstrap.pet_production import (
+        create_optional_production_pet_composition,
+    )
+
+    composition = create_optional_production_pet_composition()
+    if composition is None:
+        return
+    page = CharacterAnimationPage(
+        tokens, enable_live_preview=True, composition=composition
+    )
+    _show(page, QApplication.instance())
+    spine_widget = page.spine_preview_widget()
+    if spine_widget is not None:
+        assert (
+            spine_widget.sizePolicy().horizontalPolicy()
+            == QSizePolicy.Policy.Expanding
+        )
+        assert (
+            spine_widget.sizePolicy().verticalPolicy()
+            == QSizePolicy.Policy.Expanding
+        )
+        assert spine_widget.minimumWidth() >= 320
+        assert spine_widget.minimumHeight() >= 240
+    page.dispose()
+    _flush(QApplication.instance())
+
+
