@@ -7,53 +7,19 @@ from collections.abc import Callable
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QMenu
 
-from arkclaw.application.pet.pet_production_actions import ProductionAction
+from arkclaw.application.pet.pet_production_actions import (
+    ProductionAction,
+    can_resume_autonomous,
+)
+from arkclaw.presentation.qt.theme.qt_theme import (
+    QtTheme,
+    build_menu_stylesheet,
+)
 
-ARKCLAW_MENU_STYLE = """
-QMenu {
-    background: #171A1B;
-    color: #EAE9E4;
-    border: 1px solid #3A4144;
-    border-radius: 8px;
-    padding: 7px;
-    font-family: "Segoe UI";
-    font-size: 13px;
-}
-QMenu::item {
-    min-width: 210px;
-    min-height: 28px;
-    padding: 4px 30px 4px 12px;
-    margin: 1px 0;
-    border-radius: 5px;
-}
-QMenu::item:selected {
-    background: #B9623E;
-    color: #FFFFFF;
-}
-QMenu::item:disabled {
-    color: #747C80;
-}
-QMenu::separator {
-    height: 1px;
-    background: #303639;
-    margin: 7px 8px;
-}
-QMenu::indicator {
-    width: 14px;
-    height: 14px;
-    left: 10px;
-}
-QMenu::indicator:checked {
-    background: #C9774D;
-    border: 2px solid #F1F0EB;
-    border-radius: 3px;
-}
-QMenu::right-arrow {
-    width: 6px;
-    height: 10px;
-    margin-right: 8px;
-}
-"""
+# One token-generated menu language shared by the tray and pet context menus.
+# The dark surface language is preserved; the accent follows Visual Freeze
+# v1 so the desktop menu reflects the frozen identity (07 15, Slice 6B).
+ARKCLAW_MENU_STYLE = build_menu_stylesheet(QtTheme.DARK)
 
 
 def prepare_arkclaw_menu(menu: QMenu, *, object_name: str) -> None:
@@ -143,7 +109,10 @@ class ProductionActionMenuSection:
             )
         )
         self.resume_autonomous_action.setEnabled(
-            not closing and ProductionAction.RELAX in available_actions
+            can_resume_autonomous(
+                closing=closing,
+                available_actions=available_actions,
+            )
         )
 
     def _add_action(

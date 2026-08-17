@@ -15,6 +15,7 @@ os.environ.pop("QT_QPA_FONTDIR", None)
 import PySide6
 from PySide6.QtCore import (
     QMessageLogContext,
+    QPoint,
     Qt,
     QTimer,
     QtMsgType,
@@ -54,7 +55,7 @@ _EXPECTED_QT_PLATFORM_WARNING_COUNTS = {
             "or switch to fontconfig."
         ): 1,
         "This plugin does not support raise()": 1,
-        "This plugin does not support propagateSizeHints()": 1,
+        "This plugin does not support propagateSizeHints()": 0,
 }
 
 
@@ -224,6 +225,7 @@ def _run_smoke(message_audit: _QtMessageAudit) -> int:
                 Qt.MouseButton.LeftButton,
                 pos=center,
             )
+            QTest.mouseMove(pet_window, center + QPoint(30, 20))
             observed["drag_struggle_entered"] = (
                 PetBehaviorState.DRAG_STRUGGLE
                 in pet_window.render_frame.state.behaviors
@@ -231,7 +233,7 @@ def _run_smoke(message_audit: _QtMessageAudit) -> int:
             QTest.mouseRelease(
                 pet_window,
                 Qt.MouseButton.LeftButton,
-                pos=center,
+                pos=center + QPoint(30, 20),
             )
             observed["drag_struggle_exited"] = (
                 pet_window.motion_state is PetMotionState.FALLING

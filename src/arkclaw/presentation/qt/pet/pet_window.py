@@ -42,6 +42,7 @@ from arkclaw.application.pet.pet_motion import PetMotionModel
 from arkclaw.application.pet.pet_production_actions import (
     ActionSource,
     ProductionAction,
+    can_resume_autonomous,
 )
 from arkclaw.application.pet.pet_render_layout import (
     PetRenderLayout,
@@ -201,6 +202,7 @@ class PetWindow(QWidget):
     open_agent_requested = Signal()
     safe_exit_requested = Signal()
     presentation_state_changed = Signal()
+    action_palette_requested = Signal()
 
     def __init__(
         self,
@@ -539,9 +541,9 @@ class PetWindow(QWidget):
         return self._resume_pet_autonomous(ActionSource.USER)
 
     def _resume_pet_autonomous(self, source: ActionSource) -> ActionOutcome:
-        if (
-            self.lifecycle_state is PetLifecycleState.CLOSING
-            or ProductionAction.RELAX not in self._available_production_actions
+        if not can_resume_autonomous(
+            closing=self.lifecycle_state is PetLifecycleState.CLOSING,
+            available_actions=self._available_production_actions,
         ):
             return ActionOutcome.INVALID_SEQUENCE
         outcome = self._animation.resume_autonomous(source)
@@ -660,9 +662,29 @@ class PetWindow(QWidget):
             self._animation.contain_renderer_failure()
 
     def contextMenuEvent(self, event: QContextMenuEvent) -> None:
+        """Production Schwarz Right Click -> Action Palette (Slice 6B).
+
+        The completed right-click semantic is a presentation request only:
+        the window emits ``action_palette_requested`` and the production
+        composition routes it to ``ShowForegroundOverlayIntent(PALETTE)``.
+        The legacy native QMenu construction is preserved verbatim in
+        ``_show_legacy_context_menu`` for rollback / tray parity; production
+        no longer instantiates it (06 4.3, 08 15.2, 09 21).
+        """
         if self.lifecycle_state is PetLifecycleState.CLOSING:
             event.ignore()
             return
+        event.accept()
+        self.action_palette_requested.emit()
+
+    def _show_legacy_context_menu(
+        self,
+        event: QContextMenuEvent,
+    ) -> None:
+        """Preserved legacy native QMenu route (Slice 6B dead-but-kept).
+
+        Non-blocking TBD: cleanup only when every consumer is migrated.
+        """
         if self._context_menu is not None:
             self._context_menu.deleteLater()
         menu = QMenu(self)

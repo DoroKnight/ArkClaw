@@ -8,15 +8,16 @@ import sys
 import threading
 from collections.abc import Callable, Iterator
 from pathlib import Path
+from typing import cast
 
 import pytest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import QEventLoop, QObject, QPoint, QRect, Qt, QTimer
-from PySide6.QtGui import QAction, QContextMenuEvent
+from PySide6.QtGui import QContextMenuEvent
 from PySide6.QtTest import QSignalSpy, QTest
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QPushButton
 
 from arkclaw.application.system.autostart_operation_journal import (
     AutostartOperationEvent,
@@ -33,7 +34,10 @@ from arkclaw.application.system.startup_mode import parse_startup_mode
 from arkclaw.bootstrap.qt_runtime import ProductionQtRuntimeCompositionRoot
 from arkclaw.config.secrets import InMemorySecretStore, SecretValue
 from arkclaw.domain.models import CredentialId
+from arkclaw.presentation.command_descriptor_adapter import CommandId
+from arkclaw.presentation.frontend_presentation import ActionPaletteLayer
 from arkclaw.presentation.qt.pet.pet_window import PetWindow
+from arkclaw.presentation.qt.pet_application import PetApplicationCoordinator
 from arkclaw.presentation.qt.platform.runtime_bridge import QtRuntimeBridge
 from arkclaw.presentation.qt.platform.system_tray import (
     PetTrayState,
@@ -335,18 +339,37 @@ def _shutdown(bridge: QtRuntimeBridge) -> None:
     assert bridge.runtime_thread.pending_task_count_at_close == 0
 
 
-def _pet_autostart_action(pet: PetWindow) -> QAction:
+class _MainWindowStub:
+    def request_safe_close(self) -> None:
+        pass
+
+    def update_pet_presentation(self, *args: object) -> None:
+        pass
+
+
+def _open_pet_palette_system_row(
+    coordinator: PetApplicationCoordinator,
+    pet: PetWindow,
+) -> QPushButton:
+    """Production right-click -> Palette SYSTEM layer -> autostart row."""
     event = QContextMenuEvent(
         QContextMenuEvent.Reason.Mouse,
         QPoint(5, 5),
         QPoint(5, 5),
     )
     pet.contextMenuEvent(event)
-    return next(
-        action
-        for action in pet.findChildren(QAction)
-        if action.objectName() == "petAutostartEnabledAction"
-    )
+    QApplication.processEvents()
+    host = coordinator.palette_sink.host
+    assert host is not None
+    assert host.isVisible()
+    system_nav = host.navigation_button(ActionPaletteLayer.SYSTEM)
+    assert system_nav is not None
+    QTest.mouseClick(system_nav, Qt.MouseButton.LeftButton)
+    QApplication.processEvents()
+    row = host.row_button(CommandId.START_WITH_WINDOWS)
+    assert row is not None
+    assert row.isEnabled()
+    return row
 
 
 def _autostart_checkbox_rect_in_viewport(
@@ -590,6 +613,12 @@ def test_three_ui_entries_share_one_runtime_owned_state(
         autostart_controller=controller,
     )
     pet = PetWindow(autostart_controller=controller)
+    coordinator = PetApplicationCoordinator(
+        cast(QtRuntimeBridge, bridge),
+        cast(MainWindow, _MainWindowStub()),
+        pet,
+        autostart_controller=controller,
+    )
     tray_factory = _TrayFactory()
     tray = SystemTrayController(
         _PetCommands(),
@@ -611,10 +640,12 @@ def test_three_ui_entries_share_one_runtime_owned_state(
         lambda: controller.snapshot.status is AutostartStatus.ENABLED
         and not controller.busy
     )
-    pet_action = _pet_autostart_action(pet)
+    pet_action = _open_pet_palette_system_row(coordinator, pet)
     assert dialog.autostart_checkbox.isChecked()
     assert tray_view.states[-1].autostart.enabled
-    assert pet_action.isChecked()
+    host = coordinator.palette_sink.host
+    assert host is not None
+    assert host.checked(CommandId.START_WITH_WINDOWS) is True
     assert backend.write_count == 1
     assert backend.delete_count == 0
 
@@ -626,18 +657,18 @@ def test_three_ui_entries_share_one_runtime_owned_state(
     )
     assert not dialog.autostart_checkbox.isChecked()
     assert not tray_view.states[-1].autostart.enabled
-    assert not pet_action.isChecked()
     assert backend.write_count == 1
     assert backend.delete_count == 1
 
-    pet_action.trigger()
+    # The rendered row is a stale DISABLED snapshot; dispatch reads the
+    # CURRENT authoritative state and targets ENABLED (6B 20).
+    pet_action.click()
     assert _run_until(
         lambda: controller.snapshot.status is AutostartStatus.ENABLED
         and not controller.busy
     )
     assert dialog.autostart_checkbox.isChecked()
     assert tray_view.states[-1].autostart.enabled
-    assert pet_action.isChecked()
     assert backend.write_count == 2
     assert backend.delete_count == 1
     ui_visible = " ".join(
@@ -660,6 +691,9 @@ def test_three_ui_entries_share_one_runtime_owned_state(
     tray.complete_shutdown()
     pet.complete_safe_close()
     dialog.close()
+
+    coordinator.dispose()
+    coordinator.deleteLater()
 
 
 def test_autostart_refresh_does_not_steal_current_dialog_focus(

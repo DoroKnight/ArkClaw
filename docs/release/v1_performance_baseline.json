@@ -1,0 +1,23 @@
+{
+  "cold_open_ms": 13.11,
+  "construction_ms": 1.03,
+  "cycles": 100,
+  "memory_bytes": {
+    "dashboard_closed": 32149504,
+    "dashboard_open": 32112640,
+    "disposed": 28000256,
+    "samples_per_20_cycles": {
+      "100": 32358400,
+      "20": 32149504,
+      "40": 32288768,
+      "60": 32288768,
+      "80": 32358400
+    },
+    "startup": 25743360
+  },
+  "platform": "win32",
+  "qt_platform": "offscreen",
+  "visible_top_levels_after_dispose": 0,
+  "warm_open_ms": 0.3,
+  "window_identity_stable_across_cycles": true
+}

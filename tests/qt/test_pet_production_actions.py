@@ -10,7 +10,7 @@ import pytest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import QObject, QPoint, Qt
-from PySide6.QtGui import QAction, QContextMenuEvent
+from PySide6.QtGui import QContextMenuEvent
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QMenu
 
@@ -48,6 +48,7 @@ def _callbacks(events: list[object]) -> TrayCallbacks:
         refresh=lambda: None,
         toggle_pet_visibility=lambda: None,
         open_agent_window=lambda: None,
+        open_dashboard=lambda: events.append("dashboard"),
         toggle_paused=lambda: None,
         set_always_on_top=lambda enabled: None,
         request_safe_exit=lambda: None,
@@ -103,7 +104,7 @@ def test_tray_exposes_seven_typed_actions_resume_and_role_pack_identity(
     assert view._role_pack_action is not None
     assert view._move_menu is not None
     assert view._resume_autonomous_action is not None
-    assert view._role_pack_action.text() == "Role Pack: schwarz-production"
+    assert view._role_pack_action.text() == "ACTIVE PET  ·  SCHWARZ / 黑"
     assert view._move_menu.title() == "Move"
     assert view._action_items[ProductionAction.MOVE_LEFT].text() == "Left"
     assert view._action_items[ProductionAction.MOVE_RIGHT].text() == "Right"
@@ -119,6 +120,29 @@ def test_tray_exposes_seven_typed_actions_resume_and_role_pack_identity(
         ProductionAction.MOVE_LEFT,
         "resume",
     ]
+    view.close()
+
+
+def test_tray_exposes_open_dashboard_action_next_to_control_center(
+    qt_application: QApplication,
+) -> None:
+    del qt_application
+    events: list[object] = []
+    parent = QObject()
+    view = _QtSystemTrayView(_callbacks(events), parent)
+
+    dashboard_action = view._open_dashboard_action
+    assert dashboard_action is not None
+    assert dashboard_action.text() == "Open Dashboard"
+    assert dashboard_action.objectName() == "openDashboardAction"
+
+    menu_actions = view._menu.actions()
+    labels = [action.text() for action in menu_actions]
+    assert "Open Dashboard" in labels
+    assert "Open ArkClaw Control Center" not in labels
+
+    dashboard_action.trigger()
+    assert events == ["dashboard"]
     view.close()
 
 
@@ -341,26 +365,20 @@ def test_pet_context_menu_exposes_and_dispatches_production_actions_as_user(
         window.mapToGlobal(local),
     )
 
+    # Slice 6B: right click requests the Action Palette; the legacy native
+    # QMenu is no longer the production Character route.
+    palette_requests: list[bool] = []
+    window.action_palette_requested.connect(
+        lambda: palette_requests.append(True)
+    )
     qt_application.sendEvent(window, context_event)
     popup = QApplication.activePopupWidget()
 
-    assert isinstance(popup, QMenu)
-    actions = {
-        action.text(): action
-        for action in popup.findChildren(QAction)
-        if action.text()
-    }
-    assert {"Relax", "Left", "Right", "Sit", "Sleep", "Special", "Interact"} <= set(actions)
-    assert all(
-        actions[label].isEnabled()
-        for label in ("Relax", "Sit", "Sleep", "Special", "Interact")
-    )
-
-    actions["Interact"].trigger()
-
-    assert track0.active_request is not None
-    assert track0.active_request.source is ActionSource.USER
-    popup.close()
+    assert palette_requests == [True]
+    assert not isinstance(popup, QMenu)
+    assert window.findChild(QMenu) is None
+    # Opening the Palette executes zero application action.
+    assert track0.active_request is None
     window.complete_safe_close()
 
 
@@ -397,3 +415,65 @@ def test_malformed_native_playback_event_is_contained_at_window_boundary(
     assert window.active_role_pack_id == "placeholder"
     assert window.available_pet_actions == frozenset()
     window.complete_safe_close()
+
+def _resume_window(clock: _Clock, player: _Player) -> PetWindow:
+    track0 = PetTrack0Controller(
+        player=player,
+        registry=build_track0_animation_registry(
+            AnimationRoleRegistry(
+                {
+                    action: RoleAnimationBinding(action, action.value.title())
+                    for action in ProductionAction
+                }
+            ),
+            source_durations={action: 1.0 for action in ProductionAction},
+        ),
+        clock=clock,
+    )
+    return PetWindow(
+        clock=clock,
+        track0=track0,
+        active_role_pack_id="schwarz-production",
+        available_production_actions=frozenset(ProductionAction),
+    )
+
+
+def test_pet_window_resume_guard_consumes_shared_capability_false(
+    qt_application: QApplication,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    del qt_application
+    # The shared Qt-free capability alone decides the guard: even though
+    # RELAX is available and the pet is not closing, a False capability
+    # must refuse resume before any animation path runs.
+    monkeypatch.setattr(
+        "arkclaw.presentation.qt.pet.pet_window.can_resume_autonomous",
+        lambda *, closing, available_actions: False,
+    )
+    clock = _Clock()
+    player = _Player()
+    window = _resume_window(clock, player)
+    try:
+        assert window.resume_pet_autonomous() is ActionOutcome.INVALID_SEQUENCE
+    finally:
+        window.complete_safe_close()
+    assert player.requests == []
+
+
+def test_pet_window_resume_executes_when_shared_capability_true(
+    qt_application: QApplication,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    del qt_application
+    monkeypatch.setattr(
+        "arkclaw.presentation.qt.pet.pet_window.can_resume_autonomous",
+        lambda *, closing, available_actions: True,
+    )
+    clock = _Clock()
+    player = _Player()
+    window = _resume_window(clock, player)
+    try:
+        assert window.resume_pet_autonomous() is ActionOutcome.ACCEPTED
+    finally:
+        window.complete_safe_close()
+    assert [request.physical_name for request in player.requests] == ["Relax"]

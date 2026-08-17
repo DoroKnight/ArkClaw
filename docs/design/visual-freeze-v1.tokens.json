@@ -1,0 +1,347 @@
+{
+  "schema_version": 2,
+  "name": "ArkClaw Visual Design System v1",
+  "status": "VISUAL_FREEZE_COMPLETE",
+  "readiness": "READY_FOR_VISUAL_FREEZE",
+  "units": "qt_logical_px",
+  "interaction_authority": "docs/design/06-interaction-freeze-and-prototype-review.md",
+  "character_model": {
+    "product_term": "Active Character",
+    "reference_character": "Schwarz",
+    "v1_asset_scope": "replaceable_arknights_style_chibi_spine",
+    "placeholder_label": "Visual placeholder",
+    "character_accent_max_percent": 10
+  },
+  "product_model": {
+    "desktop_companion": ["active_character", "action_palette", "conversation_capsule"],
+    "full_dashboard": ["home", "chat_work", "character_animation"],
+    "dashboard_primary_navigation": ["home", "chat_work", "character_animation"],
+    "settings_role": "top_shell_auxiliary",
+    "upload_location": "chat_work_composer"
+  },
+  "font_family": [
+    "Segoe UI Variable Text",
+    "Microsoft YaHei UI",
+    "Segoe UI",
+    "sans-serif"
+  ],
+  "themes": {
+    "light": {
+      "color": {
+        "background": "#F6F8FC",
+        "surface": "#FFFFFF",
+        "surface_card": "#FFFFFF",
+        "surface_nav": "#F2F5FA",
+        "surface_subtle": "#F7F8FA",
+        "surface_input": "#F1F3F7",
+        "surface_hover": "#EEF0FF",
+        "surface_active": "#E3E7F8",
+        "surface_selected": "#EEF0FF",
+        "text_primary": "#202124",
+        "text_secondary": "#5F6368",
+        "text_tertiary": "#6F747B",
+        "text_disabled": "#6B7077",
+        "icon": "#5F6368",
+        "border": "#DADCE0",
+        "divider": "#E4E7EB",
+        "accent": "#5B6FD8",
+        "accent_hover": "#4F61C6",
+        "accent_soft": "#EEF0FF",
+        "focus": "#5066D6",
+        "danger": "#B3261E",
+        "danger_soft": "#FCE8E6",
+        "warning": "#8A5A12",
+        "success": "#3C7A57"
+      },
+      "shadow": {
+        "card": [
+          {"x": 0, "y": 1, "blur": 2, "color": "rgba(32,33,36,0.08)"}
+        ],
+        "composer": [
+          {"x": 0, "y": 4, "blur": 16, "color": "rgba(32,33,36,0.12)"},
+          {"x": 0, "y": 1, "blur": 4, "color": "rgba(32,33,36,0.08)"}
+        ],
+        "palette": [
+          {"x": 0, "y": 8, "blur": 24, "color": "rgba(32,33,36,0.16)"},
+          {"x": 0, "y": 2, "blur": 6, "color": "rgba(32,33,36,0.08)"}
+        ],
+        "capsule": [
+          {"x": 0, "y": 12, "blur": 36, "color": "rgba(32,33,36,0.18)"},
+          {"x": 0, "y": 2, "blur": 8, "color": "rgba(32,33,36,0.08)"}
+        ]
+      }
+    },
+    "dark": {
+      "color": {
+        "background": "#17181B",
+        "surface": "#222327",
+        "surface_card": "#222327",
+        "surface_nav": "#1D1E22",
+        "surface_subtle": "#27292E",
+        "surface_input": "#292A2F",
+        "surface_hover": "#30344F",
+        "surface_active": "#383D57",
+        "surface_selected": "#30344F",
+        "text_primary": "#F1F3F4",
+        "text_secondary": "#BDC1C6",
+        "text_tertiary": "#9AA0A6",
+        "text_disabled": "#9AA0A6",
+        "icon": "#BDC1C6",
+        "border": "#3C4043",
+        "divider": "#34363B",
+        "accent": "#AEB7FF",
+        "accent_hover": "#C2C8FF",
+        "accent_soft": "#30344F",
+        "focus": "#C6CCFF",
+        "danger": "#FFB4AB",
+        "danger_soft": "#4B2525",
+        "warning": "#F2C36B",
+        "success": "#8DD8A7"
+      },
+      "shadow": {
+        "card": [
+          {"x": 0, "y": 1, "blur": 2, "color": "rgba(0,0,0,0.24)"}
+        ],
+        "composer": [
+          {"x": 0, "y": 4, "blur": 16, "color": "rgba(0,0,0,0.34)"},
+          {"x": 0, "y": 1, "blur": 4, "color": "rgba(0,0,0,0.24)"}
+        ],
+        "palette": [
+          {"x": 0, "y": 10, "blur": 28, "color": "rgba(0,0,0,0.36)"},
+          {"x": 0, "y": 2, "blur": 8, "color": "rgba(0,0,0,0.24)"}
+        ],
+        "capsule": [
+          {"x": 0, "y": 14, "blur": 40, "color": "rgba(0,0,0,0.42)"},
+          {"x": 0, "y": 2, "blur": 10, "color": "rgba(0,0,0,0.28)"}
+        ]
+      }
+    }
+  },
+  "typography": {
+    "display": {"size": 28, "line_height": 36, "weight": 600},
+    "page_title": {"size": 24, "line_height": 32, "weight": 600},
+    "title": {"size": 22, "line_height": 30, "weight": 550},
+    "section": {"size": 16, "line_height": 24, "weight": 600},
+    "composer": {"size": 15, "line_height": 22, "weight": 400},
+    "body": {"size": 14, "line_height": 20, "weight": 400},
+    "label": {"size": 14, "line_height": 20, "weight": 500},
+    "navigation": {"size": 14, "line_height": 20, "weight": 500},
+    "agent_status": {"size": 12, "line_height": 18, "weight": 500},
+    "caption": {"size": 12, "line_height": 16, "weight": 400}
+  },
+  "spacing": {
+    "scale": [4, 8, 12, 16, 20, 24, 32, 40, 48],
+    "app_shell_internal": 16,
+    "navigation_padding": 12,
+    "page_gutter": 40,
+    "compact_gutter": 32,
+    "home_card_padding": 20,
+    "composer_padding": 16,
+    "conversation_block_gap": 24,
+    "character_preview_gap": 24,
+    "animation_grid_gap": 16
+  },
+  "radius": {
+    "navigation_row": 12,
+    "button": 12,
+    "card": 16,
+    "app_content": 16,
+    "palette": 16,
+    "composer": 24,
+    "capsule": 24,
+    "pill": 999
+  },
+  "icon": {
+    "navigation": 20,
+    "action": 20,
+    "small": 16,
+    "file_image": 18,
+    "agent_thinking": 20,
+    "stroke": 1.75,
+    "default_hit_target": 40
+  },
+  "motion": {
+    "hover": {"duration_ms": 100, "easing": "linear"},
+    "press": {"duration_ms": 80, "easing": "linear"},
+    "palette_open": {"duration_ms": 160, "translate_px": 4, "scale_from": 0.98},
+    "palette_close": {"duration_ms": 110, "scale_to": 0.99},
+    "palette_layer_forward": {"duration_ms": 150, "translate_px": 6},
+    "palette_layer_back": {"duration_ms": 140, "translate_px": 6},
+    "capsule_expand": {"duration_ms": 220},
+    "navigation_toggle": {"duration_ms": 180},
+    "dashboard_page_change": {"duration_ms": 160, "translate_px": 4},
+    "chat_to_work": {"duration_ms": 200, "translate_px": 4},
+    "result_insert": {"duration_ms": 160, "translate_px": 4},
+    "character_switch": {"duration_ms": 180, "treatment": "preview_crossfade"},
+    "animation_preview_change": {"duration_ms": 140, "treatment": "crossfade"},
+    "optional_context_pane": {"duration_ms": 180, "translate_px": 8},
+    "reduced_motion_crossfade_ms": 60,
+    "requirements": ["cancelable", "state_driven", "not_semantic_truth"]
+  },
+  "component": {
+    "desktop_companion": {
+      "action_palette": {
+        "width": 304,
+        "root_height": 156,
+        "character_height": 428,
+        "system_height": 284,
+        "outer_padding": 8,
+        "row_height": 44,
+        "disabled_reason_row_height": 56,
+        "row_horizontal_padding": 12,
+        "section_gap": 8,
+        "border_width": 1,
+        "focus_width": 2,
+        "anchor_gap": 12,
+        "work_area_margin": 12
+      },
+      "conversation_capsule": {
+        "min_width": 480,
+        "preferred_width": 560,
+        "max_width": 640,
+        "min_height": 184,
+        "max_typical_height": 360,
+        "content_padding": 24,
+        "input_height": 56,
+        "input_horizontal_padding": 16,
+        "send_hit_target": 40,
+        "send_visible_circle": 36,
+        "border_width": 1,
+        "focus_width": 2,
+        "anchor_gap": 24,
+        "work_area_margin": 16
+      }
+    },
+    "dashboard": {
+      "window": {
+        "default_width": 1280,
+        "default_height": 800,
+        "minimum_width": 1024,
+        "minimum_height": 680,
+        "top_app_shell_height": 56,
+        "global_content_max_width": 1120,
+        "page_gutter": 40,
+        "compact_gutter": 32
+      },
+      "navigation": {
+        "expanded_width": 208,
+        "collapsed_width": 72,
+        "row_height": 44,
+        "row_radius": 12,
+        "leading_inset": 16,
+        "icon_size": 20,
+        "icon_text_gap": 12,
+        "rail_padding": 12,
+        "active_indicator_width": 3,
+        "active_indicator_height": 24,
+        "toggle_hit_target": 40,
+        "items": ["home", "chat_work", "character_animation"]
+      },
+      "home": {
+        "content_max_width": 1040,
+        "top_padding": 40,
+        "ask_max_width": 720,
+        "ask_height": 64,
+        "ask_radius": 24,
+        "section_gap": 32,
+        "card_padding": 20,
+        "recent_card_min_width": 280,
+        "recent_card_min_height": 112,
+        "recent_card_max_count": 3,
+        "active_character_summary_width": 320,
+        "active_character_summary_height": 220
+      },
+      "chat_work": {
+        "page_content_max_width": 920,
+        "conversation_column_width": 720,
+        "bottom_clearance": 24,
+        "activity_row_min_height": 36,
+        "optional_context_pane_width": 320,
+        "optional_context_pane_default": "closed"
+      },
+      "composer": {
+        "max_width": 800,
+        "min_height": 104,
+        "max_multiline_height": 240,
+        "radius": 24,
+        "padding": 16,
+        "actions": ["attach", "optional_tools", "send"]
+      },
+      "attachment": {
+        "chip_height": 32,
+        "chip_max_width": 220,
+        "chip_horizontal_padding": 10,
+        "file_image_icon": 18,
+        "remove_hit_target": 32,
+        "image_preview_width": 72,
+        "image_preview_height": 72,
+        "attach_hit_target": 40,
+        "failure_copy": "Upload failed · Retry"
+      },
+      "artifact": {
+        "card_max_width": 720,
+        "card_radius": 16,
+        "card_padding": 20,
+        "actions": ["preview", "open", "export_or_save"]
+      },
+      "character_animation": {
+        "page_content_max_width": 1120,
+        "preview_preferred_width": 640,
+        "preview_preferred_height": 480,
+        "preview_min_width": 560,
+        "preview_min_height": 360,
+        "character_card_width": 144,
+        "character_card_height": 176,
+        "animation_card_width": 168,
+        "animation_card_height": 104,
+        "grid_gap": 16,
+        "preview_controls_gap": 24,
+        "preview_control_height": 44,
+        "actions": ["preview", "play", "trigger_on_desktop"],
+        "inventory_source": "active_character_capability_manifest"
+      }
+    }
+  },
+  "presentation_map": {
+    "conversation_compact": "desktop_companion.conversation_capsule",
+    "conversation_expanded": "dashboard.chat_work.expanded_conversation_complexity",
+    "workspace": "dashboard.chat_work.work_mode",
+    "workspace_is_top_level_shell": false
+  },
+  "states": {
+    "home": ["first_launch", "normal", "no_recent_work", "recent_work", "agent_idle", "agent_working", "character_unavailable"],
+    "navigation": ["expanded", "collapsed", "normal", "hover", "active", "focus"],
+    "chat_work": ["empty", "typing", "ime_composing", "attachment", "submitted", "thinking", "working", "waiting", "responding", "completed", "error", "needs_attention", "long_conversation"],
+    "attachment": ["local", "uploading", "uploaded", "failed", "unsupported", "too_large", "removed"],
+    "artifact": ["available", "opening", "failed"],
+    "character_animation": ["loaded", "loading", "switching", "one_character", "multiple_characters", "previewing", "playing", "unsupported", "trigger_unavailable", "renderer_failure"],
+    "palette": ["closed", "opening", "root", "character_layer", "system_layer", "normal", "hover", "pressed", "focus", "disabled", "checked", "submenu_available", "closing"],
+    "capsule": ["closed", "opening", "empty", "focused", "typing", "ime_composing", "submitting", "thinking", "responding", "short_response", "error", "retry_available", "offline", "disabled", "handoff_available", "closing"],
+    "agent": ["idle", "submitted", "thinking", "working", "waiting", "needs_attention", "completed", "error"]
+  },
+  "concept_renders": {
+    "a_dashboard_home": "docs/design/visual-freeze-v1/dashboard/render-a-dashboard-home.png",
+    "b_chat_work": "docs/design/visual-freeze-v1/dashboard/render-b-chat-work.png",
+    "c_character_animation": "docs/design/visual-freeze-v1/dashboard/render-c-character-animation.png",
+    "d_desktop_dashboard": "docs/design/visual-freeze-v1/dashboard/render-d-desktop-dashboard.png",
+    "e_dark_parity": "docs/design/visual-freeze-v1/dashboard/render-e-dark-parity.png"
+  },
+  "future_scope": [
+    "materials_library",
+    "projects",
+    "standalone_tasks",
+    "full_file_manager",
+    "tool_manager",
+    "model_manager",
+    "plugin_manager",
+    "multi_agent",
+    "character_marketplace",
+    "advanced_character_library",
+    "animation_editor",
+    "animation_timeline",
+    "developer_mode",
+    "ide_like_workspace",
+    "permanent_activity_inspector",
+    "advanced_artifact_manager"
+  ]
+}

@@ -10,7 +10,7 @@ import time
 os.environ["QT_QPA_PLATFORM"] = "windows"
 os.environ.pop("QT_QPA_FONTDIR", None)
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import QPoint, Qt, QTimer
 from PySide6.QtGui import QImage
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
@@ -288,8 +288,10 @@ def _window_contract(app: QApplication, scene: PetMeshScene) -> dict[str, bool]:
         )
         window.toggle_paused()
         center = window.rect().center()
+        drag_target = center + QPoint(40, 40)
         QTest.mousePress(window, Qt.MouseButton.LeftButton, pos=center)
-        QTest.mouseRelease(window, Qt.MouseButton.LeftButton, pos=center)
+        QTest.mouseMove(window, pos=drag_target)
+        QTest.mouseRelease(window, Qt.MouseButton.LeftButton, pos=drag_target)
         falling = window.motion_state is PetMotionState.FALLING
         for _ in range(30):
             clock.advance(0.1)

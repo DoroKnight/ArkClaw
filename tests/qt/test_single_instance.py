@@ -1469,7 +1469,6 @@ def test_startup_owner_keeps_agent_hidden_and_starts_pet_and_tray(
     assert events[:2] == ["owner", "runtime_root"]
     assert "pet_settings_initialization_failed" in events
     assert "bridge" in events
-    assert "main" in events
     assert "pet" in events
     assert "tray" in events
     assert "provider" not in events

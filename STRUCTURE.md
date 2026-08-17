@@ -12,6 +12,7 @@
 ├─ uv.lock
 ├─ src/
 ├─ tests/
+├─ dev_evidence/       # 本地测试运行证据（pytest basetemp 产物，Git 忽略）
 ├─ native/
 ├─ scripts/
 ├─ prototypes/
@@ -79,6 +80,7 @@ scripts/
 ├─ start_schwarz_pet.ps1       # 正式 Schwarz 启动、路径验证和 smoke
 ├─ build_spine38_bridge.ps1    # 构建 C++ bridge
 ├─ qt_*_smoke.py               # Qt 模块 smoke
+├─ debug/                      # Slice 6B 本地输入/native 调试脚本
 ├─ test.ps1
 └─ typecheck.ps1
 ```

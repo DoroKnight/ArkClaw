@@ -183,24 +183,40 @@ def _run_smoke(message_audit: _QtMessageAudit) -> int:
         exit_code = app.exec()
         watchdog.stop()
 
-        success = (
-            exit_code == 0
-            and not timed_out
-            and shutdown_results == [(True, "none")]
-            and factory.call_count == 1
-            and view.show_count == 1
-            and view.close_count == 1
-            and tray.closed
-            and not bridge.runtime_thread.isRunning()
-            and bridge.runtime_thread.pending_task_count_at_close == 0
-            and not pet_window.physics_timer.isActive()
-            and all(observed.values())
-            and message_audit.missing_warning_count == 0
-            and message_audit.duplicate_warning_count == 0
-            and not message_audit.unexpected_warnings
-            and not message_audit.critical_messages
-            and not message_audit.other_messages
-        )
+        failed_checks = [
+            name for name, passed in observed.items() if not passed
+        ]
+        if timed_out:
+            failed_checks.append("timed_out")
+        if exit_code != 0:
+            failed_checks.append("app_exit_nonzero")
+        if shutdown_results != [(True, "none")]:
+            failed_checks.append("shutdown_mismatch")
+        if factory.call_count != 1:
+            failed_checks.append("tray_factory_calls")
+        if view.show_count != 1:
+            failed_checks.append("tray_show_count")
+        if view.close_count != 1:
+            failed_checks.append("tray_close_count")
+        if not tray.closed:
+            failed_checks.append("tray_not_closed")
+        if bridge.runtime_thread.isRunning():
+            failed_checks.append("thread_running")
+        if bridge.runtime_thread.pending_task_count_at_close != 0:
+            failed_checks.append("pending_asyncio_tasks")
+        if pet_window.physics_timer.isActive():
+            failed_checks.append("timer_active")
+        if message_audit.missing_warning_count:
+            failed_checks.append("missing_qt_platform_warnings")
+        if message_audit.duplicate_warning_count:
+            failed_checks.append("duplicate_qt_platform_warnings")
+        if message_audit.unexpected_warnings:
+            failed_checks.append("unexpected_qt_warnings")
+        if message_audit.critical_messages:
+            failed_checks.append("qt_critical_messages")
+        if message_audit.other_messages:
+            failed_checks.append("qt_other_messages")
+        success = not failed_checks
         print(
             f"qt_tray_smoke={success} "
             f"fake_tray=True "
@@ -224,17 +240,16 @@ def _run_smoke(message_audit: _QtMessageAudit) -> int:
             f"{bridge.runtime_thread.pending_task_count_at_close} "
             f"timer_active={pet_window.physics_timer.isActive()} "
             "failed_checks="
-            + ",".join(
-                name for name, passed in observed.items() if not passed
-            )
+            + ",".join(failed_checks)
         )
         return 0 if success else 2
 
 
 def main() -> int:
-    message_audit = _QtMessageAudit(
-        _EXPECTED_TRAY_QT_WARNING_COUNTS
-    )
+    expected_warnings = _EXPECTED_TRAY_QT_WARNING_COUNTS.copy()
+    if os.environ.get("ARKCLAW_TRAY_SMOKE_FORCE_MISSING_WARNING") == "1":
+        expected_warnings["FORCED_MISSING_TRAY_WARNING"] = 1
+    message_audit = _QtMessageAudit(expected_warnings)
     previous_handler = qInstallMessageHandler(message_audit.handle)
     try:
         return _run_smoke(message_audit)

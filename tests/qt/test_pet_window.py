@@ -738,7 +738,7 @@ def test_pet_smoke_isolates_inherited_qt_environment() -> None:
         contaminated_result.stdout + contaminated_result.stderr
     )
     assert "qt_pet_smoke=True" in clean_result.stdout
-    assert "expected_qt_platform_warnings=3" in clean_result.stdout
+    assert "expected_qt_platform_warnings=2" in clean_result.stdout
     assert "missing_qt_platform_warnings=0" in clean_result.stdout
     assert "duplicate_qt_platform_warnings=0" in clean_result.stdout
     assert "unexpected_qt_warnings=0" in clean_result.stdout
@@ -752,7 +752,7 @@ def test_pet_smoke_isolates_inherited_qt_environment() -> None:
         for field in clean_result.stdout.split()
         if "=" in field
     )
-    assert int(fields["expected_qt_platform_warnings"]) == 3
+    assert int(fields["expected_qt_platform_warnings"]) == 2
 
 
 def test_fake_clock_drives_animation_without_blocking_qt_event_loop(
@@ -1037,9 +1037,9 @@ def test_qt_tray_view_builds_reviewed_menu_and_synchronizes_labels(
         for action in view._menu.actions()
         if not action.isSeparator()
     ] == [
-        "Hide Pet",
-        "Open Agent Window",
-        "Pause",
+        "Open Dashboard",
+        "Hide Character",
+        "Pause Autonomous",
         "Always on Top",
         "Start with Windows",
         "Exit",
@@ -1054,8 +1054,8 @@ def test_qt_tray_view_builds_reviewed_menu_and_synchronizes_labels(
         )
     )
 
-    assert view._visibility_action.text() == "Show Pet"
-    assert view._pause_action.text() == "Continue"
+    assert view._visibility_action.text() == "Show Character"
+    assert view._pause_action.text() == "Resume Autonomous"
     assert view._always_on_top_action.isChecked()
 
     view.update_state(
@@ -1116,40 +1116,25 @@ def test_fake_tray_commands_share_pet_state_and_reclaim_workspace(
     view.callbacks.toggle_paused()
     assert pet.lifecycle_state is PetLifecycleState.PAUSED
     assert view.states[-1].paused
+    # Slice 6B: right click requests the Action Palette, never a native QMenu;
+    # tray command callbacks continue to share the authoritative pet state.
     pause_menu_event = QContextMenuEvent(
         QContextMenuEvent.Reason.Mouse,
         pet.rect().center(),
         pet.mapToGlobal(pet.rect().center()),
     )
-    QApplication.sendEvent(pet, pause_menu_event)
-    pause_menu = pet.findChild(QMenu)
-    assert pause_menu is not None
-    pause_action = next(
-        action
-        for action in pause_menu.actions()
-        if action.text() == "Continue"
+    palette_requests: list[bool] = []
+    pet.action_palette_requested.connect(
+        lambda: palette_requests.append(True)
     )
-    pause_action.trigger()
+    QApplication.sendEvent(pet, pause_menu_event)
+    assert palette_requests == [True]
+    assert pet.findChild(QMenu) is None
+    view.callbacks.toggle_paused()
     assert pet.lifecycle_state is PetLifecycleState.ACTIVE
     assert not view.states[-1].paused
 
-    view.callbacks.set_always_on_top(False)
-    assert not pet.always_on_top
-    assert not view.states[-1].always_on_top
-    top_menu_event = QContextMenuEvent(
-        QContextMenuEvent.Reason.Mouse,
-        pet.rect().center(),
-        pet.mapToGlobal(pet.rect().center()),
-    )
-    QApplication.sendEvent(pet, top_menu_event)
-    top_action = next(
-        action
-        for menu in pet.findChildren(QMenu)
-        for action in menu.actions()
-        if action.text() == "Always on top"
-        and not action.isChecked()
-    )
-    top_action.setChecked(True)
+    view.callbacks.set_always_on_top(True)
     assert pet.always_on_top
     assert view.states[-1].always_on_top
 
@@ -1157,6 +1142,9 @@ def test_fake_tray_commands_share_pet_state_and_reclaim_workspace(
     assert view.show_count == 1
     assert tray.visible
     pet.complete_safe_close()
+
+    coordinator.dispose()
+    coordinator.deleteLater()
 
 
 def test_tray_exit_is_idempotent_and_closes_view_after_shutdown(
@@ -1358,6 +1346,37 @@ def test_tray_smoke_uses_fake_tray_and_cleans_all_resources() -> None:
     assert "FT_New_Face failed" not in result.stdout
 
 
+def test_tray_smoke_forced_warning_mismatch_is_attributable() -> None:
+    probe = Path(__file__).parents[2] / "scripts" / "qt_tray_smoke.py"
+    environment = {
+        **os.environ,
+        "QT_QPA_PLATFORM": "invalid-parent-platform",
+        "QT_QPA_FONTDIR": r"C:\Windows\Fonts",
+        "ARKCLAW_TRAY_SMOKE_FORCE_MISSING_WARNING": "1",
+    }
+
+    result = subprocess.run(
+        [sys.executable, str(probe)],
+        cwd=probe.parents[1],
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=20,
+        check=False,
+    )
+
+    assert result.returncode == 2
+    assert "qt_tray_smoke=False" in result.stdout
+    fields = {
+        key: value
+        for key, _, value in (
+            part.partition("=") for part in result.stdout.split() if "=" in part
+        )
+    }
+    assert int(fields["missing_qt_platform_warnings"]) == 1
+    assert "missing_qt_platform_warnings" in fields["failed_checks"].split(",")
+
+
 def test_right_click_exit_waits_for_shutdown_result(
     qt_application: QApplication,
 ) -> None:
@@ -1373,27 +1392,22 @@ def test_right_click_exit_waits_for_shutdown_result(
     )
     quit_spy = QSignalSpy(coordinator.quit_requested)
 
+    # Slice 6B: right click requests the Action Palette, never a native QMenu.
+    palette_requests: list[bool] = []
+    pet.action_palette_requested.connect(
+        lambda: palette_requests.append(True)
+    )
     event = QContextMenuEvent(
         QContextMenuEvent.Reason.Mouse,
         pet.rect().center(),
         pet.mapToGlobal(pet.rect().center()),
     )
     QApplication.sendEvent(pet, event)
-    menu = pet.findChild(QMenu)
-    assert menu is not None
-    assert {
-        "Pause",
-        "Always on top",
-        "Start with Windows",
-        "Open Agent window",
-        "Exit",
-    } <= {
-        action.text() for action in menu.actions() if action.text()
-    }
-    exit_action = next(
-        action for action in menu.actions() if action.text() == "Exit"
-    )
-    exit_action.trigger()
+    assert palette_requests == [True]
+    assert pet.findChild(QMenu) is None
+
+    # Exit still goes through the existing safe-exit semantic.
+    pet.request_safe_exit()
 
     assert pet.lifecycle_state is PetLifecycleState.CLOSING
     assert pet.isVisible()
@@ -1404,6 +1418,9 @@ def test_right_click_exit_waits_for_shutdown_result(
     assert _run_until(lambda: quit_spy.count() == 1)
     assert not pet.isVisible()
     assert not pet.physics_timer.isActive()
+
+    coordinator.dispose()
+    coordinator.deleteLater()
 
 
 def test_failed_shutdown_keeps_pet_available_for_explicit_retry(
@@ -1980,6 +1997,11 @@ def test_visible_overflow_pixel_opens_pet_context_menu_without_action_change(
     local = QPoint(5, 5)
     global_point = overlay.mapToGlobal(local)
 
+    # Slice 6B: right click requests the Action Palette, never a native QMenu.
+    palette_requests: list[bool] = []
+    window.action_palette_requested.connect(
+        lambda: palette_requests.append(True)
+    )
     QApplication.sendEvent(
         overlay,
         QContextMenuEvent(
@@ -1991,19 +2013,16 @@ def test_visible_overflow_pixel_opens_pet_context_menu_without_action_change(
     )
     qt_application.processEvents()
 
-    menu = window.findChild(QMenu)
-    assert menu is not None
-    assert menu.isVisible()
+    assert palette_requests == [True]
+    assert window.findChild(QMenu) is None
     overlay_id = int(overlay.winId())
     for _ in range(3):
         window.physics_timer.timeout.emit()
         qt_application.processEvents()
-    assert menu.isVisible()
     assert int(overlay.winId()) == overlay_id
     assert controller.active_request is active_before
     assert renderer.render_generation == generation_before
     assert len(player.calls) == play_count_before
-    menu.close()
     window.complete_safe_close()
     qt_application.processEvents()
     shiboken6.delete(overlay)
@@ -2161,10 +2180,16 @@ def test_avoided_overflow_proxies_body_press_move_release_and_context_menu(
         body_center,
         QPoint(overlay.x() + body_center.x(), overlay.y() + body_center.y()),
     )
+    # Slice 6B: right click requests the Action Palette, never a native QMenu.
+    palette_requests: list[bool] = []
+    window.action_palette_requested.connect(
+        lambda: palette_requests.append(True)
+    )
     QApplication.sendEvent(overlay, context)
     qt_application.processEvents()
 
-    assert window.findChild(QMenu) is not None
+    assert palette_requests == [True]
+    assert window.findChild(QMenu) is None
     window.complete_safe_close()
     qt_application.processEvents()
     shiboken6.delete(overlay)

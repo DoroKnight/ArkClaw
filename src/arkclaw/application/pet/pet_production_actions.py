@@ -142,3 +142,21 @@ _SEMANTIC_TARGETS = MappingProxyType(
 
 def semantic_target(action: ProductionAction) -> SemanticActionTarget:
     return _SEMANTIC_TARGETS[action]
+
+
+def can_resume_autonomous(
+    *,
+    closing: bool,
+    available_actions: frozenset[ProductionAction],
+) -> bool:
+    """Qt-free validity of the frozen Resume Autonomous capability.
+
+    Single authoritative implementation of the existing production rule
+    (06 9.3 "Resume Autonomous (if valid)"): resume is invalid while the
+    pet is closing or while RELAX is not among the available production
+    actions, and is valid otherwise.  PetWindow execution, the native
+    production menu and the command descriptor adapter all consume this
+    one predicate so no second copy of the rule exists.
+    """
+
+    return not closing and ProductionAction.RELAX in available_actions

@@ -62,6 +62,8 @@ class PetTrayCommands(Protocol):
 
     def open_agent_window(self) -> None: ...
 
+    def open_dashboard(self) -> None: ...
+
     def toggle_paused(self) -> None: ...
 
     def set_always_on_top(self, enabled: bool) -> None: ...
@@ -89,6 +91,7 @@ class TrayCallbacks:
     toggle_paused: Callable[[], None]
     set_always_on_top: Callable[[bool], None]
     request_safe_exit: Callable[[], None]
+    open_dashboard: Callable[[], None] | None = None
     set_autostart_enabled: Callable[[bool], None] | None = None
     request_action: Callable[[ProductionAction], None] | None = None
     resume_autonomous: Callable[[], None] | None = None
@@ -125,23 +128,22 @@ class _QtSystemTrayView:
         )
         self._menu.aboutToShow.connect(callbacks.refresh)
 
-        self._visibility_action = QAction("Hide Pet", self._menu)
+        self._open_dashboard_action = QAction("Open Dashboard", self._menu)
+        self._open_dashboard_action.setObjectName("openDashboardAction")
+        self._open_dashboard_action.triggered.connect(
+            lambda checked=False: callbacks.open_dashboard()
+            if callbacks.open_dashboard is not None
+            else callbacks.open_agent_window()
+        )
+        self._menu.addAction(self._open_dashboard_action)
+
+        self._visibility_action = QAction("Hide Character", self._menu)
         self._visibility_action.triggered.connect(
             lambda checked=False: callbacks.toggle_pet_visibility()
         )
         self._menu.addAction(self._visibility_action)
 
-        self._open_agent_action = QAction(
-            "Open ArkClaw Control Center",
-            self._menu,
-        )
-        self._open_agent_action.setObjectName("openControlCenterAction")
-        self._open_agent_action.triggered.connect(
-            lambda checked=False: callbacks.open_agent_window()
-        )
-        self._menu.addAction(self._open_agent_action)
-
-        self._pause_action = QAction("Pause", self._menu)
+        self._pause_action = QAction("Pause Autonomous", self._menu)
         self._pause_action.triggered.connect(
             lambda checked=False: callbacks.toggle_paused()
         )
@@ -214,10 +216,10 @@ class _QtSystemTrayView:
         if self._closed:
             return
         self._visibility_action.setText(
-            "Hide Pet" if state.pet_visible else "Show Pet"
+            "Hide Character" if state.pet_visible else "Show Character"
         )
         self._pause_action.setText(
-            "Continue" if state.paused else "Pause"
+            "Resume Autonomous" if state.paused else "Pause Autonomous"
         )
         blocker = QSignalBlocker(self._always_on_top_action)
         self._always_on_top_action.setChecked(state.always_on_top)
@@ -236,7 +238,7 @@ class _QtSystemTrayView:
         )
         for action in (
             self._visibility_action,
-            self._open_agent_action,
+            self._open_dashboard_action,
             self._pause_action,
             self._always_on_top_action,
         ):
@@ -248,20 +250,6 @@ class _QtSystemTrayView:
                 available_actions=state.available_actions,
                 closing=state.closing,
             )
-
-    def _add_production_action(
-        self,
-        action: ProductionAction,
-        label: str,
-        menu: QMenu,
-        callback: Callable[[ProductionAction], None],
-    ) -> None:
-        item = QAction(label, menu)
-        item.triggered.connect(
-            lambda checked=False, selected=action: callback(selected)
-        )
-        menu.addAction(item)
-        self._action_items[action] = item
 
     def close(self) -> None:
         if self._closed:
@@ -313,6 +301,7 @@ class SystemTrayController(QObject):
             refresh=self.refresh,
             toggle_pet_visibility=self._toggle_pet_visibility,
             open_agent_window=self._open_agent_window,
+            open_dashboard=self._open_dashboard,
             toggle_paused=self._toggle_paused,
             set_always_on_top=self._set_always_on_top,
             request_safe_exit=self._request_safe_exit,
@@ -501,6 +490,16 @@ class SystemTrayController(QObject):
         if self._exit_requested or self._shutdown_started or self._closed:
             return
         self._commands.open_agent_window()
+        self.refresh()
+
+    def _open_dashboard(self) -> None:
+        if self._exit_requested or self._shutdown_started or self._closed:
+            return
+        commands = self._commands
+        open_dashboard = getattr(commands, "open_dashboard", None)
+        if open_dashboard is None:
+            return
+        open_dashboard()
         self.refresh()
 
     def _toggle_paused(self) -> None:

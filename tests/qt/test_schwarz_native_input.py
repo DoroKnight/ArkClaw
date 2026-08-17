@@ -123,18 +123,19 @@ def test_native_click_on_schwarz_overflow_body_immediately_enters_interact(
         )
         assert routed_handle == int(overlay.winId())
 
+        # Slice 6B: right click requests the Action Palette, never a native
+        # QMenu; the OVERFLOW body right-click chain is otherwise unchanged.
+        palette_requests: list[bool] = []
+        window.action_palette_requested.connect(
+            lambda: palette_requests.append(True)
+        )
         user32.mouse_event(0x0008, 0, 0, 0, None)  # RIGHTDOWN
         user32.mouse_event(0x0010, 0, 0, 0, None)  # RIGHTUP
-        assert _process_until(
-            application,
-            lambda: (
-                (menu := window.findChild(QMenu)) is not None
-                and menu.isVisible()
-            ),
+        assert _process_until(application, lambda: bool(palette_requests))
+        assert palette_requests == [True]
+        assert not any(
+            menu.isVisible() for menu in window.findChildren(QMenu)
         )
-        menu = window.findChild(QMenu)
-        assert menu is not None
-        menu.close()
         application.processEvents()
 
         user32.mouse_event(0x0002, 0, 0, 0, None)  # LEFTDOWN

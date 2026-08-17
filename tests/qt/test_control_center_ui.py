@@ -14,6 +14,10 @@ from arkclaw.bootstrap.qt_runtime import FakeQtRuntimeCompositionRoot
 from arkclaw.presentation.qt.pet.pet_window import PetWindow
 from arkclaw.presentation.qt.pet_application import PetApplicationCoordinator
 from arkclaw.presentation.qt.platform.runtime_bridge import QtRuntimeBridge
+from arkclaw.presentation.qt.theme.design_tokens import (
+    ThemeVariant,
+    load_design_tokens,
+)
 from arkclaw.presentation.qt.ui.control_center import (
     SCHWARZ_ACTIONS,
     ControlCenterView,
@@ -178,7 +182,8 @@ def test_context_menu_uses_arkclaw_action_deck_style(
     )
 
     assert menu.objectName() == "arkclawPetContextMenu"
-    assert "#B9623E" in menu.styleSheet()
+    accent = load_design_tokens().theme(ThemeVariant.DARK).accent.default
+    assert accent in menu.styleSheet()
     assert menu.minimumWidth() == 244
     assert section.role_pack_action.text() == "ACTIVE PET  ·  SCHWARZ / 黑"
     assert section.move_menu.objectName() == "arkclawMoveActionMenu"
@@ -219,3 +224,58 @@ def test_home_controls_drive_existing_pet_coordinator(
     pet.request_safe_exit()
     assert _run_until(lambda: not bridge.runtime_thread.isRunning())
     assert bridge.runtime_thread.pending_task_count_at_close == 0
+
+def test_menu_resume_enabled_state_consumes_shared_capability(
+    qt_application: QApplication,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    del qt_application
+    menu = QMenu()
+    section = ProductionActionMenuSection(
+        menu,
+        request_action=lambda action: None,
+        resume_autonomous=lambda: None,
+    )
+    # Frozen baseline states (unchanged production semantic).
+    section.update(
+        role_pack_id="schwarz-production",
+        available_actions=frozenset({ProductionAction.RELAX}),
+        closing=False,
+    )
+    assert section.resume_autonomous_action.isEnabled()
+    section.update(
+        role_pack_id="schwarz-production",
+        available_actions=frozenset({ProductionAction.RELAX}),
+        closing=True,
+    )
+    assert not section.resume_autonomous_action.isEnabled()
+    section.update(
+        role_pack_id="schwarz-production",
+        available_actions=frozenset({ProductionAction.SIT}),
+        closing=False,
+    )
+    assert not section.resume_autonomous_action.isEnabled()
+
+    # The enabled state must be driven by the shared Qt-free capability, not
+    # by a re-implemented boolean inside the menu.
+    monkeypatch.setattr(
+        "arkclaw.presentation.qt.ui.production_action_menu.can_resume_autonomous",
+        lambda *, closing, available_actions: False,
+    )
+    section.update(
+        role_pack_id="schwarz-production",
+        available_actions=frozenset({ProductionAction.RELAX}),
+        closing=False,
+    )
+    assert not section.resume_autonomous_action.isEnabled()
+    monkeypatch.setattr(
+        "arkclaw.presentation.qt.ui.production_action_menu.can_resume_autonomous",
+        lambda *, closing, available_actions: True,
+    )
+    section.update(
+        role_pack_id="schwarz-production",
+        available_actions=frozenset({ProductionAction.SIT}),
+        closing=False,
+    )
+    assert section.resume_autonomous_action.isEnabled()
+    menu.close()
